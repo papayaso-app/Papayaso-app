@@ -2026,5 +2026,213 @@ init();
     <button class="closed-modal-btn" onclick="closeClosedModal()">Ver el menú</button>
   </div>
 </div>
+
+<!-- ===== SUPABASE INTEGRATION ===== -->
+<script>
+/* =====================================================================
+   CAPA SUPABASE — MENÚ CLIENTE
+   - Carga productos desde Supabase en lugar de localStorage
+   - Guarda pedidos en Supabase al enviar
+   - Tracking: polling del estado del pedido en Supabase cada 6s
+   ===================================================================== */
+
+const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_VFxrmgCfCgZZ4zD5Ao0svg_9etH0ijq';
+
+const SB = {
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Prefer': 'return=representation'
+  },
+  async get(table, params) {
+    const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
+    const r = await fetch(url, { headers: this.headers });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+  async post(table, body) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST', headers: this.headers, body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+};
+
+// Estado SB → Local (para tracking)
+const SB_TO_LOCAL = {
+  'Pendiente': 'nuevo', 'Aceptado': 'aceptado', 'Preparando': 'preparando',
+  'Listo': 'listo', 'En camino': 'camino', 'Entregado': 'entregado', 'Cancelado': 'cancelado'
+};
+
+// ── CARGAR PRODUCTOS desde Supabase ──────────────────────────────────
+async function sbCargarProductos() {
+  try {
+    const prods = await SB.get('productos', {
+      select: '*', order: 'categoria.asc,nombre.asc'
+    });
+    if (!prods || !prods.length) { console.warn('[SB] Sin productos en Supabase'); return; }
+
+    // Convertir al formato que usa renderSections
+    const s = getStore();
+    s.products = prods.map(function(p) {
+      // Extras: "Nombre+Precio,Nombre2+0" → [{name, price}]
+      let extras = [];
+      if (p.opciones_extras) {
+        String(p.opciones_extras).split(',').forEach(function(part) {
+          const idx = part.lastIndexOf('+');
+          if (idx > 0) {
+            extras.push({
+              name:  part.slice(0, idx).trim(),
+              price: parseInt(part.slice(idx+1)) || 0
+            });
+          } else if (part.trim()) {
+            extras.push({ name: part.trim(), price: 0 });
+          }
+        });
+      }
+      // Sabores: "Vainilla,Chocolate" → extras gratuitos
+      if (p.opciones_sabores) {
+        String(p.opciones_sabores).split(',').forEach(function(s) {
+          const name = s.trim();
+          if (name) extras.unshift({ name: name, price: 0, tipo: 'sabor' });
+        });
+      }
+      return {
+        id:        p.id,
+        sb_id:     p.id,
+        name:      p.nombre || '',
+        cat:       p.categoria || 'General',
+        price:     parseInt(p.precio) || 0,
+        desc:      p.descripcion || '',
+        photo:     p.imagen_url || '',
+        emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
+        available: true,
+        extras:    extras
+      };
+    });
+
+    // Categorías únicas
+    s.categories = [...new Set(prods.map(p => p.categoria).filter(Boolean))];
+    localStorage.setItem('restaurante_v3', JSON.stringify(s));
+
+    // Re-renderizar el menú con los datos de SB
+    renderCats(s);
+    renderSections(s, 'all');
+    console.log('[SB] Productos cargados:', prods.length);
+  } catch(e) {
+    console.warn('[SB] Error cargando productos:', e.message);
+    // Fallback: usar lo que haya en localStorage
+  }
+}
+
+// ── GUARDAR PEDIDO en Supabase ────────────────────────────────────────
+// Interceptamos saveOrder para que también guarde en SB
+const _origSaveOrder = window.saveOrder || function(){};
+window.saveOrder = async function(o) {
+  _origSaveOrder(o);  // guarda en localStorage primero (tracking local sigue funcionando)
+
+  try {
+    // Formatear items para Supabase
+    const detalles = (o.items||[]).map(function(it) {
+      return {
+        nombre:   it.name,
+        cantidad: it.qty || 1,
+        precio_unitario: it.unit || it.price || 0,
+        extras:   (it.extras||[]).map(e => e.name + (e.price ? ' (+$'+e.price+')': '')),
+        nota:     it.note || ''
+      };
+    });
+
+    const body = {
+      cliente:         o.client || '',
+      telefono:        o.phone  || '',
+      direccion:       o.address|| '',
+      referencia:      o.ref    || '',
+      detalles_pedido: JSON.stringify(detalles),
+      total:           o.total  || 0,
+      estado:          'Pendiente',
+      metodo_pago:     o.payment|| 'Efectivo',
+      cambio:          o.cambio || '',
+      notas:           o.notes  || ''
+    };
+
+    const result = await SB.post('pedidos', body);
+    if (result && result[0]) {
+      const sbId = result[0].id;
+      // Persistir el sb_id para que el tracking funcione
+      localStorage.setItem('papayaso_last_sb_id', String(sbId));
+      localStorage.setItem('papayaso_last_order_id', String(o.id));
+      console.log('[SB] Pedido guardado en Supabase, id:', sbId);
+    }
+  } catch(e) {
+    console.warn('[SB] Error guardando pedido:', e.message);
+  }
+};
+
+// ── TRACKING por Supabase ─────────────────────────────────────────────
+// Interceptar renderTracking para leer estado desde SB
+const _origRenderTracking = window.renderTracking || function(){};
+let _sbTrackingId = null;
+let _sbTrackingInterval = null;
+
+async function sbGetEstadoPedido() {
+  const sbId = localStorage.getItem('papayaso_last_sb_id');
+  if (!sbId) return null;
+  try {
+    const r = await SB.get('pedidos', { select: 'id,estado,total', 'id': 'eq.' + sbId });
+    return r && r[0] ? r[0] : null;
+  } catch(e) { return null; }
+}
+
+// Polling de tracking cada 6s — actualiza localStorage y re-renderiza
+async function sbTrackingPoll() {
+  const sbId = localStorage.getItem('papayaso_last_sb_id');
+  if (!sbId) return;
+  const pedido = await sbGetEstadoPedido();
+  if (!pedido) return;
+
+  const localStatus = SB_TO_LOCAL[pedido.estado] || 'nuevo';
+  // Actualizar estado en localStorage para que getLastOrder() lo recoja
+  const s = getStore();
+  let found = false;
+  for (let i = 0; i < s.orders.length; i++) {
+    if (String(s.orders[i].sb_id) === String(sbId) ||
+        String(s.orders[i].id) === localStorage.getItem('papayaso_last_order_id')) {
+      s.orders[i].status = localStatus;
+      if (!s.orders[i].sb_id) s.orders[i].sb_id = pedido.id;
+      found = true;
+    }
+  }
+  if (found) {
+    localStorage.setItem('restaurante_v3', JSON.stringify(s));
+    _origRenderTracking(); // re-render con el estado actualizado
+  }
+}
+
+// Arrancar polling de tracking cuando se abre el tracking screen
+const _origOpenTracking = window.openTracking || function(){};
+window.openTracking = function() {
+  _origOpenTracking();
+  if (_sbTrackingInterval) clearInterval(_sbTrackingInterval);
+  _sbTrackingInterval = setInterval(sbTrackingPoll, 6000);
+};
+
+const _origCloseTracking = window.closeTracking || function(){};
+window.closeTracking = function() {
+  _origCloseTracking();
+  if (_sbTrackingInterval) { clearInterval(_sbTrackingInterval); _sbTrackingInterval = null; }
+};
+
+// ── ARRANQUE ─────────────────────────────────────────────────────────
+(async function sbMenuInit() {
+  await sbCargarProductos();
+  console.log('[SB] Menú cliente sincronizado ✓');
+})();
+
+</script>
 </body>
 </html>
