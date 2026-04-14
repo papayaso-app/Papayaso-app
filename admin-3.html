@@ -350,6 +350,40 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
   #thermal-print-area,#thermal-print-area *{visibility:visible!important;}
   #thermal-print-area{position:fixed!important;top:0!important;left:0!important;width:80mm!important;margin:0!important;padding:0!important;}
 }
+
+/* ===== PEDIDO MANUAL ===== */
+#manual-view{display:none;padding:0;position:relative;z-index:1;}
+#manual-view.open{display:block;}
+.manual-wrap{max-width:520px;margin:0 auto;padding:16px;}
+.manual-section{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden;}
+.manual-sec-head{padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border);font-family:'Montserrat',sans-serif;font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px;}
+.manual-sec-body{padding:14px 16px;}
+/* Producto seleccionado en pedido manual */
+.mprod-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+.mprod-row:last-child{border-bottom:none;}
+.mprod-name{flex:1;font-size:13px;font-weight:600;}
+.mprod-qty{display:flex;align-items:center;gap:6px;}
+.mprod-qbtn{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:16px;font-family:inherit;display:flex;align-items:center;justify-content:center;color:var(--muted);}
+.mprod-qbtn:hover{border-color:var(--green);color:var(--green);}
+.mprod-qnum{min-width:20px;text-align:center;font-weight:700;font-size:14px;}
+.mprod-price{font-family:'Montserrat',sans-serif;font-size:13px;font-weight:700;color:var(--green);min-width:70px;text-align:right;}
+.mprod-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0 4px;}
+.mprod-del:hover{color:var(--danger);}
+/* Buscador de productos */
+.mprod-search{display:flex;flex-direction:column;gap:6px;}
+.mprod-search-inp{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text);}
+.mprod-search-inp:focus{outline:none;border-color:var(--green);}
+.mprod-results{max-height:200px;overflow-y:auto;border:1.5px solid var(--border);border-radius:var(--rs);display:none;}
+.mprod-results.show{display:block;}
+.mprod-result-item{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;transition:background .1s;}
+.mprod-result-item:last-child{border-bottom:none;}
+.mprod-result-item:hover{background:var(--bg);}
+.mprod-result-item b{font-weight:700;}
+.mprod-result-price{font-size:12px;color:var(--green);font-weight:700;flex-shrink:0;}
+/* Total manual */
+.manual-total-bar{background:var(--dark);color:#fff;border-radius:var(--r);padding:16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.manual-total-lbl{font-size:13px;opacity:.7;}
+.manual-total-val{font-family:'Montserrat',sans-serif;font-size:22px;font-weight:900;color:var(--green);}
 </style>
 </head>
 <body>
@@ -382,6 +416,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <div class="mode-bar">
   <button class="mode-btn active" id="mode-dom" onclick="switchMode('domicilios')">🛵 Domicilios</button>
   <button class="mode-btn" id="mode-pos" onclick="switchMode('pos')">🏪 POS - Caja</button>
+  <button class="mode-btn" id="mode-manual" onclick="switchMode('manual')">📞 Pedido Manual</button>
 </div>
 
 <!-- NAV DOMICILIOS -->
@@ -1026,7 +1061,123 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     </div>
   </div>
 </div>
+
 </div><!-- /.page -->
+<!-- ===== PANEL PEDIDO MANUAL (llamada telefónica) ===== -->
+<div id="manual-view" style="display:none">
+  <div class="manual-wrap">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <h2 style="font-family:'Montserrat',sans-serif;font-size:20px;font-weight:900;margin:0">📞 Pedido por llamada</h2>
+        <p style="font-size:12px;color:var(--muted);margin:2px 0 0">Registra manualmente el pedido del cliente</p>
+      </div>
+      <button class="btn btn-g btn-sm" onclick="resetManualOrder()">🔄 Limpiar</button>
+    </div>
+
+    <!-- SECCIÓN 1: Datos del cliente -->
+    <div class="manual-section">
+      <div class="manual-sec-head">👤 Datos del cliente</div>
+      <div class="manual-sec-body">
+        <div class="fg2">
+          <div class="fg">
+            <label>Nombre del cliente</label>
+            <input id="mo-name" type="text" placeholder="Ej: Juan García" oninput="moUpdate()">
+          </div>
+          <div class="fg">
+            <label>Teléfono</label>
+            <input id="mo-phone" type="tel" placeholder="3001234567" oninput="moUpdate()">
+          </div>
+        </div>
+        <div class="fg">
+          <label>Dirección de entrega</label>
+          <input id="mo-address" type="text" placeholder="Calle 8C #81B-10, Barrio..." oninput="moUpdate()">
+        </div>
+        <div class="fg" style="margin-top:0">
+          <label>Punto de referencia <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+          <input id="mo-ref" type="text" placeholder="Casa azul, al lado de la tienda...">
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 2: Productos -->
+    <div class="manual-section">
+      <div class="manual-sec-head">🛒 Productos del pedido</div>
+      <div class="manual-sec-body">
+        <!-- Buscador -->
+        <div class="mprod-search" style="margin-bottom:12px">
+          <input class="mprod-search-inp" id="mo-prod-search" type="text"
+            placeholder="🔍 Escribe al menos 2 letras para buscar..."
+            oninput="moSearchProds(this.value)" autocomplete="off">
+          <div class="mprod-results" id="mo-prod-results"></div>
+        </div>
+        <!-- Lista de productos agregados -->
+        <div id="mo-prod-list">
+          <div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">
+            <div style="font-size:28px;margin-bottom:6px">🛍️</div>
+            Agrega productos buscando arriba
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 3: Pago y notas -->
+    <div class="manual-section">
+      <div class="manual-sec-head">💳 Pago y observaciones</div>
+      <div class="manual-sec-body">
+        <div class="fg2">
+          <div class="fg">
+            <label>Método de pago</label>
+            <select id="mo-payment" class="fsel" style="width:100%">
+              <option value="Efectivo">💵 Efectivo</option>
+              <option value="Nequi">📱 Nequi</option>
+              <option value="Tarjeta">💳 Tarjeta</option>
+            </select>
+          </div>
+          <div class="fg" id="mo-cambio-wrap">
+            <label>¿Paga con cuánto?</label>
+            <select id="mo-cambio" class="fsel" style="width:100%" onchange="toggleMoCambioOtro(this.value)">
+              <option value="Exacto">Monto exacto</option>
+              <option value="$20.000">$20.000</option>
+              <option value="$50.000">$50.000</option>
+              <option value="$100.000">$100.000</option>
+              <option value="Otro">Otro monto...</option>
+            </select>
+          </div>
+        </div>
+        <div class="fg" id="mo-cambio-otro-wrap" style="display:none;margin-top:0">
+          <label>Monto exacto con el que paga</label>
+          <input id="mo-cambio-otro" type="number" placeholder="Ej: 80000">
+        </div>
+        <div class="fg" style="margin-top:0">
+          <label>Nota interna <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+          <textarea id="mo-notes" rows="2" placeholder="Instrucciones de entrega, alergias, etc..." style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;resize:none"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Total -->
+    <div class="manual-total-bar">
+      <div>
+        <div class="manual-total-lbl">Total del pedido</div>
+        <div id="mo-item-count" style="font-size:11px;opacity:.5;margin-top:2px">0 productos</div>
+      </div>
+      <div class="manual-total-val" id="mo-total">$0</div>
+    </div>
+
+    <!-- Botones de acción -->
+    <div style="display:flex;gap:10px;margin-bottom:30px">
+      <button class="btn btn-g" style="flex:1;padding:14px" onclick="moSendWA()">
+        📲 Enviar a WhatsApp
+      </button>
+      <button class="btn btn-p" style="flex:2;padding:14px;font-size:15px" onclick="moConfirm()">
+        ✅ Registrar pedido
+      </button>
+    </div>
+
+  </div>
+</div>
 
 <script>
 
@@ -1093,17 +1244,25 @@ document.addEventListener('click', function(e) {
     drop.classList.remove('open');
   }
 });
+function _hideManualView() {
+  var mv = document.getElementById('manual-view');
+  if (mv) { mv.classList.remove('open'); mv.style.display = 'none'; }
+  var page = document.querySelector('.page');
+  if (page) page.style.display = '';
+}
 function goEstadisticas() {
   if (curMode === 'pos') switchMode('domicilios');
+  else if (curMode === 'manual') { curMode = 'domicilios'; _hideManualView(); var mb = document.getElementById('mode-dom'); if(mb) mb.classList.add('active'); var mm = document.getElementById('mode-manual'); if(mm) mm.classList.remove('active'); }
   showGroup('estadisticas');
 }
 function goVentas() {
-  // Sale del modo POS si está activo, luego va a ventas globales
   if (curMode === 'pos') switchMode('domicilios');
+  else if (curMode === 'manual') { curMode = 'domicilios'; _hideManualView(); var mb = document.getElementById('mode-dom'); if(mb) mb.classList.add('active'); var mm = document.getElementById('mode-manual'); if(mm) mm.classList.remove('active'); }
   showGroup('ventas-global');
 }
 function goConfig() {
   if (curMode === 'pos') switchMode('domicilios');
+  else if (curMode === 'manual') { curMode = 'domicilios'; _hideManualView(); var mb = document.getElementById('mode-dom'); if(mb) mb.classList.add('active'); var mm = document.getElementById('mode-manual'); if(mm) mm.classList.remove('active'); }
   showGroup('info');
 }
 
@@ -1112,6 +1271,10 @@ var curPanel = 'pedidos-todos';
 var curGroup = 'pedidos';
 
 function showGroup(group) {
+  // Asegurar que manual-view esté oculto cuando navegamos a cualquier panel
+  var _mv = document.getElementById('manual-view');
+  if (_mv) { _mv.classList.remove('open'); _mv.style.display = 'none'; }
+  var _pg = document.querySelector('.page'); if (_pg) _pg.style.display = '';
   // Highlight tab
   var tabs = document.querySelectorAll('#dom-nav .nav-tab');
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
@@ -2162,33 +2325,46 @@ function updPos(fn) { var s = getPosStore(); fn(s); savePosStore(s); }
 
 function switchMode(mode) {
   curMode = mode;
-  var posBtn = document.getElementById('mode-pos');
-  var domBtn = document.getElementById('mode-dom');
-  var posNav = document.getElementById('pos-nav');
-  var domNav = document.getElementById('dom-nav');
-  var posView = document.getElementById('pos-view');
-  var page = document.querySelector('.page');
-  var subNavs = document.querySelectorAll('.sub-nav');
+  var posBtn    = document.getElementById('mode-pos');
+  var domBtn    = document.getElementById('mode-dom');
+  var manBtn    = document.getElementById('mode-manual');
+  var posNav    = document.getElementById('pos-nav');
+  var domNav    = document.getElementById('dom-nav');
+  var posView   = document.getElementById('pos-view');
+  var manView   = document.getElementById('manual-view');
+  var page      = document.querySelector('.page');
+  var subNavs   = document.querySelectorAll('.sub-nav');
+
+  // Reset all buttons
+  [posBtn, domBtn, manBtn].forEach(function(b){ if(b) b.classList.remove('active'); });
+  // Hide all views
+  if (posNav)  posNav.style.display  = 'none';
+  if (domNav)  domNav.style.display  = 'none';
+  if (posView) posView.classList.remove('open');
+  // Ocultar manual-view limpiamente (remover clase Y limpiar inline style)
+  if (manView) { manView.classList.remove('open'); manView.style.display = 'none'; }
+  if (page)    page.style.display    = '';
+  for (var i = 0; i < subNavs.length; i++) subNavs[i].classList.remove('visible');
 
   if (mode === 'pos') {
     if (posBtn) posBtn.classList.add('active');
-    if (domBtn) domBtn.classList.remove('active');
     if (posNav) posNav.style.display = 'flex';
-    if (domNav) domNav.style.display = 'none';
-    for (var i = 0; i < subNavs.length; i++) subNavs[i].classList.remove('visible');
     showPosPanel('caja');
+
+  } else if (mode === 'manual') {
+    if (manBtn) manBtn.classList.add('active');
+    if (manView) { manView.classList.add('open'); manView.style.display = 'block'; }
+    if (page) page.style.display = 'none';
+    initManualOrder();
+
   } else {
+    // domicilios (default)
     if (domBtn) domBtn.classList.add('active');
-    if (posBtn) posBtn.classList.remove('active');
-    if (posNav) posNav.style.display = 'none';
     if (domNav) domNav.style.display = '';
-    if (posView) posView.classList.remove('open');
-    if (page) page.style.display = '';
     var allPanels = document.querySelectorAll('.panel');
     for (var j = 0; j < allPanels.length; j++) allPanels[j].classList.remove('active');
     var pedPanel = document.getElementById('panel-pedidos-todos');
     if (pedPanel) pedPanel.classList.add('active');
-    for (var k = 0; k < subNavs.length; k++) subNavs[k].classList.remove('visible');
     var subPed = document.getElementById('sub-pedidos');
     if (subPed) subPed.classList.add('visible');
     var domTabs = document.querySelectorAll('#dom-nav .nav-tab');
@@ -3828,7 +4004,298 @@ function toggleAddonOpt(addonId, optId){
 // FIN ADICIONES
 // =====================================================================
 
-// ---- LIMPIEZA DIARIA DE PEDIDOS ----
+
+// =====================================================================
+// PEDIDO MANUAL (por llamada telefónica)
+// =====================================================================
+var _moCart = [];  // [{id, name, price, qty, total}]
+
+function initManualOrder() {
+  // Inicializar solo si el carrito está vacío (no resetear si ya tenía productos)
+  moRenderList();
+  moUpdate();
+  // Ocultar resultados de búsqueda
+  var res = document.getElementById('mo-prod-results');
+  if (res) res.classList.remove('show');
+  var inp = document.getElementById('mo-prod-search');
+  if (inp) inp.value = '';
+  // Mostrar/ocultar cambio según método de pago
+  var payEl = document.getElementById('mo-payment');
+  if (payEl) payEl.onchange = function() {
+    var wrap = document.getElementById('mo-cambio-wrap');
+    if (wrap) wrap.style.display = this.value === 'Efectivo' ? '' : 'none';
+    var oWrap = document.getElementById('mo-cambio-otro-wrap');
+    if (oWrap) oWrap.style.display = 'none';
+  };
+}
+
+function resetManualOrder() {
+  _moCart = [];
+  moRenderList();
+  moUpdate();
+  var fields = ['mo-name','mo-phone','mo-address','mo-ref','mo-notes','mo-prod-search'];
+  fields.forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  var pay = document.getElementById('mo-payment'); if(pay) pay.value='Efectivo';
+  var cam = document.getElementById('mo-cambio'); if(cam) cam.value='Exacto';
+  var res = document.getElementById('mo-prod-results'); if(res) res.classList.remove('show');
+  var cWrap = document.getElementById('mo-cambio-wrap'); if(cWrap) cWrap.style.display='';
+  var oWrap = document.getElementById('mo-cambio-otro-wrap'); if(oWrap) oWrap.style.display='none';
+  showToast('Pedido limpiado');
+}
+
+// Buscar productos del menú (restaurante_v3 + papayaso_pos_v1)
+function moSearchProds(q) {
+  var res = document.getElementById('mo-prod-results');
+  if (!res) return;
+  if (!q || q.trim().length < 2) { res.classList.remove('show'); return; }
+  q = q.toLowerCase();
+
+  // Combinar productos del menú y del POS
+  var allProds = [];
+  var s = getStore();
+  for (var i=0;i<s.products.length;i++) {
+    if (s.products[i].available !== false)
+      allProds.push({id:'dom_'+s.products[i].id, name:s.products[i].name, price:s.products[i].price, src:'menu'});
+  }
+  var ps = getPosStore();
+  for (var j=0;j<ps.products.length;j++) {
+    if (ps.products[j].available !== false)
+      allProds.push({id:'pos_'+ps.products[j].id, name:ps.products[j].name, price:ps.products[j].price, src:'pos'});
+  }
+
+  var filtered = allProds.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; });
+  if (!filtered.length) {
+    res.innerHTML = '<div style="padding:12px;text-align:center;font-size:13px;color:var(--muted)">Sin resultados</div>';
+    res.classList.add('show');
+    return;
+  }
+
+  var html = '';
+  for (var k=0;k<Math.min(filtered.length,12);k++) {
+    var p = filtered[k];
+    // Usar data-attributes para evitar problemas de comillas en onclick
+    html += '<div class="mprod-result-item"'
+      + ' data-id="' + p.id + '"'
+      + ' data-name="' + p.name.replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '"'
+      + ' data-price="' + p.price + '"'
+      + ' onclick="moAddProdFromEl(this)">'
+      + '<div><b>' + p.name + '</b>'
+      + '<span style="font-size:10px;color:var(--muted);margin-left:6px">' + (p.src==='pos'?'🏪 POS':'🛵 Menú') + '</span></div>'
+      + '<span class="mprod-result-price">' + fp(p.price) + '</span>'
+      + '</div>';
+  }
+  res.innerHTML = html;
+  res.classList.add('show');
+}
+
+// Wrapper que lee datos desde atributos del elemento (evita problemas de comillas)
+function moAddProdFromEl(el) {
+  var id    = el.getAttribute('data-id');
+  var name  = el.getAttribute('data-name');
+  var price = parseInt(el.getAttribute('data-price')) || 0;
+  moAddProd(id, name, price);
+}
+
+function moAddProd(id, name, price) {
+  // Buscar si ya existe en el carrito
+  for (var i=0;i<_moCart.length;i++) {
+    if (_moCart[i].id === id) {
+      _moCart[i].qty++;
+      _moCart[i].total = _moCart[i].price * _moCart[i].qty;
+      moRenderList();
+      moUpdate();
+      // Limpiar búsqueda
+      var inp = document.getElementById('mo-prod-search'); if(inp) inp.value='';
+      var res = document.getElementById('mo-prod-results'); if(res) res.classList.remove('show');
+      return;
+    }
+  }
+  _moCart.push({id:id, name:name, price:price, qty:1, total:price});
+  moRenderList();
+  moUpdate();
+  var inp = document.getElementById('mo-prod-search'); if(inp) { inp.value=''; inp.focus(); }
+  var res = document.getElementById('mo-prod-results'); if(res) res.classList.remove('show');
+}
+
+function moChangeQty(id, delta) {
+  for (var i=0;i<_moCart.length;i++) {
+    if (_moCart[i].id === id) {
+      _moCart[i].qty = Math.max(1, _moCart[i].qty + delta);
+      _moCart[i].total = _moCart[i].price * _moCart[i].qty;
+      break;
+    }
+  }
+  moRenderList();
+  moUpdate();
+}
+
+function moRemoveProd(id) {
+  _moCart = _moCart.filter(function(p){ return p.id !== id; });
+  moRenderList();
+  moUpdate();
+}
+
+function moRenderList() {
+  var el = document.getElementById('mo-prod-list');
+  if (!el) return;
+  if (!_moCart.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px"><div style="font-size:28px;margin-bottom:6px">🛍️</div>Agrega productos buscando arriba</div>';
+    return;
+  }
+  var html = '';
+  for (var i=0;i<_moCart.length;i++) {
+    var p = _moCart[i];
+    html += '<div class="mprod-row">'
+      + '<div class="mprod-name">' + p.name + '</div>'
+      + '<div class="mprod-qty">'
+      + '<button class="mprod-qbtn" onclick="moChangeQty(\''+p.id+'\',-1)">−</button>'
+      + '<span class="mprod-qnum">' + p.qty + '</span>'
+      + '<button class="mprod-qbtn" onclick="moChangeQty(\''+p.id+'\',1)">+</button>'
+      + '</div>'
+      + '<div class="mprod-price">' + fp(p.total) + '</div>'
+      + '<button class="mprod-del" onclick="moRemoveProd(\''+p.id+'\')">✕</button>'
+      + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function moUpdate() {
+  var total = 0;
+  for (var i=0;i<_moCart.length;i++) total += _moCart[i].total;
+  var tv = document.getElementById('mo-total'); if(tv) tv.textContent = fp(total);
+  var cnt = document.getElementById('mo-item-count');
+  if(cnt) cnt.textContent = _moCart.length + ' producto' + (_moCart.length!==1?'s':'');
+}
+
+function toggleMoCambioOtro(val) {
+  var wrap = document.getElementById('mo-cambio-otro-wrap');
+  if (wrap) wrap.style.display = val === 'Otro' ? '' : 'none';
+}
+
+function moGetCambio() {
+  var cam = document.getElementById('mo-cambio');
+  if (!cam) return '';
+  if (cam.value === 'Otro') {
+    var otro = document.getElementById('mo-cambio-otro');
+    return otro ? ('$' + (parseInt(otro.value)||0).toLocaleString('es-CO')) : '';
+  }
+  return cam.value;
+}
+
+function moValidate() {
+  var name = (document.getElementById('mo-name')||{}).value||'';
+  var phone = (document.getElementById('mo-phone')||{}).value||'';
+  var address = (document.getElementById('mo-address')||{}).value||'';
+  if (!name.trim()) { showToast('Ingresa el nombre del cliente'); return false; }
+  if (!address.trim()) { showToast('Ingresa la dirección de entrega'); return false; }
+  if (!_moCart.length) { showToast('Agrega al menos un producto'); return false; }
+  return true;
+}
+
+// Registrar el pedido en el sistema (igual que si viniera del menú)
+function moConfirm() {
+  if (!moValidate()) return;
+
+  var name    = (document.getElementById('mo-name')||{}).value||'';
+  var phone   = (document.getElementById('mo-phone')||{}).value||'';
+  var address = (document.getElementById('mo-address')||{}).value||'';
+  var ref     = (document.getElementById('mo-ref')||{}).value||'';
+  var payment = (document.getElementById('mo-payment')||{}).value||'Efectivo';
+  var notes   = (document.getElementById('mo-notes')||{}).value||'';
+  var cambio  = moGetCambio();
+
+  var total = 0;
+  for (var i=0;i<_moCart.length;i++) total += _moCart[i].total;
+
+  // Usar contador global para número de pedido
+  var orderNum = 1;
+  try { var saved=parseInt(localStorage.getItem('papayaso_order_counter')||'0'); orderNum=saved>0?saved+1:1; } catch(e){}
+  try { localStorage.setItem('papayaso_order_counter', String(orderNum)); } catch(e){}
+
+  var now = new Date();
+  var pad2 = function(n){return n<10?'0'+n:''+n;};
+  var ts = now.getFullYear()+'-'+pad2(now.getMonth()+1)+'-'+pad2(now.getDate())
+    +'T'+pad2(now.getHours())+':'+pad2(now.getMinutes())+':'+pad2(now.getSeconds());
+
+  // Convertir carrito manual a formato de items del sistema
+  var items = [];
+  for (var j=0;j<_moCart.length;j++) {
+    items.push({
+      pid: _moCart[j].id, name: _moCart[j].name, emoji: '📦',
+      photo:'', qty: _moCart[j].qty, unit: _moCart[j].price,
+      extras:[], note:'', total: _moCart[j].total
+    });
+  }
+
+  var order = {
+    id: Date.now(),
+    num: '#' + orderNum,
+    client: name.trim(),
+    phone: phone ? ('+57'+phone.replace(/\D/g,'')) : '',
+    address: address.trim(),
+    ref: ref.trim(),
+    payment: payment,
+    cambio: cambio,
+    notes: notes.trim() + (notes?' | ':' ') + '📞 Pedido por llamada',
+    items: items,
+    total: total,
+    status: 'nuevo',
+    time: ts,
+    source: 'manual'  // marcar como pedido manual
+  };
+
+  upd(function(s) { s.orders.unshift(order); });
+  showToast('✅ Pedido #' + orderNum + ' registrado correctamente');
+  resetManualOrder();
+  // Ir a pedidos para verlo
+  setTimeout(function() {
+    switchMode('domicilios');
+    showGroup('pedidos');
+    setF('all');
+  }, 800);
+}
+
+// Enviar resumen por WhatsApp (para confirmación interna o al repartidor)
+function moSendWA() {
+  if (!moValidate()) return;
+
+  var name    = (document.getElementById('mo-name')||{}).value||'';
+  var phone   = (document.getElementById('mo-phone')||{}).value||'';
+  var address = (document.getElementById('mo-address')||{}).value||'';
+  var ref     = (document.getElementById('mo-ref')||{}).value||'';
+  var payment = (document.getElementById('mo-payment')||{}).value||'Efectivo';
+  var notes   = (document.getElementById('mo-notes')||{}).value||'';
+  var cambio  = moGetCambio();
+  var total = 0;
+  for (var i=0;i<_moCart.length;i++) total += _moCart[i].total;
+
+  var cfg = getStore().config;
+  var waRaw = (cfg.whatsapp||'').replace(/\D/g,'');
+  var wa = (waRaw.indexOf('57')===0)?waRaw:'57'+waRaw;
+
+  var msg = '📞 PEDIDO POR LLAMADA — ' + (cfg.name||'Restaurante') + '\n';
+  msg += '─────────────────────\n';
+  msg += '👤 Cliente: ' + name + '\n';
+  if (phone) msg += '📱 Tel: +57 ' + phone + '\n';
+  msg += '📍 Dir: ' + address + '\n';
+  if (ref) msg += '📌 Ref: ' + ref + '\n';
+  msg += '💳 Pago: ' + payment + '\n';
+  if (cambio && cambio!=='Exacto') msg += '💰 Paga con: ' + cambio + '\n';
+  msg += '─────────────────────\n';
+  msg += '🛒 PRODUCTOS:\n';
+  for (var j=0;j<_moCart.length;j++) {
+    msg += _moCart[j].qty + 'x ' + _moCart[j].name + ' — ' + fp(_moCart[j].total) + '\n';
+  }
+  msg += '─────────────────────\n';
+  msg += '💵 TOTAL: ' + fp(total) + '\n';
+  if (notes) msg += '📝 Nota: ' + notes + '\n';
+
+  window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank');
+}
+// =====================================================================
+// FIN PEDIDO MANUAL
+// =====================================================================
+
 // Al cargar: archiva en ventas globales los pedidos de días anteriores
 // y los elimina de la lista activa de domicilios
 function dailyCleanup() {
@@ -3886,6 +4353,319 @@ function dailyCleanup() {
   document.addEventListener('touchstart', _initAudio, {once: true});
   // Arrancar polling de nuevos pedidos
   startOrderPolling();
+})();
+
+</script>
+
+<!-- ===== SUPABASE INTEGRATION ===== -->
+<script>
+/* =====================================================================
+   CAPA SUPABASE — ADMIN
+   Estrategia: "adapter híbrido"
+   - localStorage sigue siendo la fuente de verdad para la UI (sin cambios en CSS/lógica)
+   - Supabase sincroniza en background: lee productos/pedidos al cargar,
+     escribe/actualiza pedidos en tiempo real, polling de 8s para nuevos pedidos
+   ===================================================================== */
+
+const SUPABASE_URL  = 'https://mmnyxlsyizylivvikfuf.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_VFxrmgCfCgZZ4zD5Ao0svg_9etH0ijq';
+
+// ── Cliente Supabase (fetch directo, sin CDN adicional) ──────────────
+const SB = {
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Prefer': 'return=representation'
+  },
+
+  async get(table, params) {
+    const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+    if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    const r = await fetch(url, { headers: this.headers });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+
+  async post(table, body) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST', headers: this.headers, body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
+
+  async patch(table, id, body) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method: 'PATCH', headers: this.headers, body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+};
+
+// ── Mapa de estado Supabase → estado interno ─────────────────────────
+const SB_STATE_MAP = {
+  'Pendiente': 'nuevo',
+  'Aceptado':  'aceptado',
+  'Preparando':'preparando',
+  'Listo':     'listo',
+  'En camino': 'camino',
+  'Entregado': 'entregado',
+  'Cancelado': 'cancelado'
+};
+const LOCAL_TO_SB = {};
+Object.entries(SB_STATE_MAP).forEach(([k, v]) => LOCAL_TO_SB[v] = k);
+
+// ── Convertir pedido Supabase → formato interno ───────────────────────
+function sbPedidoToLocal(p) {
+  let items = [];
+  try { items = typeof p.detalles_pedido === 'string'
+    ? JSON.parse(p.detalles_pedido)
+    : (p.detalles_pedido || []); } catch(e) {}
+
+  return {
+    id:      p.id,
+    num:     '#' + p.id,
+    client:  p.cliente  || '',
+    phone:   p.telefono || '',
+    address: p.direccion || '',
+    ref:     p.referencia || '',
+    payment: p.metodo_pago || 'Efectivo',
+    cambio:  p.cambio || '',
+    notes:   p.notas || '',
+    items:   items,
+    total:   p.total || 0,
+    status:  SB_STATE_MAP[p.estado] || 'nuevo',
+    time:    p.created_at || new Date().toISOString(),
+    sb_id:   p.id,
+    source:  'supabase'
+  };
+}
+
+// ── Convertir pedido interno → formato Supabase ───────────────────────
+function localPedidoToSb(o) {
+  return {
+    cliente:        o.client,
+    telefono:       o.phone || '',
+    direccion:      o.address || '',
+    referencia:     o.ref || '',
+    detalles_pedido: JSON.stringify(o.items || []),
+    total:          o.total || 0,
+    estado:         LOCAL_TO_SB[o.status] || 'Pendiente',
+    metodo_pago:    o.payment || 'Efectivo',
+    cambio:         o.cambio || '',
+    notas:          o.notes || ''
+  };
+}
+
+// ── CARGAR PRODUCTOS desde Supabase → localStorage ───────────────────
+async function sbLoadProductos() {
+  try {
+    const prods = await SB.get('productos', { select: '*', order: 'categoria.asc,nombre.asc' });
+    if (!prods || !prods.length) return;
+
+    upd(function(s) {
+      // Reconstruir productos con formato local
+      s.products = prods.map(function(p) {
+        // Parsear extras: "Nombre+Precio,Nombre2+Precio2"
+        let extras = [];
+        if (p.opciones_extras) {
+          const parts = String(p.opciones_extras).split(',');
+          parts.forEach(function(part) {
+            const [name, price] = part.trim().split('+');
+            if (name) extras.push({ name: name.trim(), price: parseInt(price) || 0 });
+          });
+        }
+        // Parsear sabores: "Vainilla,Chocolate,..." (gratis)
+        let sabores = [];
+        if (p.opciones_sabores) {
+          sabores = String(p.opciones_sabores).split(',').map(s => s.trim()).filter(Boolean);
+        }
+        return {
+          id:        p.id || Date.now() + Math.random(),
+          sb_id:     p.id,
+          name:      p.nombre || '',
+          cat:       p.categoria || 'General',
+          price:     parseInt(p.precio) || 0,
+          desc:      p.descripcion || '',
+          photo:     p.imagen_url || '',
+          emoji:     (p.nombre||'P').charAt(0),
+          available: true,
+          extras:    extras,
+          sabores:   sabores
+        };
+      });
+
+      // Sincronizar categorías
+      const cats = [...new Set(prods.map(p => p.categoria).filter(Boolean))];
+      if (cats.length) s.categories = cats;
+    });
+
+    // Actualizar UI si está visible
+    if (typeof renderEditor === 'function') renderEditor();
+    if (typeof renderCats === 'function') renderCats();
+    console.log('[SB] Productos cargados:', prods.length);
+  } catch(e) {
+    console.warn('[SB] Error cargando productos:', e.message);
+  }
+}
+
+// ── CARGAR PEDIDOS desde Supabase → localStorage ─────────────────────
+async function sbLoadPedidos() {
+  try {
+    // Solo pedidos activos (no entregados ni cancelados de hace más de 2 días)
+    const pedidos = await SB.get('pedidos', {
+      select: '*',
+      estado: 'neq.Entregado',
+      order: 'created_at.desc',
+      limit: 100
+    });
+    if (!pedidos) return;
+
+    upd(function(s) {
+      const existingIds = new Set((s.orders||[]).map(o => String(o.sb_id || o.id)));
+      const sbOrders = pedidos.map(sbPedidoToLocal);
+
+      // Merge: reemplazar los que ya existen por la versión de SB, añadir los nuevos
+      const updated = [];
+      sbOrders.forEach(function(sbO) {
+        updated.push(sbO);
+      });
+      // Añadir pedidos locales que no estén en SB (ej: creados offline)
+      (s.orders||[]).forEach(function(local) {
+        if (!local.sb_id && !existingIds.has(String(local.id))) {
+          updated.push(local);
+        }
+      });
+      updated.sort(function(a,b){ return new Date(b.time) - new Date(a.time); });
+      s.orders = updated;
+    });
+
+    if (typeof renderOrders === 'function') renderOrders();
+    if (typeof updateStats === 'function') updateStats();
+    console.log('[SB] Pedidos cargados:', pedidos.length);
+  } catch(e) {
+    console.warn('[SB] Error cargando pedidos:', e.message);
+  }
+}
+
+// ── GUARDAR pedido nuevo en Supabase ─────────────────────────────────
+async function sbSavePedido(localOrder) {
+  try {
+    const body = localPedidoToSb(localOrder);
+    const result = await SB.post('pedidos', body);
+    if (result && result[0]) {
+      // Actualizar el id local con el de Supabase
+      upd(function(s) {
+        for (let i = 0; i < s.orders.length; i++) {
+          if (s.orders[i].id === localOrder.id) {
+            s.orders[i].sb_id = result[0].id;
+            s.orders[i].num   = '#' + result[0].id;
+            break;
+          }
+        }
+      });
+      console.log('[SB] Pedido guardado, id:', result[0].id);
+    }
+  } catch(e) {
+    console.warn('[SB] Error guardando pedido:', e.message);
+  }
+}
+
+// ── ACTUALIZAR estado en Supabase ─────────────────────────────────────
+async function sbUpdateEstado(sbId, localStatus) {
+  if (!sbId) return;
+  try {
+    await SB.patch('pedidos', sbId, { estado: LOCAL_TO_SB[localStatus] || 'Pendiente' });
+    console.log('[SB] Estado actualizado:', sbId, '->', LOCAL_TO_SB[localStatus]);
+  } catch(e) {
+    console.warn('[SB] Error actualizando estado:', e.message);
+  }
+}
+
+// ── ESTADÍSTICAS desde Supabase ───────────────────────────────────────
+async function sbGetEstadisticasGlobal() {
+  try {
+    const all = await SB.get('pedidos', {
+      select: 'id,total,created_at,estado',
+      estado: 'neq.Cancelado'
+    });
+    if (!all) return null;
+
+    const hoy = new Date().toISOString().slice(0, 10);
+    const mesActual = new Date().toISOString().slice(0, 7);
+
+    let totalGlobal = 0, totalHoy = 0, totalMes = 0;
+    all.forEach(function(p) {
+      const t = parseFloat(p.total) || 0;
+      totalGlobal += t;
+      if (p.created_at && p.created_at.startsWith(hoy))     totalHoy += t;
+      if (p.created_at && p.created_at.startsWith(mesActual)) totalMes += t;
+    });
+    return { totalGlobal, totalHoy, totalMes, count: all.length };
+  } catch(e) {
+    console.warn('[SB] Error stats:', e.message);
+    return null;
+  }
+}
+
+// ── POLLING: detectar pedidos nuevos en Supabase ──────────────────────
+let _sbLastKnownId = 0;
+async function sbPollNuevosPedidos() {
+  try {
+    const r = await SB.get('pedidos', {
+      select: 'id,cliente,total,estado',
+      order: 'id.desc',
+      limit: 5
+    });
+    if (!r || !r.length) return;
+    const newest = r[0];
+    if (_sbLastKnownId === 0) { _sbLastKnownId = newest.id; return; }
+    if (newest.id > _sbLastKnownId) {
+      _sbLastKnownId = newest.id;
+      await sbLoadPedidos();
+      // Disparar sonido y alerta del sistema local
+      if (typeof playOrderSound === 'function') playOrderSound();
+      if (typeof showSoundAlert === 'function') {
+        showSoundAlert({ num: '#' + newest.id, client: newest.cliente, total: newest.total });
+      }
+    }
+  } catch(e) { /* silencioso */ }
+}
+
+// ── INTERCEPTAR chStatus para también actualizar SB ──────────────────
+(function patchChStatus() {
+  const orig = window.chStatus;
+  window.chStatus = async function(id, st) {
+    orig(id, st);  // primero actualiza local (rápido, sin espera)
+    // Buscar sb_id del pedido
+    const s = getStore();
+    const order = (s.orders||[]).find(o => String(o.id) === String(id));
+    if (order && order.sb_id) {
+      await sbUpdateEstado(order.sb_id, st);
+    }
+  };
+})();
+
+// ── ARRANQUE ─────────────────────────────────────────────────────────
+(async function sbInit() {
+  console.log('[SB] Iniciando sincronización...');
+  await sbLoadProductos();
+  await sbLoadPedidos();
+
+  // Stats en panel ventas globales si aplica
+  sbGetEstadisticasGlobal().then(function(stats) {
+    if (stats && typeof window._sbStats === 'undefined') {
+      window._sbStats = stats;
+      // Las estadísticas locales ya calculan bien; esto es extra para debugging
+      console.log('[SB] Stats globales:', stats);
+    }
+  });
+
+  // Polling cada 8 segundos para nuevos pedidos
+  setInterval(sbPollNuevosPedidos, 8000);
+  console.log('[SB] Sincronización activa ✓');
 })();
 
 </script>
