@@ -1517,8 +1517,8 @@ function updateStats() {
   var todayDom = s.orders.filter(function(o) { return isToday(o.time) && o.status !== 'cancelado'; });
   var todayPos = (pos.sales || []).filter(function(sa) { return isToday(sa.time); });
 
-  var revDom = 0; for (var i=0;i<todayDom.length;i++) revDom += todayDom[i].total;
-  var revPos = 0; for (var j=0;j<todayPos.length;j++) revPos += todayPos[j].total;
+  var revDom = 0; for (var i=0;i<todayDom.length;i++) revDom += parseFloat(todayDom[i].total)||0;
+  var revPos = 0; for (var j=0;j<todayPos.length;j++) revPos += parseFloat(todayPos[j].total)||0;
   var revTotal = revDom + revPos;
 
   var pend = s.orders.filter(function(o) { return o.status !== 'entregado' && o.status !== 'cancelado'; }).length;
@@ -1650,7 +1650,7 @@ function renderSalesToday() {
   if (fechaEl) fechaEl.textContent = new Date().toLocaleDateString('es-CO',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   var orders = s.orders.filter(function(o) { return isToday(o.time) && o.status !== 'cancelado'; });
   var rev=0; var del=0;
-  for(var i=0;i<orders.length;i++){rev+=orders[i].total;if(orders[i].status==='entregado')del++;}
+  for(var i=0;i<orders.length;i++){rev+=parseFloat(orders[i].total)||0;if(orders[i].status==='entregado')del++;}
   var sr=document.getElementById('sales-hoy-stats');
   if(sr){sr.innerHTML='<div class="sc"><div class="sc-val">'+orders.length+'</div><div class="sc-lbl">Pedidos hoy</div></div>'
     +'<div class="sc"><div class="sc-val" style="color:var(--ok)">'+del+'</div><div class="sc-lbl">Entregados</div></div>'
@@ -1696,7 +1696,7 @@ function _renderDomSalesByDate() {
     var d=localDateStr(o.time); return d>=from&&d<=to&&o.status!=='cancelado';
   });
   var rev=0; var del=0;
-  for(var i=0;i<orders.length;i++){rev+=orders[i].total;if(orders[i].status==='entregado')del++;}
+  for(var i=0;i<orders.length;i++){rev+=parseFloat(orders[i].total)||0;if(orders[i].status==='entregado')del++;}
   var sr=document.getElementById('sales-dom-hist-stats');
   if(sr){sr.innerHTML='<div class="sc"><div class="sc-val">'+orders.length+'</div><div class="sc-lbl">Pedidos</div></div>'
     +'<div class="sc"><div class="sc-val" style="color:var(--ok)">'+del+'</div><div class="sc-lbl">Entregados</div></div>'
@@ -1908,8 +1908,25 @@ function saveProd() {
   var desc = descEl ? descEl.value.trim() : '';
   var cat = catEl ? catEl.value : '';
   var available = availEl ? availEl.value === '1' : true;
-  if (!name) { showToast('Ingresa el nombre del producto'); return; }
+
+  // Validaciones con alert visible
+  if (!name) {
+    alert('⚠️ Campo obligatorio: ingresa el nombre del producto');
+    showToast('Ingresa el nombre del producto');
+    return;
+  }
+  if (!price || price <= 0) {
+    alert('⚠️ Campo obligatorio: ingresa un precio mayor a 0');
+    return;
+  }
+  if (!cat) {
+    alert('⚠️ Campo obligatorio: selecciona una categoría');
+    return;
+  }
+
   var extras = editExtras.filter(function(e) { return e.name.trim(); });
+
+  // Guardar en localStorage (igual que antes)
   upd(function(s) {
     if (editId) {
       for (var i = 0; i < s.products.length; i++) {
@@ -1924,6 +1941,51 @@ function saveProd() {
       s.products.push({id:Date.now(),name:name,price:price,desc:desc,cat:cat,available:available,emoji:name.charAt(0),photo:editPhoto,extras:extras});
     }
   });
+
+  // ── Guardar/actualizar en Supabase (columnas reales: nombre, precio, descripcion, categoria, imagen, disponible)
+  (async function() {
+    try {
+      // Convertir extras a texto "Nombre+Precio,..."
+      const extrasStr = extras.map(function(e) {
+        return e.name + (e.price ? '+' + e.price : '+0');
+      }).join(',');
+
+      const body = {
+        nombre:      name,
+        precio:      price,
+        descripcion: desc,
+        categoria:   cat,
+        imagen:      editPhoto || null,
+        disponible:  available
+      };
+      if (extrasStr) body.opciones_extras = extrasStr;
+
+      let result;
+      if (editId) {
+        // UPDATE: buscar sb_id del producto actual
+        var s = getStore();
+        var prod = null;
+        for (var i=0;i<s.products.length;i++) { if(s.products[i].id===editId){prod=s.products[i];break;} }
+        var sbId = prod && prod.sb_id ? prod.sb_id : editId;
+        result = await SB.patch('productos', sbId, body);
+        console.log('[SB] Producto actualizado en Supabase:', result);
+      } else {
+        result = await SB.post('productos', body);
+        console.log('[SB] Producto creado en Supabase:', result);
+        // Guardar sb_id en el producto local
+        if (result && result[0]) {
+          upd(function(s) {
+            var last = s.products[s.products.length - 1];
+            if (last && last.name === name) last.sb_id = result[0].id;
+          });
+        }
+      }
+    } catch(err) {
+      console.error('[SB] Error al guardar producto:', err);
+      alert('❌ Error de Supabase al guardar el producto:\n\n' + err.message + '\n\nVerifica:\n1. RLS activado sin política de INSERT\n2. Columnas incorrectas\n3. Conexión a internet');
+    }
+  })();
+
   closeProdModal(); renderEditor(); showToast('Producto guardado');
 }
 
@@ -4204,6 +4266,11 @@ function moConfirm() {
   var notes   = (document.getElementById('mo-notes')||{}).value||'';
   var cambio  = moGetCambio();
 
+  // Validaciones explícitas con alert
+  if (!name.trim()) { alert('⚠️ Falta: Nombre del cliente'); return; }
+  if (!address.trim()) { alert('⚠️ Falta: Dirección de entrega'); return; }
+  if (!_moCart.length) { alert('⚠️ El carrito está vacío. Agrega al menos un producto.'); return; }
+
   var total = 0;
   for (var i=0;i<_moCart.length;i++) total += _moCart[i].total;
 
@@ -4241,10 +4308,48 @@ function moConfirm() {
     total: total,
     status: 'nuevo',
     time: ts,
-    source: 'manual'  // marcar como pedido manual
+    source: 'manual'
   };
 
+  // Guardar en localStorage primero (rápido)
   upd(function(s) { s.orders.unshift(order); });
+
+  // ── Guardar en Supabase con alert si falla
+  (async function() {
+    try {
+      var detalles = items.map(function(it) {
+        return { nombre: it.name, cantidad: it.qty, precio_unitario: it.unit, total: it.total };
+      });
+      var body = {
+        cliente:         order.client,
+        telefono:        order.phone,
+        direccion:       order.address,
+        referencia:      order.ref,
+        detalles_pedido: JSON.stringify(detalles),
+        total:           order.total,
+        estado:          'Pendiente',
+        metodo_pago:     order.payment,
+        cambio:          order.cambio,
+        notas:           order.notes
+      };
+      console.log('[SB] Enviando pedido manual a Supabase:', body);
+      var result = await SB.post('pedidos', body);
+      if (result && result[0]) {
+        console.log('[SB] ✅ Pedido manual guardado, id Supabase:', result[0].id);
+        // Guardar sb_id para tracking
+        upd(function(s) {
+          if (s.orders[0] && s.orders[0].id === order.id) {
+            s.orders[0].sb_id = result[0].id;
+            s.orders[0].num   = '#' + result[0].id;
+          }
+        });
+      }
+    } catch(err) {
+      console.error('[SB] Error al guardar pedido manual:', err);
+      alert('❌ El pedido se guardó localmente pero FALLÓ al enviarse a Supabase:\n\n' + err.message + '\n\nCausas comunes:\n1. RLS activo sin política INSERT\n2. Columna incorrecta en la tabla pedidos\n3. El total llega como texto en vez de número');
+    }
+  })();
+
   showToast('✅ Pedido #' + orderNum + ' registrado correctamente');
   resetManualOrder();
   // Ir a pedidos para verlo
@@ -4383,7 +4488,11 @@ const SB = {
     const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
     if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     const r = await fetch(url, { headers: this.headers });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) {
+      const errTxt = await r.text();
+      console.error(`[SB] GET /${table} falló (${r.status}):`, errTxt);
+      throw new Error(`Supabase GET ${table}: ${r.status} — ${errTxt}`);
+    }
     return r.json();
   },
 
@@ -4391,7 +4500,11 @@ const SB = {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: 'POST', headers: this.headers, body: JSON.stringify(body)
     });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) {
+      const errTxt = await r.text();
+      console.error(`[SB] POST /${table} falló (${r.status}):`, errTxt, '\nBody enviado:', body);
+      throw new Error(`Supabase POST ${table}: ${r.status} — ${errTxt}`);
+    }
     return r.json();
   },
 
@@ -4399,7 +4512,11 @@ const SB = {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
       method: 'PATCH', headers: this.headers, body: JSON.stringify(body)
     });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) {
+      const errTxt = await r.text();
+      console.error(`[SB] PATCH /${table}/${id} falló (${r.status}):`, errTxt);
+      throw new Error(`Supabase PATCH ${table}: ${r.status} — ${errTxt}`);
+    }
     return r.json();
   }
 };
@@ -4435,7 +4552,7 @@ function sbPedidoToLocal(p) {
     cambio:  p.cambio || '',
     notes:   p.notas || '',
     items:   items,
-    total:   p.total || 0,
+    total:   parseFloat(p.total) || 0,  // force numeric — Supabase devuelve strings
     status:  SB_STATE_MAP[p.estado] || 'nuevo',
     time:    p.created_at || new Date().toISOString(),
     sb_id:   p.id,
@@ -4462,8 +4579,12 @@ function localPedidoToSb(o) {
 // ── CARGAR PRODUCTOS desde Supabase → localStorage ───────────────────
 async function sbLoadProductos() {
   try {
+    console.log('[SB] Cargando productos...');
     const prods = await SB.get('productos', { select: '*', order: 'categoria.asc,nombre.asc' });
-    if (!prods || !prods.length) return;
+    if (!prods || !prods.length) {
+      console.warn('[SB] La tabla productos está vacía o no se pudo leer');
+      return;
+    }
 
     upd(function(s) {
       // Reconstruir productos con formato local
@@ -4507,7 +4628,8 @@ async function sbLoadProductos() {
     if (typeof renderCats === 'function') renderCats();
     console.log('[SB] Productos cargados:', prods.length);
   } catch(e) {
-    console.warn('[SB] Error cargando productos:', e.message);
+    console.error('[SB] Error cargando productos:', e);
+    // No mostramos alert aquí para no bloquear la UI en cada carga
   }
 }
 
@@ -4554,6 +4676,9 @@ async function sbLoadPedidos() {
 async function sbSavePedido(localOrder) {
   try {
     const body = localPedidoToSb(localOrder);
+    // Garantizar que total sea número
+    body.total = parseFloat(body.total) || 0;
+    console.log('[SB] Guardando pedido:', body);
     const result = await SB.post('pedidos', body);
     if (result && result[0]) {
       // Actualizar el id local con el de Supabase
@@ -4569,7 +4694,8 @@ async function sbSavePedido(localOrder) {
       console.log('[SB] Pedido guardado, id:', result[0].id);
     }
   } catch(e) {
-    console.warn('[SB] Error guardando pedido:', e.message);
+    console.error('[SB] Error guardando pedido:', e);
+    alert('❌ No se pudo guardar el pedido en Supabase:\n\n' + e.message + '\n\nEl pedido SÍ quedó guardado localmente.');
   }
 }
 
