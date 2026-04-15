@@ -4,443 +4,286 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Repartidor — Papayaso</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#111111;--bg2:#1a1a1a;--bg3:#222222;--bg4:#2a2a2a;
-  --border:#333333;--border2:#444444;
-  --tx:#ffffff;--tx2:#cccccc;--tx3:#999999;
-  --fire:#ff6b00;--fire2:#ff8c00;--fire-bg:rgba(255,107,0,0.13);--fire-border:rgba(255,107,0,0.4);
-  --ok:#38c96a;--ok-bg:rgba(56,201,106,0.12);--ok-border:rgba(56,201,106,0.35);
-  --warn:#f0a020;--warn-bg:rgba(240,160,32,0.12);
-  --info:#4a9eff;--info-bg:rgba(74,158,255,0.12);
-  --purple:#9b72e8;--purple-bg:rgba(155,114,232,0.12);
-  --danger:#e04040;--danger-bg:rgba(224,64,64,0.12);
-  --gold:#ff6b00;
-  --r:12px;--rs:8px;
+  --green:#ff6b00;--dark:#111;--white:#fff;--bg:#f7f7f7;
+  --border:#e5e5e5;--muted:#888;--text:#111;
+  --ok:#2d8a3e;--ok-bg:#f0faf2;
+  --warn:#e65100;--warn-bg:#fff3e0;
+  --info:#1565c0;--info-bg:#e3f2fd;
+  --danger:#c62828;--danger-bg:#fdecea;
+  --purple:#6a1b9a;--purple-bg:#f3e5f5;
+  --r:14px;--rs:8px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;}
-
-/* ===== LOGIN ===== */
-#login-screen{
-  min-height:100vh;display:flex;align-items:center;justify-content:center;
-  background:var(--bg);padding:20px;
-}
-.login-box{
-  background:var(--bg2);border:1px solid var(--border);
-  border-radius:16px;padding:32px 28px;width:100%;max-width:360px;
-  box-shadow:0 20px 60px rgba(0,0,0,0.5);text-align:center;
-}
-.login-logo{font-size:40px;margin-bottom:12px;}
-.login-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;color:var(--fire2);margin-bottom:4px;}
-.login-sub{font-size:13px;color:var(--tx3);margin-bottom:24px;}
-.login-fg{margin-bottom:14px;text-align:left;}
-.login-fg label{display:block;font-size:11px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
-.login-fg input{width:100%;padding:10px 13px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:14px;color:var(--tx);transition:border-color .15s;}
-.login-fg input:focus{outline:none;border-color:var(--fire);}
-.login-btn{width:100%;padding:12px;background:var(--fire);color:#fff;border:none;border-radius:var(--rs);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s;margin-top:4px;}
-.login-btn:hover{background:#c44518;}
-.login-err{background:var(--danger-bg);color:var(--danger);border:1px solid rgba(224,64,64,0.3);border-radius:var(--rs);padding:9px 13px;font-size:13px;margin-top:10px;display:none;}
-
-/* ===== APP ===== */
-#app-screen{display:none;}
-
-/* TOPBAR */
-.topbar{
-  background:var(--bg2);border-bottom:1px solid var(--border);
-  padding:0 16px;height:54px;
-  display:flex;align-items:center;gap:10px;
-  position:sticky;top:0;z-index:100;
-}
-.t-logo{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--fire2);}
-.t-role{font-size:11px;color:var(--tx3);background:var(--bg3);border:1px solid var(--border);border-radius:100px;padding:2px 10px;margin-left:4px;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+/* Topbar */
+.topbar{background:var(--dark);display:flex;align-items:center;gap:10px;padding:0 16px;height:54px;position:sticky;top:0;z-index:100;}
+.t-name{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:900;color:var(--green);}
 .t-spacer{flex:1;}
-.t-rider{font-size:13px;font-weight:600;color:var(--tx2);}
-.logout-btn{padding:6px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:12px;font-weight:500;color:var(--tx3);cursor:pointer;transition:all .15s;}
-.logout-btn:hover{color:var(--tx);border-color:var(--border2);}
-
-/* TABS */
-.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg2);}
-.tab-btn{flex:1;padding:13px 8px;border:none;background:transparent;font-family:inherit;font-size:13px;font-weight:500;color:var(--tx3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
-.tab-btn:hover{color:var(--tx);}
-.tab-btn.active{color:var(--fire2);border-bottom-color:var(--fire);}
-.tab-badge{background:var(--fire);color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;margin-left:4px;}
-
-.page{padding:16px;}
-.panel{display:none;}
-.panel.active{display:block;}
-
-/* STATS STRIP */
-.stats-strip{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;}
-.scard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 12px;text-align:center;}
-.scard-val{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;line-height:1;}
-.scard-lbl{font-size:10px;color:var(--tx3);margin-top:4px;}
-
-/* ORDER CARDS */
-.order-list{display:flex;flex-direction:column;gap:12px;}
-.ocard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:border-color .15s;}
-.ocard:hover{border-color:var(--border2);}
-.ocard-top{padding:14px 16px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
-.ocard-left{flex:1;min-width:0;}
-.onum{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;}
-.otime{font-size:10px;color:var(--tx3);margin-top:1px;}
-.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:100px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;}
-.b-listo{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-border);}
-.b-camino{background:var(--purple-bg);color:var(--purple);}
-.b-entregado{background:rgba(255,255,255,.04);color:var(--tx3);}
-
-/* CLIENT INFO */
-.client-info{padding:0 16px 12px;border-top:1px solid var(--border);padding-top:12px;}
-.ci-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
-.ci-icon{font-size:15px;width:22px;text-align:center;flex-shrink:0;}
-.ci-text{font-size:13px;color:var(--tx2);}
-.ci-text strong{color:var(--tx);font-weight:600;}
-.ci-text a{color:var(--info);text-decoration:none;}
-.ci-text a:hover{text-decoration:underline;}
-
-/* ITEMS LIST */
-.items-list{background:var(--bg3);border-radius:var(--rs);padding:10px 12px;margin:0 16px 12px;}
-.item-row{font-size:12px;color:var(--tx2);padding:3px 0;display:flex;gap:6px;}
-.item-row:not(:last-child){border-bottom:1px solid var(--border);}
-
-/* ACTIONS */
-.ocard-actions{padding:10px 16px 14px;display:flex;gap:8px;flex-wrap:wrap;}
-.act-btn{flex:1;padding:10px 8px;border-radius:var(--rs);border:none;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-align:center;}
-.act-camino{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(155,114,232,0.3);}
-.act-camino:hover{background:rgba(155,114,232,0.2);}
-.act-entregado{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-border);}
-.act-entregado:hover{background:rgba(56,201,106,0.2);}
-.act-wa{background:#25D366;color:#fff;border:1px solid transparent;display:flex;align-items:center;justify-content:center;gap:6px;}
-.act-wa:hover{background:#1da854;}
-.maps-btn{flex:1;padding:10px 8px;border-radius:var(--rs);border:1px solid rgba(74,158,255,0.3);background:var(--info-bg);color:var(--info);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-align:center;display:flex;align-items:center;justify-content:center;gap:5px;}
-.maps-btn:hover{background:rgba(74,158,255,0.2);}
-.waze-btn{flex:1;padding:10px 8px;border-radius:var(--rs);border:1px solid rgba(0,198,140,0.3);background:rgba(0,198,140,0.1);color:#00c68c;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-align:center;display:flex;align-items:center;justify-content:center;gap:5px;}
-.waze-btn:hover{background:rgba(0,198,140,0.2);}
-.maps-btn:hover{background:rgba(74,158,255,0.2);}
-
-/* TOTAL */
-.ocard-total{padding:8px 16px 12px;display:flex;justify-content:space-between;align-items:center;}
-.ot-lbl{font-size:11px;color:var(--tx3);}
-.ot-val{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--fire2);}
-
-/* EMPTY */
-.empty-state{text-align:center;padding:60px 20px;color:var(--tx3);}
-.empty-icon{font-size:40px;margin-bottom:12px;}
-
-/* HISTORY TABLE */
-.hist-table{width:100%;border-collapse:collapse;font-size:13px;}
-.hist-table th{text-align:left;padding:8px 10px;font-size:10px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);}
-.hist-table td{padding:10px;border-bottom:1px solid var(--border);color:var(--tx2);}
-.hist-table tr:hover td{background:var(--bg3);}
-
-/* TOAST */
-#toast{position:fixed;top:16px;right:16px;background:var(--bg2);border:1px solid var(--border);color:var(--tx);padding:10px 16px;border-radius:var(--r);font-size:13px;font-weight:500;opacity:0;transition:opacity .25s;pointer-events:none;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.4);}
-#toast.show{opacity:1;}
-
-@media(max-width:480px){.stats-strip{grid-template-columns:1fr 1fr;}.ocard-actions{flex-direction:column;}}
+.t-badge{font-size:11px;font-weight:700;background:var(--green);color:#fff;padding:3px 10px;border-radius:100px;}
+/* PIN screen */
+.pin-screen{position:fixed;inset:0;background:var(--dark);display:flex;align-items:center;justify-content:center;z-index:500;flex-direction:column;gap:16px;padding:24px;}
+.pin-box{background:#1a1a1a;border-radius:20px;padding:32px 24px;max-width:320px;width:100%;text-align:center;}
+.pin-title{font-family:'Montserrat',sans-serif;font-size:20px;font-weight:900;color:#fff;margin-bottom:6px;}
+.pin-sub{font-size:13px;color:rgba(255,255,255,.5);margin-bottom:20px;}
+.pin-input{width:100%;padding:14px;font-size:20px;font-weight:700;text-align:center;border-radius:10px;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#fff;font-family:inherit;letter-spacing:6px;margin-bottom:16px;}
+.pin-input:focus{outline:none;border-color:var(--green);}
+.pin-btn{width:100%;padding:14px;background:var(--green);color:#fff;border:none;border-radius:10px;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;}
+.pin-err{color:#f44336;font-size:13px;margin-top:-8px;display:none;}
+/* Content */
+.content{padding:16px;max-width:600px;margin:0 auto;}
+.section-head{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:900;margin-bottom:4px;}
+.section-sub{font-size:12px;color:var(--muted);margin-bottom:16px;}
+/* Order cards */
+.ocard{background:var(--white);border-radius:var(--r);border:1.5px solid var(--border);margin-bottom:12px;overflow:hidden;border-left:4px solid var(--border);}
+.ocard.listo{border-left-color:var(--ok);}
+.ocard.camino{border-left-color:var(--purple);}
+.ocard.entregado{border-left-color:var(--muted);opacity:.6;}
+.orow{padding:12px 14px;border-bottom:1px solid var(--border);}
+.orow:last-child{border-bottom:none;}
+.orow-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.onum{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:900;}
+.ostate{font-size:10px;font-weight:700;padding:2px 9px;border-radius:100px;text-transform:uppercase;}
+.s-listo{background:var(--ok-bg);color:var(--ok);}
+.s-camino{background:var(--purple-bg);color:var(--purple);}
+.s-entregado{background:#f5f5f5;color:#888;}
+.oclient{font-size:13px;font-weight:600;flex:1;}
+.oprice{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:900;color:var(--green);margin-left:auto;}
+.oaddr{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:5px;}
+.oitems{font-size:11px;color:var(--muted);}
+.opay{font-size:11px;font-weight:600;background:var(--bg);padding:2px 8px;border-radius:100px;border:1px solid var(--border);}
+/* Acciones */
+.oactions{display:flex;gap:8px;padding:10px 14px;flex-wrap:wrap;}
+.btn{padding:9px 16px;border-radius:var(--rs);border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;}
+.btn-green{background:var(--ok);color:#fff;}
+.btn-purple{background:var(--purple);color:#fff;}
+.btn-maps{background:#4285F4;color:#fff;}
+.btn-wa{background:#25D366;color:#fff;}
+.btn-sm{font-size:11px;padding:6px 12px;}
+/* Empty */
+.empty{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-icon{font-size:48px;margin-bottom:12px;}
+/* Refresh bar */
+.refresh-bar{display:flex;align-items:center;justify-content:space-between;background:var(--white);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;border:1.5px solid var(--border);}
+.refresh-lbl{font-size:12px;color:var(--muted);}
+.refresh-dot{width:8px;height:8px;border-radius:50%;background:#4caf50;animation:pulse 2s infinite;display:inline-block;margin-right:5px;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.refresh-btn{background:var(--bg);border:1.5px solid var(--border);color:var(--text);font-family:inherit;font-size:11px;font-weight:600;padding:5px 12px;border-radius:var(--rs);cursor:pointer;}
+/* Toast */
+#toast-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;}
+#toast{background:#333;color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;display:none;white-space:nowrap;}
+#toast.show{display:block;animation:slideUp .3s ease;}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
 </style>
 </head>
 <body>
 
-<div id="toast"></div>
-
-<!-- ===== LOGIN ===== -->
-<div id="login-screen">
-  <div class="login-box">
-    <div class="login-logo">🛵</div>
-    <div class="login-title">Panel Repartidor</div>
-    <div class="login-sub">Papayaso — Domicilios</div>
-    <div class="login-fg">
-      <label>Tu nombre</label>
-      <input id="login-name" type="text" placeholder="Ej: Juan Pérez">
-    </div>
-    <div class="login-fg">
-      <label>PIN de acceso</label>
-      <input id="login-pin" type="password" placeholder="••••" maxlength="6" onkeydown="if(event.key==='Enter')doLogin()">
-    </div>
-    <button class="login-btn" onclick="doLogin()">Entrar</button>
-    <div id="login-err" class="login-err">PIN incorrecto. Contacta al administrador.</div>
-    <p style="font-size:11px;color:var(--tx3);margin-top:16px">El PIN lo configura el administrador del restaurante</p>
+<!-- PIN SCREEN -->
+<div class="pin-screen" id="pin-screen">
+  <div class="pin-box">
+    <div style="font-size:40px;margin-bottom:10px">🛵</div>
+    <div class="pin-title">Panel Repartidor</div>
+    <div class="pin-sub">Papayaso — Ingresa tu PIN de acceso</div>
+    <input class="pin-input" id="pin-input" type="password" maxlength="6" placeholder="••••" onkeydown="if(event.key==='Enter')checkPin()">
+    <div class="pin-err" id="pin-err">PIN incorrecto. Inténtalo de nuevo.</div>
+    <button class="pin-btn" onclick="checkPin()">Entrar →</button>
   </div>
 </div>
 
-<!-- ===== APP ===== -->
-<div id="app-screen">
-  <div class="topbar">
-    <div class="t-logo">🍔 Papayaso</div>
-    <span class="t-role">Repartidor</span>
-    <div class="t-spacer"></div>
-    <span class="t-rider" id="rider-name-display"></span>
-    <button class="logout-btn" onclick="doLogout()">Salir</button>
-  </div>
-
-  <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('pendientes',this)">
-      Pendientes <span class="tab-badge" id="tab-badge-pend" style="display:none">0</span>
-    </button>
-    <button class="tab-btn" onclick="switchTab('camino',this)">
-      En camino <span class="tab-badge" id="tab-badge-camino" style="display:none">0</span>
-    </button>
-    <button class="tab-btn" onclick="switchTab('historial',this)">Historial</button>
-  </div>
-
-  <div class="page">
-
-    <!-- PENDIENTES (listos para recoger) -->
-    <div id="panel-pendientes" class="panel active">
-      <div class="stats-strip" id="stats-strip"></div>
-      <div class="order-list" id="list-pendientes"></div>
-      <div id="empty-pend" class="empty-state" style="display:none">
-        <div class="empty-icon">✅</div>
-        <div>No hay pedidos listos para recoger</div>
-        <p style="font-size:12px;margin-top:6px">Cuando el restaurante marque un pedido como "Listo", aparecerá aquí</p>
-      </div>
-    </div>
-
-    <!-- EN CAMINO -->
-    <div id="panel-camino" class="panel">
-      <div class="order-list" id="list-camino"></div>
-      <div id="empty-camino" class="empty-state" style="display:none">
-        <div class="empty-icon">🛵</div>
-        <div>No tienes pedidos en camino</div>
-      </div>
-    </div>
-
-    <!-- HISTORIAL -->
-    <div id="panel-historial" class="panel">
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;">
-        <table class="hist-table">
-          <thead><tr><th>Pedido</th><th>Cliente</th><th>Total</th><th>Estado</th><th>Hora</th></tr></thead>
-          <tbody id="hist-body"></tbody>
-        </table>
-      </div>
-      <div id="empty-hist" class="empty-state" style="display:none">
-        <div class="empty-icon">📋</div>
-        <div>Sin historial aún</div>
-      </div>
-    </div>
-
-  </div>
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="t-name">🛵 Repartidor</div>
+  <div class="t-spacer"></div>
+  <span class="t-badge" id="pedidos-count">0 pendientes</span>
 </div>
+
+<!-- CONTENT -->
+<div class="content" style="display:none" id="main-content">
+  <div class="refresh-bar">
+    <div><span class="refresh-dot"></span><span class="refresh-lbl">Actualización automática cada 10s</span></div>
+    <button class="refresh-btn" onclick="cargarPedidos()">↻ Actualizar</button>
+  </div>
+  <div class="section-head">Pedidos activos</div>
+  <div class="section-sub" id="last-update">Esperando datos...</div>
+  <div id="pedidos-list"><div class="empty"><div class="empty-icon">⏳</div><div>Cargando pedidos...</div></div></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast-bar"><span id="toast"></span></div>
 
 <script>
-// ===== STORE =====
-const SK='restaurante_v3';
-const RIDER_KEY='rider_session';
+// ─────────────────────────────────────────────────────────────
+// SUPABASE
+// ─────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-function getStore(){
-  try{const r=localStorage.getItem(SK);if(!r)return null;return JSON.parse(r);}
-  catch(e){return null;}
-}
-function saveStore(d){localStorage.setItem(SK,JSON.stringify(d));}
-function upd(fn){const s=getStore();if(!s)return;fn(s);saveStore(s);}
+const SB = {
+  h: {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Prefer': 'return=representation'
+  },
+  async get(table, params) {
+    const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
+    const r = await fetch(url, { headers: this.h });
+    if (!r.ok) { const e = await r.text(); console.error('[SB]',r.status,e); throw new Error(e); }
+    return r.json();
+  },
+  async patch(table, id, body) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method: 'PATCH', headers: this.h, body: JSON.stringify(body)
+    });
+    if (!r.ok) { const e = await r.text(); console.error('[SB]',r.status,e); throw new Error(e); }
+    return r.json();
+  }
+};
 
-// ===== AUTH =====
-function doLogin(){
-  const name=document.getElementById('login-name').value.trim();
-  const pin=document.getElementById('login-pin').value.trim();
-  const err=document.getElementById('login-err');
-  err.style.display='none';
-  if(!name){err.textContent='Ingresa tu nombre';err.style.display='block';return;}
-  if(!pin){err.textContent='Ingresa el PIN';err.style.display='block';return;}
+// ─────────────────────────────────────────────────────────────
+// PIN
+// ─────────────────────────────────────────────────────────────
+var RIDER_PIN = '1234'; // PIN por defecto — se sobreescribe con el de Supabase config
 
-  const s=getStore();
-  const cfg=s?s.config:{};
-  const validPin=cfg.riderPin||'1234'; // PIN por defecto
+async function checkPin() {
+  const pin = document.getElementById('pin-input').value.trim();
+  // Leer PIN real desde localStorage del sistema (mismo que el admin guarda)
+  try {
+    const stored = localStorage.getItem('restaurante_v3');
+    if (stored) {
+      const data = JSON.parse(stored);
+      if (data && data.config && data.config.riderPin) {
+        RIDER_PIN = String(data.config.riderPin);
+      }
+    }
+  } catch(e) {}
 
-  if(pin!==validPin){err.style.display='block';return;}
-
-  localStorage.setItem(RIDER_KEY,JSON.stringify({name,time:new Date().toISOString()}));
-  showApp(name);
-}
-
-function doLogout(){
-  localStorage.removeItem(RIDER_KEY);
-  document.getElementById('app-screen').style.display='none';
-  document.getElementById('login-screen').style.display='flex';
-  document.getElementById('login-pin').value='';
-}
-
-function showApp(name){
-  document.getElementById('login-screen').style.display='none';
-  document.getElementById('app-screen').style.display='block';
-  document.getElementById('rider-name-display').textContent='👋 '+name;
-  renderAll();
-  // Auto-refresh every 20 seconds
-  setInterval(renderAll,20000);
-}
-
-// ===== TABS =====
-function switchTab(tab,btn){
-  document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
-  document.getElementById('panel-'+tab).classList.add('active');
-  renderAll();
-}
-
-// ===== RENDER =====
-const SL={nuevo:'Nuevo',aceptado:'Aceptado',preparando:'Preparando',listo:'Listo',camino:'En camino',entregado:'Entregado',cancelado:'Cancelado'};
-
-function renderAll(){
-  const s=getStore();
-  if(!s){return;}
-  renderStats(s);
-  renderPendientes(s);
-  renderCamino(s);
-  renderHistorial(s);
-}
-
-function renderStats(s){
-  const today=s.orders.filter(o=>isToday(o.time));
-  const entregados=today.filter(o=>o.status==='entregado').length;
-  const enCamino=s.orders.filter(o=>o.status==='camino').length;
-  const listos=s.orders.filter(o=>o.status==='listo').length;
-  document.getElementById('stats-strip').innerHTML=`
-    <div class="scard"><div class="scard-val" style="color:var(--ok)">${entregados}</div><div class="scard-lbl">Entregados hoy</div></div>
-    <div class="scard"><div class="scard-val" style="color:var(--purple)">${enCamino}</div><div class="scard-lbl">En camino</div></div>
-    <div class="scard"><div class="scard-val" style="color:var(--warn)">${listos}</div><div class="scard-lbl">Listos a recoger</div></div>
-  `;
-  // badges
-  const bp=document.getElementById('tab-badge-pend');
-  const bc=document.getElementById('tab-badge-camino');
-  if(listos>0){bp.style.display='inline';bp.textContent=listos;}else bp.style.display='none';
-  if(enCamino>0){bc.style.display='inline';bc.textContent=enCamino;}else bc.style.display='none';
-}
-
-function renderPendientes(s){
-  const orders=s.orders.filter(o=>o.status==='listo');
-  const list=document.getElementById('list-pendientes');
-  const empty=document.getElementById('empty-pend');
-  if(!orders.length){list.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
-  list.innerHTML=orders.map(o=>orderCard(o,'pendiente')).join('');
-}
-
-function renderCamino(s){
-  const orders=s.orders.filter(o=>o.status==='camino');
-  const list=document.getElementById('list-camino');
-  const empty=document.getElementById('empty-camino');
-  if(!orders.length){list.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
-  list.innerHTML=orders.map(o=>orderCard(o,'camino')).join('');
-}
-
-function renderHistorial(s){
-  const orders=s.orders.filter(o=>['entregado','cancelado'].includes(o.status));
-  const body=document.getElementById('hist-body');
-  const empty=document.getElementById('empty-hist');
-  const tbl=body.closest('div');
-  if(!orders.length){body.innerHTML='';tbl.style.display='none';empty.style.display='block';return;}
-  tbl.style.display='block';empty.style.display='none';
-  const bc={entregado:'b-entregado',camino:'b-camino',listo:'b-listo'};
-  body.innerHTML=orders.map(o=>`<tr>
-    <td style="font-weight:600;color:var(--tx)">${o.num}</td>
-    <td>${o.client}</td>
-    <td style="color:var(--fire2);font-weight:600">${fp(o.total)}</td>
-    <td><span class="badge ${bc[o.status]||''}">${SL[o.status]||o.status}</span></td>
-    <td style="font-size:11px">${fmtTime(o.time)}</td>
-  </tr>`).join('');
-}
-
-function orderCard(o, mode){
-  var mapsUrl;
-  if(o.addressLat&&o.addressLng){
-    mapsUrl='https://www.google.com/maps/dir/?api=1&destination='+o.addressLat+','+o.addressLng+'&travelmode=driving';
+  if (pin === RIDER_PIN) {
+    document.getElementById('pin-screen').style.display = 'none';
+    document.getElementById('main-content').style.display = 'block';
+    await cargarPedidos();
+    setInterval(cargarPedidos, 10000);
   } else {
-    mapsUrl='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(o.address+', Medellin, Colombia');
+    const err = document.getElementById('pin-err');
+    if (err) err.style.display = 'block';
+    const inp = document.getElementById('pin-input');
+    if (inp) { inp.value = ''; inp.focus(); }
   }
-  const wazeUrl='https://waze.com/ul?q='+encodeURIComponent(o.address+', Medellín, Colombia')+'&navigate=yes';
-  const staticMapUrl='https://maps.googleapis.com/maps/api/staticmap?center='+encodeURIComponent(o.address+', Medellín, Colombia')+'&zoom=15&size=400x120&markers=color:red%7C'+encodeURIComponent(o.address)+'&key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU3Kuo';
-  const waPhone=o.phone?o.phone.replace(/\D/g,''):'';
-  const waUrl=waPhone?`https://wa.me/${waPhone.startsWith('57')?waPhone:'57'+waPhone}?text=${encodeURIComponent('Hola '+o.client+'! Soy el repartidor de Papayaso 🛵 Ya voy en camino con tu pedido '+o.num+'. Tiempo estimado: 20-30 min.')}`:'';
+}
 
-  const actBtns = mode==='pendiente'
-    ? `<button class="act-btn act-camino" onclick="marcarCamino(${o.id})">🛵 Salir a entregar</button>
-       ${waUrl?`<button class="act-btn act-wa" onclick="window.open('${waUrl}','_blank')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> Avisar cliente</button>`:''}
-       <button class="maps-btn" onclick="window.open('${mapsUrl}','_blank')" title="Navegar con Google Maps">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-          Maps
-        </button>
-        <button class="waze-btn" onclick="window.open('${wazeUrl}','_blank')" title="Navegar con Waze">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12S6.2 22.5 12 22.5 22.5 17.8 22.5 12 17.8 1.5 12 1.5zm3.5 13.5c-.3 0-.5-.1-.7-.3l-3-3c-.2-.2-.3-.4-.3-.7V7c0-.6.4-1 1-1s1 .4 1 1v3.6l2.7 2.7c.4.4.4 1 0 1.4-.2.2-.5.3-.7.3z"/></svg>
-          Waze
-        </button>`
-    : `<button class="act-btn act-entregado" onclick="marcarEntregado(${o.id})">✅ Marcar entregado</button>
-       ${waUrl?`<button class="act-btn act-wa" onclick="window.open('${waUrl}','_blank')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> WA cliente</button>`:''}
-       <button class="maps-btn" onclick="window.open('${mapsUrl}','_blank')" title="Navegar con Google Maps">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-          Maps
-        </button>
-        <button class="waze-btn" onclick="window.open('${wazeUrl}','_blank')" title="Navegar con Waze">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12S6.2 22.5 12 22.5 22.5 17.8 22.5 12 17.8 1.5 12 1.5zm3.5 13.5c-.3 0-.5-.1-.7-.3l-3-3c-.2-.2-.3-.4-.3-.7V7c0-.6.4-1 1-1s1 .4 1 1v3.6l2.7 2.7c.4.4.4 1 0 1.4-.2.2-.5.3-.7.3z"/></svg>
-          Waze
-        </button>`;
+document.getElementById('pin-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') checkPin();
+});
 
-  const badge=mode==='pendiente'
-    ? `<span class="badge b-listo">Listo para recoger</span>`
-    : `<span class="badge b-camino">En camino</span>`;
+// ─────────────────────────────────────────────────────────────
+// CARGAR PEDIDOS (Listo + En camino)
+// ─────────────────────────────────────────────────────────────
+async function cargarPedidos() {
+  try {
+    const pedidos = await SB.get('pedidos', {
+      select: '*',
+      order: 'created_at.desc',
+      limit: 50
+    });
 
-  return `<div class="ocard">
-    <div class="ocard-top">
-      <div class="ocard-left">
-        <div class="onum">${o.num}</div>
-        <div class="otime">${fmtTime(o.time)}</div>
+    const activos = (pedidos || []).filter(p =>
+      p.estado === 'Listo' || p.estado === 'En camino'
+    );
+
+    const count = document.getElementById('pedidos-count');
+    if (count) count.textContent = activos.length + ' pendiente' + (activos.length!==1?'s':'');
+
+    const sub = document.getElementById('last-update');
+    const now = new Date();
+    if (sub) sub.textContent = 'Última actualización: ' + now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+
+    renderPedidos(activos);
+  } catch(e) {
+    console.error('[Rep] Error cargando pedidos:', e);
+    showToast('Error al cargar pedidos');
+  }
+}
+
+function renderPedidos(pedidos) {
+  const el = document.getElementById('pedidos-list');
+  if (!el) return;
+
+  if (!pedidos.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div style="font-weight:700;margin-bottom:6px">Sin pedidos pendientes</div><div style="font-size:13px">Todos los pedidos han sido entregados.</div></div>';
+    return;
+  }
+
+  let html = '';
+  for (const p of pedidos) {
+    // Parsear items
+    let items = [];
+    try { items = typeof p.detalles_pedido === 'string' ? JSON.parse(p.detalles_pedido) : (p.detalles_pedido || []); } catch(e) {}
+
+    const itemsTxt = items.map(it => (it.cantidad||it.qty||1) + 'x ' + (it.nombre||it.name||'')).join(' · ');
+    const mapsLink = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent((p.direccion||'') + ', Medellín, Colombia') + '&travelmode=driving';
+    const waPhone = (p.telefono||'').replace(/\D/g,'');
+    const stateClass = p.estado === 'Listo' ? 'listo' : 'camino';
+    const stateLbl = p.estado === 'Listo' ? 'Listo' : 'En camino';
+    const stateCss = p.estado === 'Listo' ? 's-listo' : 's-camino';
+
+    html += `<div class="ocard ${stateClass}">
+      <div class="orow">
+        <div class="orow-top">
+          <span class="onum">#${p.id}</span>
+          <span class="ostate ${stateCss}">${stateLbl}</span>
+          <span class="oclient">${p.cliente||'Cliente'}</span>
+          <span class="oprice">$${parseFloat(p.total||0).toLocaleString('es-CO')}</span>
+        </div>
+        ${p.telefono ? `<div class="oaddr">📱 ${p.telefono}</div>` : ''}
+        <div class="oaddr">📍 ${p.direccion||'Sin dirección'}</div>
+        ${p.referencia ? `<div class="oaddr">📌 Ref: ${p.referencia}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <span class="opay">${p.metodo_pago||'Efectivo'}</span>
+          ${p.cambio && p.cambio!=='Exacto' ? `<span class="opay" style="color:var(--ok)">Paga con: ${p.cambio}</span>` : ''}
+        </div>
+        ${itemsTxt ? `<div class="oitems" style="margin-top:6px">${itemsTxt}</div>` : ''}
+        ${p.notas ? `<div class="oitems" style="margin-top:4px;color:var(--warn)">📝 ${p.notas}</div>` : ''}
       </div>
-      ${badge}
-    </div>
-    <!-- Mini mapa de la ubicacion -->
-  <div style="margin:0 16px 10px;border-radius:8px;overflow:hidden;border:1px solid var(--border2);position:relative">
-    <img src="${staticMapUrl}" alt="Mapa" style="width:100%;height:110px;object-fit:cover;display:block"
-      onerror="this.parentElement.style.display='none'">
-    <a href="${mapsUrl}" target="_blank" style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;text-decoration:none">Abrir Maps</a>
-  </div>
-  <div class="client-info">
-      <div class="ci-row"><span class="ci-icon">👤</span><span class="ci-text"><strong>${o.client}</strong></span></div>
-      ${o.phone?`<div class="ci-row"><span class="ci-icon">📞</span><span class="ci-text"><a href="tel:${o.phone}">${o.phone}</a></span></div>`:''}
-      <div class="ci-row"><span class="ci-icon">📍</span><span class="ci-text">${o.address}</span></div>
-      <div class="ci-row"><span class="ci-icon">💳</span><span class="ci-text">${o.payment||'Efectivo'}</span></div>
-      ${o.notes?`<div class="ci-row"><span class="ci-icon">📝</span><span class="ci-text" style="color:var(--warn)">${o.notes}</span></div>`:''}
-    </div>
-    ${(o.addressLat&&o.addressLng)?`<div style="margin:0 16px 10px;border-radius:8px;overflow:hidden;border:2px solid #1a73e8"><iframe src="https://maps.google.com/maps?q=${o.addressLat},${o.addressLng}&z=17&output=embed" style="width:100%;height:160px;border:none;display:block" loading="lazy" allowfullscreen=""></iframe><div style="background:#e8f0fe;padding:6px 10px;font-size:11px;font-weight:600;color:#1a73e8;display:flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="#1a73e8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>Ubicacion GPS del cliente</div></div>`:''}
-    <div class="items-list">
-      ${o.items.map(i=>`<div class="item-row"><span>${i.emoji||'🍽'}</span><span>${i.qty}× ${i.name}</span>${i.extras&&i.extras.length?`<span style="color:var(--tx3)">+ ${i.extras.map(e=>e.name).join(', ')}</span>`:''}</div>`).join('')}
-    </div>
-    <div class="ocard-total">
-      <span class="ot-lbl">Total a cobrar</span>
-      <span class="ot-val">${fp(o.total)}</span>
-    </div>
-    <div class="ocard-actions">${actBtns}</div>
-  </div>`;
-}
-
-function marcarCamino(id){
-  upd(s=>{const o=s.orders.find(x=>x.id===id);if(o)o.status='camino';});
-  toast('🛵 Pedido marcado como En camino');
-  renderAll();
-}
-function marcarEntregado(id){
-  upd(s=>{const o=s.orders.find(x=>x.id===id);if(o)o.status='entregado';});
-  toast('✅ ¡Pedido entregado!');
-  renderAll();
-}
-
-// ===== UTILS =====
-function fp(n){return '$'+(n||0).toLocaleString('es-CO');}
-function fmtTime(d){try{const dt=new Date(d);return dt.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})+' · '+dt.toLocaleDateString('es-CO',{day:'2-digit',month:'short'});}catch(e){return '';}}
-function isToday(d){try{return new Date(d).toDateString()===new Date().toDateString();}catch(e){return false;}}
-let tt;
-function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}
-
-// ===== INIT =====
-(function(){
-  const session=localStorage.getItem(RIDER_KEY);
-  if(session){
-    try{const s=JSON.parse(session);showApp(s.name);}
-    catch(e){/* show login */}
+      <div class="oactions">
+        <a href="${mapsLink}" target="_blank"><button class="btn btn-maps btn-sm">🗺 Maps</button></a>
+        ${waPhone ? `<a href="https://wa.me/${waPhone.startsWith('57')?waPhone:'57'+waPhone}" target="_blank"><button class="btn btn-wa btn-sm">💬 WhatsApp</button></a>` : ''}
+        ${p.estado === 'Listo' ? `<button class="btn btn-purple btn-sm" onclick="actualizarEstado(${p.id},'En camino')">🛵 Salir a entregar</button>` : ''}
+        <button class="btn btn-green btn-sm" onclick="actualizarEstado(${p.id},'Entregado')">✅ Entregado</button>
+      </div>
+    </div>`;
   }
-})();
+  el.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────
+// ACTUALIZAR ESTADO
+// ─────────────────────────────────────────────────────────────
+async function actualizarEstado(id, nuevoEstado) {
+  try {
+    await SB.patch('pedidos', id, { estado: nuevoEstado });
+    showToast(nuevoEstado === 'Entregado' ? '✅ Pedido entregado' : '🛵 En camino');
+    await cargarPedidos();
+  } catch(e) {
+    console.error('[Rep] Error actualizando estado:', e);
+    alert('❌ Error al actualizar estado:\n' + e.message + '\n\nVerifica tu conexión o los permisos en Supabase (RLS).');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────────────────────
+var toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
 </script>
 </body>
 </html>
