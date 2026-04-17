@@ -2108,9 +2108,12 @@ function loadConfig() {
   sv('cfg-rider-pin', c.riderPin || '1234'); sv('cfg-rider-url', c.riderUrl || 'repartidor.html');
   var su = document.getElementById('share-url-txt'); if (su) su.textContent = c.menuUrl || 'menu.html';
   var ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = c.riderUrl || 'repartidor.html';
-  // Cargar logo y portada
-  _updateLogoUI(c.logo || '');
-  _updateCoverUI(c.cover || '');
+  // Cargar logo y portada: solo actualizar la previsualización si hay URL.
+  // Si la columna está vacía, no tocar el área (evita borrar imágenes existentes).
+  if (c.logo)  _updateLogoUI(c.logo);
+  else if (!document.querySelector('#logo-area.has-photo')) _updateLogoUI('');
+  if (c.cover) _updateCoverUI(c.cover);
+  else if (!document.querySelector('#cover-area.has-photo')) _updateCoverUI('');
   // Cargar horarios por día
   renderScheduleEditor(c.schedule || {});
 }
@@ -4566,27 +4569,36 @@ Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadConfig() {
   try {
-    const rows = await SB.get('configuracion', { select: '*', limit: 1 });
+    const rows = await SB.get('configuracion', {
+      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,nit,telefono_local,url_logo,url_portada,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto',
+      'id': 'eq.1',
+      limit: 1
+    });
     if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
     const c = rows[0];
+
     upd(function(s) {
-      s.config.name       = c.nombre_negocio  || s.config.name;
-      s.config.whatsapp   = c.telefono_whatsapp|| s.config.whatsapp;
-      s.config.address    = c.direccion        || '';
-      s.config.desc       = c.descripcion      || '';
-      s.config.nit        = c.nit              || '';
-      s.config.phone      = c.telefono_local   || '';
-      s.config.logo       = c.url_logo         || '';
-      s.config.cover      = c.url_portada      || '';
-      s.config.welcome    = c.mensaje_bienvenida|| '';
-      s.config.menuUrl    = c.url_menu         || 'menu.html';
-      s.config.riderUrl   = c.url_repartidor   || 'repartidor.html';
-      s.config.riderPin   = c.pin_repartidor   || '1234';
-      s.config.deliveryMin= String(c.tiempo_entrega_min || 30);
-      s.config.deliveryMax= String(c.tiempo_entrega_max || 60);
+      s.config.name       = c.nombre_negocio   || s.config.name;
+      s.config.whatsapp   = c.telefono_whatsapp || s.config.whatsapp;
+      s.config.address    = c.direccion         || s.config.address  || '';
+      s.config.desc       = c.descripcion       || s.config.desc     || '';
+      s.config.nit        = c.nit               || s.config.nit      || '';
+      s.config.phone      = c.telefono_local    || s.config.phone    || '';
+      s.config.welcome    = c.mensaje_bienvenida|| s.config.welcome  || '';
+      s.config.menuUrl    = c.url_menu          || s.config.menuUrl  || 'menu.html';
+      s.config.riderUrl   = c.url_repartidor    || s.config.riderUrl || 'repartidor.html';
+      s.config.riderPin   = c.pin_repartidor    || s.config.riderPin || '1234';
+      s.config.deliveryMin= String(c.tiempo_entrega_min || s.config.deliveryMin || 30);
+      s.config.deliveryMax= String(c.tiempo_entrega_max || s.config.deliveryMax || 60);
       s.config.isOpen     = c.esta_abierto !== false;
+
+      // Imágenes: solo sobreescribir si Supabase devuelve URL no vacía.
+      // Si la columna está vacía (''), mantener lo que ya había en memoria.
+      if (c.url_logo   && c.url_logo.trim())    s.config.logo  = c.url_logo.trim();
+      if (c.url_portada && c.url_portada.trim()) s.config.cover = c.url_portada.trim();
     });
-    // Actualizar topbar
+
+    // ── Actualizar topbar ────────────────────────────────────────────────
     const cfg = getStore().config;
     const tn = document.getElementById('t-name'); if (tn) tn.textContent = cfg.name;
     document.title = 'Admin - ' + cfg.name;
@@ -4594,7 +4606,14 @@ async function sbLoadConfig() {
     if (tog) tog.className = 'tog ' + (cfg.isOpen ? 'on' : 'off');
     const lbl = document.getElementById('open-lbl');
     if (lbl) lbl.textContent = cfg.isOpen ? 'Abierto' : 'Cerrado';
-    console.log('[SB] Configuración cargada');
+
+    // ── Aplicar logo al panel de Configuración si ya está visible ────────
+    // _updateLogoUI y _updateCoverUI son las funciones que actualizan el
+    // área de previsualización del admin. Solo actúan si hay URL.
+    if (cfg.logo  && typeof _updateLogoUI  === 'function') _updateLogoUI(cfg.logo);
+    if (cfg.cover && typeof _updateCoverUI === 'function') _updateCoverUI(cfg.cover);
+
+    console.log('[SB] Config cargada — logo:', cfg.logo || '(sin url)', '| portada:', cfg.cover || '(sin url)');
   } catch(e) {
     console.error('[SB] Error cargando configuración:', e.message);
   }
