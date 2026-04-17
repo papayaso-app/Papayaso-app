@@ -760,15 +760,23 @@ function init() {
   var hd = document.getElementById('hero-delivery');
   if (hd) hd.textContent = (c.deliveryMin || '30') + ' – ' + (c.deliveryMax || '60') + ' min';
 
-  // Logo
+  // ── Logo ────────────────────────────────────────────────────────────
+  // sbCargarConfig ya lo aplica al DOM. init() lo reaplica solo si hay URL
+  // y nunca lo oculta (para no borrar lo que sbCargarConfig puso).
   var heroLogo = document.getElementById('hero-logo-img');
-  if (heroLogo) {
-    if (c.logo) { heroLogo.src = c.logo; heroLogo.style.display = 'block'; }
-    else { heroLogo.style.display = 'none'; }
+  if (heroLogo && c.logo) {
+    if (!heroLogo.src || heroLogo.src === window.location.href) {
+      // Solo asignar src si el elemento aún no tiene uno válido
+      heroLogo.src = c.logo;
+    }
+    heroLogo.style.display = 'block';
   }
-  // Portada
+
+  // ── Portada ──────────────────────────────────────────────────────────
   var heroCover = document.getElementById('hero-bg-el');
-  if (heroCover && c.cover) heroCover.style.backgroundImage = 'url(' + JSON.stringify(c.cover) + ')';
+  if (heroCover && c.cover) {
+    heroCover.style.backgroundImage = 'url(' + JSON.stringify(c.cover) + ')';
+  }
 
   // Panel de info
   var infoWaLink = document.getElementById('info-wa-link');
@@ -2029,28 +2037,60 @@ const SB_TO_LOCAL = {
 // ══════════════════════════════════════════════════════════════
 async function sbCargarConfig() {
   try {
-    const rows = await SB.get('configuracion', { select:'*', limit:1 });
-    if (!rows || !rows.length) { console.warn('[SB] Sin configuración en Supabase'); return; }
+    const rows = await SB.get('configuracion', {
+      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,mensaje_bienvenida,esta_abierto,url_logo,url_portada,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor',
+      'id': 'eq.1',
+      limit: 1
+    });
+    if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
     const c = rows[0];
+
+    // Actualizar solo los campos que Supabase devuelve con valor real.
+    // Las imágenes (logo / portada) se sobreescriben SOLO si la columna
+    // contiene una URL no vacía — así nunca se borra lo que ya existe.
+    const prev = _STORE.config;
     _STORE.config = {
-      name:        c.nombre_negocio    || 'Papayaso',
-      whatsapp:    c.telefono_whatsapp || '3001234567',
-      address:     c.direccion         || '',
-      hours:       c.horario           || '',
-      desc:        c.descripcion       || '',
-      welcome:     c.mensaje_bienvenida|| '¡Gracias por tu pedido!',
+      name:        c.nombre_negocio        || prev.name        || 'Papayaso',
+      whatsapp:    c.telefono_whatsapp      || prev.whatsapp    || '',
+      address:     c.direccion             || prev.address     || '',
+      desc:        c.descripcion           || prev.desc        || '',
+      welcome:     c.mensaje_bienvenida    || prev.welcome     || '',
       isOpen:      c.esta_abierto !== false,
-      logo:        c.url_logo          || '',
-      cover:       c.url_portada       || '',
-      deliveryMin: String(c.tiempo_entrega_min || 30),
-      deliveryMax: String(c.tiempo_entrega_max || 60),
-      menuUrl:     c.url_menu          || 'menu.html',
-      riderUrl:    c.url_repartidor    || 'repartidor.html',
-      riderPin:    c.pin_repartidor    || '1234'
+      // ── Imágenes: usar URL de Supabase si existe; si no, mantener la que ya había ──
+      logo:        (c.url_logo  && c.url_logo.trim())   ? c.url_logo.trim()  : (prev.logo  || ''),
+      cover:       (c.url_portada && c.url_portada.trim()) ? c.url_portada.trim(): (prev.cover || ''),
+      deliveryMin: String(c.tiempo_entrega_min || prev.deliveryMin || 30),
+      deliveryMax: String(c.tiempo_entrega_max || prev.deliveryMax || 60),
+      menuUrl:     c.url_menu         || prev.menuUrl    || 'menu.html',
+      riderUrl:    c.url_repartidor   || prev.riderUrl   || 'repartidor.html',
+      riderPin:    c.pin_repartidor   || prev.riderPin   || '1234'
     };
-    console.log('[SB] Config cargada:', _STORE.config.name);
+
+    // ── Aplicar logo al <img id="hero-logo-img"> inmediatamente ──────────
+    const logoEl = document.getElementById('hero-logo-img');
+    if (logoEl) {
+      if (_STORE.config.logo) {
+        logoEl.src = _STORE.config.logo;
+        logoEl.style.display = 'block';
+        logoEl.onerror = function() {
+          // Si la URL falla (imagen borrada del bucket), ocultar sin romper
+          logoEl.style.display = 'none';
+          console.warn('[SB] url_logo no cargó:', _STORE.config.logo);
+        };
+      }
+      // Si no hay URL, NO tocar display — puede haber un fallback visual en el CSS
+    }
+
+    // ── Aplicar portada al <div id="hero-bg-el"> inmediatamente ──────────
+    const coverEl = document.getElementById('hero-bg-el');
+    if (coverEl && _STORE.config.cover) {
+      coverEl.style.backgroundImage = 'url(' + JSON.stringify(_STORE.config.cover) + ')';
+    }
+
+    console.log('[SB] Config cargada — logo:', _STORE.config.logo || '(sin url)', '| portada:', _STORE.config.cover || '(sin url)');
   } catch(e) {
     console.error('[SB] Error cargando config:', e.message);
+    // No propagar — la UI sigue funcionando con los valores anteriores
   }
 }
 
