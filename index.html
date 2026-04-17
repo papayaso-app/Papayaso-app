@@ -717,74 +717,40 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
 <script>
 
 // ---- STORE ----
-var SK = 'restaurante_v3';
-var CLIENT_KEY = 'papayaso_client_v1';
-var TRACK_KEY = 'papayaso_last_order_id';
+// ── ESTADO EN MEMORIA (0 localStorage) ──────────────────────────────
+var _STORE = {
+  config: {
+    name: 'Papayaso', whatsapp: '3001234567',
+    address: '', hours: '', desc: '', welcome: '',
+    isOpen: true, logo: '', cover: '',
+    deliveryMin: '30', deliveryMax: '60'
+  },
+  categories: [], products: []
+};
+// ID del último pedido en Supabase (para tracking)
+var _lastSbPedidoId = 0;
+// Datos del cliente guardados en sesión (no persisten al cerrar tab)
+var _clientData = { name:'', phone:'', address:'', ref:'' };
 
-function getStore() {
-  try {
-    var r = localStorage.getItem(SK);
-    if (!r) return seed();
-    return JSON.parse(r);
-  } catch(e) { return seed(); }
-}
+function getStore() { return _STORE; }
 
-function seed() {
-  var d = {
-    config: {
-      name: 'Papayaso',
-      whatsapp: '3001234567',
-      address: 'Calle 8C 81B-10',
-      hours: 'Lun-Dom 11am-10pm',
-      desc: 'Pide desde casa - Entrega a domicilio',
-      welcome: 'Hola! Recibimos tu pedido en Papayaso. Pronto lo tendras!',
-      isOpen: true,
-      menuUrl: 'menu.html',
-      riderPin: '1234',
-      riderUrl: 'repartidor.html'
-    },
-    categories: ['Hamburguesas','Entradas','Postres','Bebidas'],
-    globalExtras: [],
-    products: [
-      {id:1,name:'Hamburguesa Clasica',cat:'Hamburguesas',price:28000,desc:'200g de carne, lechuga, tomate, cebolla caramelizada',emoji:'H',photo:'',available:true,extras:[{name:'Queso extra',price:2000},{name:'Tocino',price:3000},{name:'Papas fritas',price:5000}]},
-      {id:2,name:'Hamburguesa BBQ',cat:'Hamburguesas',price:32000,desc:'Carne angus, salsa BBQ artesanal, cebolla crispy',emoji:'H',photo:'',available:true,extras:[{name:'Doble carne',price:8000},{name:'Queso extra',price:2000}]},
-      {id:3,name:'Alitas BBQ',cat:'Entradas',price:18000,desc:'12 alitas crujientes con salsa BBQ artesanal',emoji:'A',photo:'',available:true,extras:[{name:'Extra salsa',price:2000},{name:'Aderezo ranch',price:1500}]},
-      {id:4,name:'Nachos cargados',cat:'Entradas',price:22000,desc:'Nachos con queso cheddar, guacamole y pico de gallo',emoji:'N',photo:'',available:true,extras:[{name:'Jalapenos',price:1000},{name:'Sour cream',price:1500}]},
-      {id:5,name:'Brownie con helado',cat:'Postres',price:14000,desc:'Brownie caliente con helado de vainilla',emoji:'B',photo:'',available:true,extras:[]},
-      {id:6,name:'Limonada de coco',cat:'Bebidas',price:8000,desc:'Refrescante limonada con leche de coco',emoji:'L',photo:'',available:true,extras:[{name:'Sin azucar',price:0},{name:'Jumbo',price:2000}]}
-    ],
-    orders: []
-  };
-  localStorage.setItem(SK, JSON.stringify(d));
-  return d;
-}
-
-function saveOrder(o) {
-  var s = getStore();
-  s.orders.unshift(o);
-  localStorage.setItem(SK, JSON.stringify(s));
-}
+// saveOrder ya no existe como función — sendOrder hace el INSERT directo en SB
+function saveOrder() { /* no-op: reemplazado por sendOrder+sbInsertPedido */ }
 
 // ---- STATE ----
 var cart = [];
 var curProd = null;
 var curQty = 1;
 var selX = [];
-// Número de pedido global y siempre ascendente entre días
-// Usa papayaso_order_counter — nunca se reinicia, continúa desde donde quedó
-var orderNum = 1;
-(function() {
-  try {
-    var saved = parseInt(localStorage.getItem('papayaso_order_counter') || '0');
-    orderNum = saved > 0 ? saved + 1 : 1;
-  } catch(e) { orderNum = 1; }
-})();
+// orderNum ya no se usa — Supabase genera el ID del pedido automáticamente
+var orderNum = 1; // dummy para compatibilidad con buildWhatsAppMsg
 var formOpen = false;
 
 // ---- INIT ----
 function init() {
   var s = getStore();
   var c = s.config;
+  // Nota: config se actualiza desde Supabase en sbInit() ANTES de llamar init()
   document.title = c.name + ' - Menu';
 
   // Hero nuevo
@@ -986,9 +952,8 @@ function openProd(id) {
       }
     }
     // Adiciones por categoría del producto
-    var ADDONS_SK = 'papayaso_cat_addons_v1';
-    var catAddons = [];
-    try { catAddons = JSON.parse(localStorage.getItem(ADDONS_SK)||'[]'); } catch(e2){}
+    // Adiciones por categoría vienen del store en memoria (_STORE._catAddons)
+    var catAddons = _STORE._catAddons || [];
     var relevantAddons = catAddons.filter(function(ad){ return ad.cat === p.cat; });
     for (var ai = 0; ai < relevantAddons.length; ai++) {
       var ad = relevantAddons[ai];
@@ -1257,7 +1222,7 @@ function toggleCambioOtro(val) {
 // ---- SAVED CLIENT DATA ----
 function loadSavedClientOnOpen() {
   var saved = null;
-  try { saved = JSON.parse(localStorage.getItem(CLIENT_KEY)); } catch(e) {}
+  saved = _clientData.name ? _clientData : null;
   var banner = document.getElementById('autofill-banner');
   var hint = document.getElementById('autofill-name-hint');
   if (saved && saved.name) {
@@ -1270,7 +1235,7 @@ function loadSavedClientOnOpen() {
 
 function loadSavedData() {
   var saved = null;
-  try { saved = JSON.parse(localStorage.getItem(CLIENT_KEY)); } catch(e) {}
+  saved = _clientData.name ? _clientData : null;
   if (!saved) return;
   var n = document.getElementById('o-name');
   var p = document.getElementById('o-phone');
@@ -1297,7 +1262,7 @@ function clearSavedData() {
 
 function saveClientData(name, phone, address, ref) {
   try {
-    localStorage.setItem(CLIENT_KEY, JSON.stringify({name:name, phone:phone, address:address, ref:ref}));
+    _clientData = {name:name, phone:phone, address:address, ref:ref};
   } catch(e) {}
 }
 
@@ -1340,11 +1305,7 @@ function sendOrder() {
   var saveChk = document.getElementById('chk-save');
   if (saveChk && saveChk.checked) saveClientData(name, rawPhone, address, ref);
 
-  // Save order ID for tracking
-  try {
-    localStorage.setItem(TRACK_KEY, String(orderNum));
-    localStorage.setItem('papayaso_order_counter', String(orderNum));
-  } catch(e) {}
+  // _lastSbPedidoId se asigna cuando Supabase responde con el id real
 
   var cfg = getStore().config;
 
@@ -1475,14 +1436,13 @@ function getLastOrder() {
     if (s.orders[ti].time && s.orders[ti].time.slice(0,10) === _today) todayOrders.push(s.orders[ti]);
   }
   if (!todayOrders.length) return null; // No orders from today
-  var lastId = '';
-  try { lastId = localStorage.getItem(TRACK_KEY) || ''; } catch(e) {}
-  if (lastId) {
+  // Buscar por _lastSbPedidoId (id de Supabase) o devolver el primero
+  if (_lastSbPedidoId) {
     for (var i = 0; i < todayOrders.length; i++) {
-      if (String(todayOrders[i].id) === String(lastId)) return {order: todayOrders[i], config: s.config};
+      if (String(todayOrders[i].id) === String(_lastSbPedidoId)) return {order: todayOrders[i], config: s.config};
     }
   }
-  return {order: todayOrders[0], config: s.config};
+  return todayOrders.length ? {order: todayOrders[0], config: s.config} : null;
 }
 
 function renderTracking() {
@@ -2027,210 +1987,373 @@ init();
   </div>
 </div>
 
-<!-- ===== SUPABASE INTEGRATION ===== -->
-<script>
-/* =====================================================================
-   CAPA SUPABASE — MENÚ CLIENTE
-   - Carga productos desde Supabase en lugar de localStorage
-   - Guarda pedidos en Supabase al enviar
-   - Tracking: polling del estado del pedido en Supabase cada 6s
-   ===================================================================== */
 
+<!-- ===== SUPABASE — 100% sin localStorage ===== -->
+<script>
+/* =============================================================
+   MENÚ CLIENTE — Supabase 100% (0 localStorage)
+   ============================================================= */
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
 const SB = {
-  headers: {
-    'Content-Type': 'application/json',
+  h: {
+    'Content-Type':'application/json',
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + SUPABASE_KEY,
     'Prefer': 'return=representation'
   },
   async get(table, params) {
     const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
-    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
-    const r = await fetch(url, { headers: this.headers });
-    if (!r.ok) throw new Error(await r.text());
+    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
+    const r = await fetch(url, { headers: this.h });
+    if (!r.ok) { const e = await r.text(); console.error(`[SB] GET ${table} ${r.status}:`,e); throw new Error(e); }
     return r.json();
   },
   async post(table, body) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method: 'POST', headers: this.headers, body: JSON.stringify(body)
+      method:'POST', headers: this.h, body: JSON.stringify(body)
     });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) { const e = await r.text(); console.error(`[SB] POST ${table} ${r.status}:`,e,'\nBody:',body); throw new Error(e); }
     return r.json();
   }
 };
 
-// Estado SB → Local (para tracking)
 const SB_TO_LOCAL = {
-  'Pendiente': 'nuevo', 'Aceptado': 'aceptado', 'Preparando': 'preparando',
-  'Listo': 'listo', 'En camino': 'camino', 'Entregado': 'entregado', 'Cancelado': 'cancelado'
+  'Pendiente':'nuevo','Aceptado':'aceptado','Preparando':'preparando',
+  'Listo':'listo','En camino':'camino','Entregado':'entregado','Cancelado':'cancelado'
 };
 
-// ── CARGAR PRODUCTOS desde Supabase ──────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// 1. CARGAR CONFIGURACIÓN
+// ══════════════════════════════════════════════════════════════
+async function sbCargarConfig() {
+  try {
+    const rows = await SB.get('configuracion', { select:'*', limit:1 });
+    if (!rows || !rows.length) { console.warn('[SB] Sin configuración en Supabase'); return; }
+    const c = rows[0];
+    _STORE.config = {
+      name:        c.nombre_negocio    || 'Papayaso',
+      whatsapp:    c.telefono_whatsapp || '3001234567',
+      address:     c.direccion         || '',
+      hours:       c.horario           || '',
+      desc:        c.descripcion       || '',
+      welcome:     c.mensaje_bienvenida|| '¡Gracias por tu pedido!',
+      isOpen:      c.esta_abierto !== false,
+      logo:        c.url_logo          || '',
+      cover:       c.url_portada       || '',
+      deliveryMin: String(c.tiempo_entrega_min || 30),
+      deliveryMax: String(c.tiempo_entrega_max || 60),
+      menuUrl:     c.url_menu          || 'menu.html',
+      riderUrl:    c.url_repartidor    || 'repartidor.html',
+      riderPin:    c.pin_repartidor    || '1234'
+    };
+    console.log('[SB] Config cargada:', _STORE.config.name);
+  } catch(e) {
+    console.error('[SB] Error cargando config:', e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 2. CARGAR PRODUCTOS
+// extras: JSONB [{name,price}] — ya viene parseado de Supabase
+// opciones_sabores: JSONB ["Vainilla","Chocolate"] — gratis
+// ══════════════════════════════════════════════════════════════
 async function sbCargarProductos() {
   try {
     const prods = await SB.get('productos', {
-      select: '*', order: 'categoria.asc,nombre.asc'
+      select:'*', 'disponible':'eq.true', order:'categoria.asc,nombre.asc'
     });
-    if (!prods || !prods.length) { console.warn('[SB] Sin productos en Supabase'); return; }
+    if (!prods || !prods.length) { console.warn('[SB] Sin productos'); return; }
 
-    // Convertir al formato que usa renderSections
-    const s = getStore();
-    s.products = prods.map(function(p) {
-      // Extras: "Nombre+Precio,Nombre2+0" → [{name, price}]
+    _STORE.products = prods.map(function(p) {
+      // extras JSONB: [{name:"Queso extra", price:2000}, ...]
       let extras = [];
-      if (p.opciones_extras) {
-        String(p.opciones_extras).split(',').forEach(function(part) {
-          const idx = part.lastIndexOf('+');
-          if (idx > 0) {
-            extras.push({
-              name:  part.slice(0, idx).trim(),
-              price: parseInt(part.slice(idx+1)) || 0
-            });
-          } else if (part.trim()) {
-            extras.push({ name: part.trim(), price: 0 });
-          }
-        });
+      if (Array.isArray(p.extras)) {
+        extras = p.extras.filter(e => e && e.name);
+      } else if (p.extras) {
+        try { extras = JSON.parse(p.extras); } catch(e) {}
       }
-      // Sabores: "Vainilla,Chocolate" → extras gratuitos
-      if (p.opciones_sabores) {
-        String(p.opciones_sabores).split(',').forEach(function(s) {
-          const name = s.trim();
-          if (name) extras.unshift({ name: name, price: 0, tipo: 'sabor' });
+
+      // opciones_sabores JSONB: ["Vainilla","Chocolate"] — precio 0
+      if (Array.isArray(p.opciones_sabores) && p.opciones_sabores.length) {
+        p.opciones_sabores.forEach(function(s) {
+          if (s && s.trim()) extras.unshift({ name: s.trim(), price: 0, tipo: 'sabor' });
         });
+      } else if (p.opciones_sabores && typeof p.opciones_sabores === 'string') {
+        try {
+          const arr = JSON.parse(p.opciones_sabores);
+          arr.forEach(function(s) {
+            if (s && s.trim()) extras.unshift({ name: s.trim(), price: 0, tipo: 'sabor' });
+          });
+        } catch(e) {}
       }
+
       return {
         id:        p.id,
         sb_id:     p.id,
-        name:      p.nombre || '',
-        cat:       p.categoria || 'General',
+        name:      p.nombre      || '',
+        cat:       p.categoria   || 'General',
         price:     parseInt(p.precio) || 0,
         desc:      p.descripcion || '',
-        photo:     p.imagen_url || '',
+        photo:     p.imagen_url  || '',
         emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
-        available: true,
+        available: p.disponible !== false,
         extras:    extras
       };
     });
 
-    // Categorías únicas
-    s.categories = [...new Set(prods.map(p => p.categoria).filter(Boolean))];
-    localStorage.setItem('restaurante_v3', JSON.stringify(s));
-
-    // Re-renderizar el menú con los datos de SB
-    renderCats(s);
-    renderSections(s, 'all');
-    console.log('[SB] Productos cargados:', prods.length);
+    // Categorías únicas en orden de aparición
+    _STORE.categories = [...new Set(prods.map(p => p.categoria).filter(Boolean))];
+    console.log('[SB] Productos cargados:', prods.length, '— Categorías:', _STORE.categories);
   } catch(e) {
-    console.warn('[SB] Error cargando productos:', e.message);
-    // Fallback: usar lo que haya en localStorage
+    console.error('[SB] Error cargando productos:', e.message);
   }
 }
 
-// ── GUARDAR PEDIDO en Supabase ────────────────────────────────────────
-// Interceptamos saveOrder para que también guarde en SB
-const _origSaveOrder = window.saveOrder || function(){};
-window.saveOrder = async function(o) {
-  _origSaveOrder(o);  // guarda en localStorage primero (tracking local sigue funcionando)
+// ══════════════════════════════════════════════════════════════
+// 3. RENDERIZAR CARRITO con extras JSONB
+// Sobrescribe renderCartItems para manejar extras [{name,price}]
+// ══════════════════════════════════════════════════════════════
+(function patchRenderCartItems() {
+  // La función original ya soporta extras como [{name,price}]
+  // Solo necesitamos asegurar que el formato de item.extras sea correcto
+  // cart[] se llena en addToCart() usando curProd.extras que ya vienen como JSONB
+  // → no se necesita patch adicional
+})();
+
+// ══════════════════════════════════════════════════════════════
+// 4. INSERT EN PEDIDOS al finalizar compra
+// sendOrder() construye el mensaje WA; nosotros hacemos el INSERT aquí
+// ══════════════════════════════════════════════════════════════
+async function sbInsertPedido(orderData) {
+  // orderData: {client, phone, address, ref, payment, cambio, items[], total, notes}
+  const detalles = (orderData.items || []).map(function(it) {
+    return {
+      nombre:          it.name  || '',
+      cantidad:        it.qty   || 1,
+      precio_unitario: it.unit  || 0,
+      // extras JSONB: [{name,price}] — ya en el formato correcto
+      extras:          (it.extras || []).map(function(e) {
+        return { nombre: e.name || e, precio: e.price || 0 };
+      }),
+      nota:            it.note  || ''
+    };
+  });
+
+  const body = {
+    cliente:         orderData.client   || '',
+    telefono:        orderData.phone    || '',
+    direccion:       orderData.address  || '',
+    referencia:      orderData.ref      || '',
+    detalles_pedido: detalles,            // JSONB directo — NO JSON.stringify
+    total:           parseFloat(orderData.total) || 0,
+    estado:          'Pendiente',
+    metodo_pago:     orderData.payment  || 'Efectivo',
+    cambio:          orderData.cambio   || '',
+    notas:           orderData.notes    || '',
+    origen:          'web'
+  };
+
+  console.log('[SB] Insertando pedido:', body);
 
   try {
-    // Formatear items para Supabase
-    const detalles = (o.items||[]).map(function(it) {
-      return {
-        nombre:   it.name,
-        cantidad: it.qty || 1,
-        precio_unitario: it.unit || it.price || 0,
-        extras:   (it.extras||[]).map(e => e.name + (e.price ? ' (+$'+e.price+')': '')),
-        nota:     it.note || ''
-      };
-    });
-
-    const body = {
-      cliente:         o.client || '',
-      telefono:        o.phone  || '',
-      direccion:       o.address|| '',
-      referencia:      o.ref    || '',
-      detalles_pedido: JSON.stringify(detalles),
-      total:           o.total  || 0,
-      estado:          'Pendiente',
-      metodo_pago:     o.payment|| 'Efectivo',
-      cambio:          o.cambio || '',
-      notas:           o.notes  || ''
-    };
-
     const result = await SB.post('pedidos', body);
     if (result && result[0]) {
       const sbId = result[0].id;
-      // Persistir el sb_id para que el tracking funcione
-      localStorage.setItem('papayaso_last_sb_id', String(sbId));
-      localStorage.setItem('papayaso_last_order_id', String(o.id));
-      console.log('[SB] Pedido guardado en Supabase, id:', sbId);
+      _lastSbPedidoId = sbId;
+
+      // Agregar al store en memoria para que el tracking funcione
+      _STORE.orders = _STORE.orders || [];
+      _STORE.orders.unshift({
+        id:      sbId,
+        sb_id:   sbId,
+        num:     '#' + sbId,
+        client:  orderData.client,
+        phone:   orderData.phone,
+        address: orderData.address,
+        ref:     orderData.ref,
+        payment: orderData.payment,
+        cambio:  orderData.cambio,
+        notes:   orderData.notes,
+        items:   orderData.items,
+        total:   orderData.total,
+        status:  'nuevo',
+        time:    new Date().toISOString()
+      });
+
+      console.log('[SB] ✅ Pedido insertado con id:', sbId);
+      return sbId;
     }
   } catch(e) {
-    console.warn('[SB] Error guardando pedido:', e.message);
+    console.error('[SB] Error insertando pedido:', e.message);
+    // NO bloquear el flujo — el mensaje de WhatsApp ya fue enviado
+    // El admin puede ingresar el pedido manualmente
+    showToast && showToast('⚠️ Pedido enviado por WA pero no registrado en BD');
+    return null;
   }
-};
-
-// ── TRACKING por Supabase ─────────────────────────────────────────────
-// Interceptar renderTracking para leer estado desde SB
-const _origRenderTracking = window.renderTracking || function(){};
-let _sbTrackingId = null;
-let _sbTrackingInterval = null;
-
-async function sbGetEstadoPedido() {
-  const sbId = localStorage.getItem('papayaso_last_sb_id');
-  if (!sbId) return null;
-  try {
-    const r = await SB.get('pedidos', { select: 'id,estado,total', 'id': 'eq.' + sbId });
-    return r && r[0] ? r[0] : null;
-  } catch(e) { return null; }
 }
 
-// Polling de tracking cada 6s — actualiza localStorage y re-renderiza
-async function sbTrackingPoll() {
-  const sbId = localStorage.getItem('papayaso_last_sb_id');
-  if (!sbId) return;
-  const pedido = await sbGetEstadoPedido();
-  if (!pedido) return;
+// ── Interceptar sendOrder para hacer el INSERT antes de WA ──────────
+(function patchSendOrder() {
+  const _origSend = window.sendOrder;
+  window.sendOrder = async function() {
+    // 1. Validaciones (igual que antes)
+    const s0 = getStore();
+    if (!s0.config.isOpen) { if(typeof showClosedAlert==='function') showClosedAlert(); return; }
 
-  const localStatus = SB_TO_LOCAL[pedido.estado] || 'nuevo';
-  // Actualizar estado en localStorage para que getLastOrder() lo recoja
-  const s = getStore();
-  let found = false;
-  for (let i = 0; i < s.orders.length; i++) {
-    if (String(s.orders[i].sb_id) === String(sbId) ||
-        String(s.orders[i].id) === localStorage.getItem('papayaso_last_order_id')) {
-      s.orders[i].status = localStatus;
-      if (!s.orders[i].sb_id) s.orders[i].sb_id = pedido.id;
-      found = true;
+    const nameEl    = document.getElementById('o-name');
+    const phoneEl   = document.getElementById('o-phone');
+    const addrEl    = document.getElementById('o-address');
+    const refEl     = document.getElementById('o-ref');
+    const payEl     = document.getElementById('o-payment');
+    const cambioEl  = document.getElementById('o-cambio');
+    const cambioOEl = document.getElementById('o-cambio-otro');
+
+    const name    = nameEl    ? nameEl.value.trim()                  : '';
+    const rawPh   = phoneEl   ? phoneEl.value.replace(/\D/g,'')      : '';
+    const address = addrEl    ? addrEl.value.trim()                  : '';
+    const ref     = refEl     ? refEl.value.trim()                   : '';
+    const payment = payEl     ? payEl.value                          : 'Efectivo';
+    let   cambio  = '';
+    if (payment === 'Efectivo' && cambioEl) {
+      cambio = cambioEl.value === 'Otro'
+        ? (cambioOEl ? '$'+(parseInt(cambioOEl.value)||0).toLocaleString('es-CO') : '')
+        : cambioEl.value;
     }
-  }
-  if (found) {
-    localStorage.setItem('restaurante_v3', JSON.stringify(s));
-    _origRenderTracking(); // re-render con el estado actualizado
+
+    if (!name || !address) { if(typeof showToast==='function') showToast('Completa nombre y dirección'); return; }
+    if (!cart.length)      { if(typeof showToast==='function') showToast('Tu carrito está vacío');       return; }
+    if (!rawPh || rawPh.length < 7) { if(typeof showToast==='function') showToast('Ingresa un teléfono válido'); return; }
+
+    const total = cart.reduce(function(s,it){ return s + (parseFloat(it.total)||0); }, 0);
+    const cfg   = getStore().config;
+
+    // 2. Guardar datos del cliente en sesión
+    const saveChk = document.getElementById('chk-save');
+    if (saveChk && saveChk.checked) {
+      _clientData = { name: name, phone: rawPh, address: address, ref: ref };
+      if(typeof saveClientData==='function') saveClientData(name, rawPh, address, ref);
+    }
+
+    // 3. INSERT en Supabase PRIMERO (async, no bloqueante para WA)
+    const orderData = {
+      client: name, phone: '+57' + rawPh, address: address, ref: ref,
+      payment: payment, cambio: cambio, notes: '',
+      items: cart.slice(), total: total
+    };
+    sbInsertPedido(orderData); // fire-and-forget — WA no espera
+
+    // 4. Construir y abrir WhatsApp
+    const num = '#' + (Date.now()); // ID temporal hasta que SB responda
+    let msg = 'NUEVO PEDIDO — ' + (cfg.name || 'PAPAYASO') + '\n';
+    msg += 'Cliente: ' + name + '\n';
+    msg += 'Tel: +57 ' + rawPh + '\n';
+    msg += 'Dirección: ' + address + '\n';
+    if (ref) msg += 'Referencia: ' + ref + '\n';
+    msg += 'Pago: ' + payment + '\n';
+    if (cambio && cambio !== 'Exacto') msg += 'Paga con: ' + cambio + '\n';
+    msg += '---\nPRODUCTOS:\n';
+    cart.forEach(function(item) {
+      msg += item.qty + 'x ' + item.name + ' — ' + fp(item.total) + '\n';
+      (item.extras || []).forEach(function(e) {
+        msg += '  + ' + (e.name||e) + (e.price ? ' (+'+fp(e.price)+')' : '') + '\n';
+      });
+      if (item.note) msg += '  * ' + item.note + '\n';
+    });
+    msg += '---\nTOTAL: ' + fp(total) + '\n';
+    msg += '\n' + (cfg.welcome || '¡Gracias por tu pedido!');
+
+    const waRaw = (cfg.whatsapp || '').replace(/\D/g,'');
+    const wa    = waRaw.startsWith('57') ? waRaw : '57' + waRaw;
+    window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank');
+
+    // 5. Limpiar y mostrar tracking
+    cart = [];
+    orderNum++;
+    if(typeof updateCartUI   === 'function') updateCartUI();
+    if(typeof closeCartSheet === 'function') closeCartSheet();
+    if(typeof showTrackFab   === 'function') showTrackFab();
+    setTimeout(function() {
+      if(typeof openTracking === 'function') openTracking();
+    }, 400);
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════
+// 5. TRACKING — polling Supabase cada 6s
+// getLastOrder() ya lee de _STORE.orders en memoria
+// ══════════════════════════════════════════════════════════════
+let _trackingInterval = null;
+
+async function sbTrackingPoll() {
+  if (!_lastSbPedidoId) return;
+  try {
+    const rows = await SB.get('pedidos', {
+      select: 'id,estado',
+      'id': 'eq.' + _lastSbPedidoId,
+      limit: 1
+    });
+    if (!rows || !rows[0]) return;
+    const nuevoEstado = SB_TO_LOCAL[rows[0].estado] || 'nuevo';
+
+    // Actualizar en memoria
+    const orders = _STORE.orders || [];
+    let changed = false;
+    for (let i = 0; i < orders.length; i++) {
+      if (String(orders[i].id) === String(_lastSbPedidoId)) {
+        if (orders[i].status !== nuevoEstado) {
+          orders[i].status = nuevoEstado;
+          changed = true;
+        }
+        break;
+      }
+    }
+    if (changed && typeof renderTracking === 'function') renderTracking();
+  } catch(e) {
+    console.warn('[SB] Tracking poll error:', e.message);
   }
 }
 
-// Arrancar polling de tracking cuando se abre el tracking screen
-const _origOpenTracking = window.openTracking || function(){};
-window.openTracking = function() {
-  _origOpenTracking();
-  if (_sbTrackingInterval) clearInterval(_sbTrackingInterval);
-  _sbTrackingInterval = setInterval(sbTrackingPoll, 6000);
-};
+// ── Interceptar openTracking / closeTracking ────────────────────────
+(function patchTracking() {
+  const _origOpen  = window.openTracking  || function(){};
+  const _origClose = window.closeTracking || function(){};
 
-const _origCloseTracking = window.closeTracking || function(){};
-window.closeTracking = function() {
-  _origCloseTracking();
-  if (_sbTrackingInterval) { clearInterval(_sbTrackingInterval); _sbTrackingInterval = null; }
-};
+  window.openTracking = function() {
+    _origOpen();
+    if (_trackingInterval) clearInterval(_trackingInterval);
+    if (_lastSbPedidoId) {
+      _trackingInterval = setInterval(sbTrackingPoll, 6000);
+    }
+  };
+  window.closeTracking = function() {
+    _origClose();
+    if (_trackingInterval) { clearInterval(_trackingInterval); _trackingInterval = null; }
+  };
+})();
 
-// ── ARRANQUE ─────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// 6. ARRANQUE — carga config + productos, luego renderiza
+// ══════════════════════════════════════════════════════════════
 (async function sbMenuInit() {
-  await sbCargarProductos();
-  console.log('[SB] Menú cliente sincronizado ✓');
+  console.log('[SB] 🚀 Cargando menú de Papayaso...');
+  try {
+    // Cargar config y productos en paralelo
+    await Promise.all([sbCargarConfig(), sbCargarProductos()]);
+
+    // Renderizar UI con datos de Supabase
+    if (typeof init          === 'function') init();
+    if (typeof renderCats    === 'function') renderCats(getStore());
+    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
+
+    console.log('[SB] ✅ Menú listo. localStorage = 0 usos.');
+  } catch(e) {
+    console.error('[SB] Error en arranque del menú:', e.message);
+    // Fallback: renderizar con datos seed
+    if (typeof init          === 'function') init();
+    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
+  }
 })();
 
 </script>
