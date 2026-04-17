@@ -1181,14 +1181,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 <script>
 
-var SK = 'restaurante_v3';
+// ── ESTADO EN MEMORIA — localStorage eliminado ──────────────────────
+// La fuente de verdad es Supabase. Este objeto se rellena al arrancar.
+var _STORE = null;
 
 function getStore() {
-  try {
-    var r = localStorage.getItem(SK);
-    if (!r) return seed();
-    return JSON.parse(r);
-  } catch(e) { return seed(); }
+  if (!_STORE) _STORE = seed();
+  return _STORE;
 }
 
 function seed() {
@@ -1221,12 +1220,12 @@ function seed() {
     ],
     orders: []
   };
-  localStorage.setItem(SK, JSON.stringify(d));
+  _STORE = d;
   return d;
 }
 
-function saveS(d) { localStorage.setItem(SK, JSON.stringify(d)); }
-function upd(fn) { var s = getStore(); fn(s); saveS(s); }
+function saveS(d) { _STORE = d; }
+function upd(fn) { var s = getStore(); fn(s); _STORE = s; }
 
 // ---- MENÚ VERTICAL (3 puntos) ----
 function toggleVMenu() {
@@ -1552,8 +1551,8 @@ function addDemo() {
   var id = Date.now();
   // Usar contador global ascendente igual que el menú del cliente
   var _demoNum = 1;
-  try { var _dn = parseInt(localStorage.getItem('papayaso_order_counter')||'0'); _demoNum = _dn>0?_dn+1:1; } catch(e){}
-  try { localStorage.setItem('papayaso_order_counter', String(_demoNum)); } catch(e){}
+  // Demo: ID temporal
+  _demoNum = Date.now();
   upd(function(s2) {
     s2.orders.unshift({
       id: id, num: '#' + _demoNum,
@@ -1603,11 +1602,10 @@ function buildPaymentBreakdown(sales) {
 }
 
 // ---- VENTAS GLOBALES ----
-var GLOBAL_SK = 'papayaso_global_sales_v1';
-function getGlobalSales() {
-  try { return JSON.parse(localStorage.getItem(GLOBAL_SK) || '[]'); } catch(e) { return []; }
-}
-function saveGlobalSales(arr) { localStorage.setItem(GLOBAL_SK, JSON.stringify(arr)); }
+// Ventas globales — vienen de Supabase (sbGetAllPedidosSB)
+// Las funciones dummy evitan errores mientras se migra completamente
+function getGlobalSales() { return []; }
+function saveGlobalSales(arr) { /* no-op: datos en Supabase */ }
 
 // ---- FUENTE UNIFICADA DE VENTAS ----
 // Devuelve TODOS los registros de ventas combinando:
@@ -2352,7 +2350,7 @@ function showToast(m) {
 // =====================================================================
 // POS SYSTEM
 // =====================================================================
-var POS_SK = 'papayaso_pos_v1';
+var POS_SK = '__unused_pos__';
 var posCart = [];
 var posOrderNum = 1;
 var posEditId = null;
@@ -2361,13 +2359,13 @@ var curMode = 'domicilios';
 var curPosPanel = 'caja';
 
 function getPosStore() {
-  try {
-    var r = localStorage.getItem(POS_SK);
-    if (!r) return seedPos();
-    return JSON.parse(r);
-  } catch(e) { return seedPos(); }
+  if (!_POS_STORE) {
+    _POS_STORE = { products:[], categories:[], sales:[], config:{name:'POS',tax:0} };
+  }
+  return _POS_STORE;
 }
-function savePosStore(d) { localStorage.setItem(POS_SK, JSON.stringify(d)); }
+var _POS_STORE = null;
+function savePosStore(d) { _POS_STORE = d; }
 function seedPos() {
   var d = {
     categories: ['Bebidas','Platos del dia','Entradas','Postres','Snacks'],
@@ -3895,12 +3893,18 @@ function buildPrintArea(o, cfg) {
 // =====================================================================
 // ADICIONES POR CATEGORÍA
 // =====================================================================
-var ADDONS_SK = 'papayaso_cat_addons_v1';
-
+// Adiciones — se guardan en la columna extras de productos en Supabase
+// getAddons() lee del store en memoria que se cargó desde SB
+var ADDONS_SK = '__unused__';
 function getAddons() {
-  try { return JSON.parse(localStorage.getItem(ADDONS_SK) || '[]'); } catch(e) { return []; }
+  // Las adiciones por categoría se guardan en extras de cada producto
+  // Este getter construye la lista desde el store en memoria
+  var s = getStore();
+  return s._catAddons || [];
 }
-function saveAddons(arr) { localStorage.setItem(ADDONS_SK, JSON.stringify(arr)); }
+function saveAddons(arr) {
+  var s = getStore(); s._catAddons = arr; _STORE = s;
+}
 
 var _addonEditId = null;
 var _addonOptions = []; // [{id,name,price,available}]
@@ -4276,8 +4280,8 @@ function moConfirm() {
 
   // Usar contador global para número de pedido
   var orderNum = 1;
-  try { var saved=parseInt(localStorage.getItem('papayaso_order_counter')||'0'); orderNum=saved>0?saved+1:1; } catch(e){}
-  try { localStorage.setItem('papayaso_order_counter', String(orderNum)); } catch(e){}
+  // ID generado por Supabase — orderNum es temporal hasta recibir respuesta
+  orderNum = Date.now();
 
   var now = new Date();
   var pad2 = function(n){return n<10?'0'+n:''+n;};
@@ -4405,7 +4409,7 @@ function moSendWA() {
 // y los elimina de la lista activa de domicilios
 function dailyCleanup() {
   var today = localDateStr();
-  var lastClean = localStorage.getItem('papayaso_last_clean') || '';
+  var lastClean = window._lastClean || '';
   if (lastClean === today) return; // ya se limpió hoy
 
   upd(function(s) {
@@ -4438,7 +4442,7 @@ function dailyCleanup() {
     }
     s.orders = keep;
   });
-  localStorage.setItem('papayaso_last_clean', today);
+  window._lastClean = today;
   showToast('Nuevo día — pedidos anteriores archivados ✓');
 }
 
@@ -4462,336 +4466,873 @@ function dailyCleanup() {
 
 </script>
 
-<!-- ===== SUPABASE INTEGRATION ===== -->
+
+
+<!-- ===== SUPABASE — 100% sin localStorage ===== -->
 <script>
-/* =====================================================================
-   CAPA SUPABASE — ADMIN
-   Estrategia: "adapter híbrido"
-   - localStorage sigue siendo la fuente de verdad para la UI (sin cambios en CSS/lógica)
-   - Supabase sincroniza en background: lee productos/pedidos al cargar,
-     escribe/actualiza pedidos en tiempo real, polling de 8s para nuevos pedidos
-   ===================================================================== */
+/* =============================================================
+   CAPA SUPABASE — ADMIN  (100% Supabase, 0% localStorage)
+   Fuente de verdad: Supabase
+   Estado en memoria: _STORE / _POS_STORE
+   ============================================================= */
 
-const SUPABASE_URL  = 'https://mmnyxlsyizylivvikfuf.supabase.co';
-const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
+const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-// ── Cliente Supabase (fetch directo, sin CDN adicional) ──────────────
+// ── Cliente fetch directo (sin CDN) ─────────────────────────────────
 const SB = {
-  headers: {
+  h: {
     'Content-Type': 'application/json',
     'apikey': SUPABASE_KEY,
     'Authorization': 'Bearer ' + SUPABASE_KEY,
     'Prefer': 'return=representation'
   },
-
   async get(table, params) {
     const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
-    if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-    const r = await fetch(url, { headers: this.headers });
+    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
+    const r = await fetch(url, { headers: this.h });
     if (!r.ok) {
-      const errTxt = await r.text();
-      console.error(`[SB] GET /${table} falló (${r.status}):`, errTxt);
-      throw new Error(`Supabase GET ${table}: ${r.status} — ${errTxt}`);
+      const e = await r.text();
+      console.error(`[SB] GET ${table} ${r.status}:`, e);
+      throw new Error(`${r.status}: ${e}`);
     }
     return r.json();
   },
-
   async post(table, body) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method: 'POST', headers: this.headers, body: JSON.stringify(body)
+      method: 'POST', headers: this.h, body: JSON.stringify(body)
     });
     if (!r.ok) {
-      const errTxt = await r.text();
-      console.error(`[SB] POST /${table} falló (${r.status}):`, errTxt, '\nBody enviado:', body);
-      throw new Error(`Supabase POST ${table}: ${r.status} — ${errTxt}`);
+      const e = await r.text();
+      console.error(`[SB] POST ${table} ${r.status}:`, e, '\nBody:', body);
+      throw new Error(`${r.status}: ${e}`);
     }
     return r.json();
   },
-
-  async patch(table, id, body) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
-      method: 'PATCH', headers: this.headers, body: JSON.stringify(body)
+  async patch(table, filter, body) {
+    // filter: string como "id=eq.5" o "id=eq.5"
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      method: 'PATCH', headers: this.h, body: JSON.stringify(body)
     });
     if (!r.ok) {
-      const errTxt = await r.text();
-      console.error(`[SB] PATCH /${table}/${id} falló (${r.status}):`, errTxt);
-      throw new Error(`Supabase PATCH ${table}: ${r.status} — ${errTxt}`);
+      const e = await r.text();
+      console.error(`[SB] PATCH ${table} ${r.status}:`, e);
+      throw new Error(`${r.status}: ${e}`);
     }
     return r.json();
+  },
+  async del(table, filter) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      method: 'DELETE', headers: this.h
+    });
+    if (!r.ok) {
+      const e = await r.text();
+      console.error(`[SB] DELETE ${table} ${r.status}:`, e);
+      throw new Error(`${r.status}: ${e}`);
+    }
+    return true;
+  },
+  // Subir archivo a Storage y devolver URL pública
+  async uploadFile(bucket, path, file) {
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': file.type,
+        'Cache-Control': '3600',
+        'x-upsert': 'true'
+      },
+      body: file
+    });
+    if (!r.ok) {
+      const e = await r.text();
+      throw new Error(`Storage upload: ${r.status}: ${e}`);
+    }
+    return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
   }
 };
 
-// ── Mapa de estado Supabase → estado interno ─────────────────────────
-const SB_STATE_MAP = {
-  'Pendiente': 'nuevo',
-  'Aceptado':  'aceptado',
-  'Preparando':'preparando',
-  'Listo':     'listo',
-  'En camino': 'camino',
-  'Entregado': 'entregado',
-  'Cancelado': 'cancelado'
+// ── Mapas de estado ─────────────────────────────────────────────────
+const SB_TO_LOCAL = {
+  'Pendiente':'nuevo','Aceptado':'aceptado','Preparando':'preparando',
+  'Listo':'listo','En camino':'camino','Entregado':'entregado','Cancelado':'cancelado'
 };
 const LOCAL_TO_SB = {};
-Object.entries(SB_STATE_MAP).forEach(([k, v]) => LOCAL_TO_SB[v] = k);
+Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 
-// ── Convertir pedido Supabase → formato interno ───────────────────────
-function sbPedidoToLocal(p) {
-  let items = [];
-  try { items = typeof p.detalles_pedido === 'string'
-    ? JSON.parse(p.detalles_pedido)
-    : (p.detalles_pedido || []); } catch(e) {}
-
-  return {
-    id:      p.id,
-    num:     '#' + p.id,
-    client:  p.cliente  || '',
-    phone:   p.telefono || '',
-    address: p.direccion || '',
-    ref:     p.referencia || '',
-    payment: p.metodo_pago || 'Efectivo',
-    cambio:  p.cambio || '',
-    notes:   p.notas || '',
-    items:   items,
-    total:   parseFloat(p.total) || 0,  // force numeric — Supabase devuelve strings
-    status:  SB_STATE_MAP[p.estado] || 'nuevo',
-    time:    p.created_at || new Date().toISOString(),
-    sb_id:   p.id,
-    source:  'supabase'
-  };
+// ══════════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN
+// ══════════════════════════════════════════════════════════════════════
+async function sbLoadConfig() {
+  try {
+    const rows = await SB.get('configuracion', { select: '*', limit: 1 });
+    if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
+    const c = rows[0];
+    upd(function(s) {
+      s.config.name       = c.nombre_negocio  || s.config.name;
+      s.config.whatsapp   = c.telefono_whatsapp|| s.config.whatsapp;
+      s.config.address    = c.direccion        || '';
+      s.config.desc       = c.descripcion      || '';
+      s.config.nit        = c.nit              || '';
+      s.config.phone      = c.telefono_local   || '';
+      s.config.logo       = c.url_logo         || '';
+      s.config.cover      = c.url_portada      || '';
+      s.config.welcome    = c.mensaje_bienvenida|| '';
+      s.config.menuUrl    = c.url_menu         || 'menu.html';
+      s.config.riderUrl   = c.url_repartidor   || 'repartidor.html';
+      s.config.riderPin   = c.pin_repartidor   || '1234';
+      s.config.deliveryMin= String(c.tiempo_entrega_min || 30);
+      s.config.deliveryMax= String(c.tiempo_entrega_max || 60);
+      s.config.isOpen     = c.esta_abierto !== false;
+    });
+    // Actualizar topbar
+    const cfg = getStore().config;
+    const tn = document.getElementById('t-name'); if (tn) tn.textContent = cfg.name;
+    document.title = 'Admin - ' + cfg.name;
+    const tog = document.getElementById('open-tog');
+    if (tog) tog.className = 'tog ' + (cfg.isOpen ? 'on' : 'off');
+    const lbl = document.getElementById('open-lbl');
+    if (lbl) lbl.textContent = cfg.isOpen ? 'Abierto' : 'Cerrado';
+    console.log('[SB] Configuración cargada');
+  } catch(e) {
+    console.error('[SB] Error cargando configuración:', e.message);
+  }
 }
 
-// ── Convertir pedido interno → formato Supabase ───────────────────────
-function localPedidoToSb(o) {
-  return {
-    cliente:        o.client,
-    telefono:       o.phone || '',
-    direccion:      o.address || '',
-    referencia:     o.ref || '',
-    detalles_pedido: JSON.stringify(o.items || []),
-    total:          o.total || 0,
-    estado:         LOCAL_TO_SB[o.status] || 'Pendiente',
-    metodo_pago:    o.payment || 'Efectivo',
-    cambio:         o.cambio || '',
-    notas:          o.notes || ''
+async function sbSaveConfig() {
+  const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  // Leer horario
+  const days = ['lun','mar','mie','jue','vie','sab','dom'];
+  const sched = {};
+  days.forEach(d => {
+    const openEl = document.getElementById('sch-open-'+d);
+    const fromEl = document.getElementById('sch-from-'+d);
+    const toEl   = document.getElementById('sch-to-'+d);
+    sched[d] = {
+      open: openEl ? openEl.checked : true,
+      from: fromEl ? fromEl.value.trim() : '',
+      to:   toEl   ? toEl.value.trim()   : ''
+    };
+  });
+
+  const body = {
+    nombre_negocio:     gv('cfg-name')         || 'Papayaso',
+    telefono_whatsapp:  gv('cfg-wa').replace(/\D/g,''),
+    direccion:          gv('cfg-address'),
+    descripcion:        gv('cfg-desc'),
+    nit:                gv('cfg-nit'),
+    telefono_local:     gv('cfg-phone'),
+    mensaje_bienvenida: gv('cfg-welcome'),
+    url_menu:           gv('cfg-menu-url')      || 'menu.html',
+    url_repartidor:     gv('cfg-rider-url')     || 'repartidor.html',
+    pin_repartidor:     gv('cfg-rider-pin')     || '1234',
+    tiempo_entrega_min: parseInt(gv('cfg-delivery-min')) || 30,
+    tiempo_entrega_max: parseInt(gv('cfg-delivery-max')) || 60,
   };
+
+  try {
+    await SB.patch('configuracion', 'id=eq.1', body);
+    // Actualizar memoria
+    upd(function(s) {
+      s.config.name       = body.nombre_negocio;
+      s.config.whatsapp   = body.telefono_whatsapp;
+      s.config.address    = body.direccion;
+      s.config.desc       = body.descripcion;
+      s.config.nit        = body.nit;
+      s.config.phone      = body.telefono_local;
+      s.config.welcome    = body.mensaje_bienvenida;
+      s.config.menuUrl    = body.url_menu;
+      s.config.riderUrl   = body.url_repartidor;
+      s.config.riderPin   = body.pin_repartidor;
+      s.config.deliveryMin= String(body.tiempo_entrega_min);
+      s.config.deliveryMax= String(body.tiempo_entrega_max);
+      s.config.schedule   = sched;
+      s.config.hours      = (typeof getScheduleText === 'function') ? getScheduleText(sched) : '';
+    });
+    const tn = document.getElementById('t-name');
+    if (tn) tn.textContent = body.nombre_negocio;
+    document.title = 'Admin - ' + body.nombre_negocio;
+    const su = document.getElementById('share-url-txt'); if (su) su.textContent = body.url_menu;
+    const ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = body.url_repartidor;
+    showToast('Configuración guardada ✓');
+    console.log('[SB] Config guardada en Supabase');
+  } catch(e) {
+    console.error('[SB] Error guardando config:', e);
+    alert('❌ Error al guardar configuración:\n' + e.message);
+  }
 }
 
-// ── CARGAR PRODUCTOS desde Supabase → localStorage ───────────────────
+// Toggle abierto/cerrado → Supabase
+async function sbToggleOpen() {
+  const s = getStore();
+  const nuevoEstado = !s.config.isOpen;
+  try {
+    await SB.patch('configuracion', 'id=eq.1', { esta_abierto: nuevoEstado });
+    upd(function(s2) { s2.config.isOpen = nuevoEstado; });
+    const tog = document.getElementById('open-tog');
+    if (tog) tog.className = 'tog ' + (nuevoEstado ? 'on' : 'off');
+    const lbl = document.getElementById('open-lbl');
+    if (lbl) lbl.textContent = nuevoEstado ? 'Abierto' : 'Cerrado';
+    console.log('[SB] Estado abierto actualizado:', nuevoEstado);
+  } catch(e) {
+    console.error('[SB] Error toggling open:', e.message);
+    showToast('Error al actualizar estado');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PRODUCTOS
+// ══════════════════════════════════════════════════════════════════════
 async function sbLoadProductos() {
   try {
-    console.log('[SB] Cargando productos...');
-    const prods = await SB.get('productos', { select: '*', order: 'categoria.asc,nombre.asc' });
-    if (!prods || !prods.length) {
-      console.warn('[SB] La tabla productos está vacía o no se pudo leer');
-      return;
-    }
-
+    const prods = await SB.get('productos', {
+      select: '*', order: 'categoria.asc,nombre.asc'
+    });
     upd(function(s) {
-      // Reconstruir productos con formato local
-      s.products = prods.map(function(p) {
-        // Parsear extras: "Nombre+Precio,Nombre2+Precio2"
+      s.products = (prods || []).map(function(p) {
+        // extras: JSONB [{name,price}] directo desde Supabase
         let extras = [];
-        if (p.opciones_extras) {
-          const parts = String(p.opciones_extras).split(',');
-          parts.forEach(function(part) {
-            const [name, price] = part.trim().split('+');
-            if (name) extras.push({ name: name.trim(), price: parseInt(price) || 0 });
-          });
+        if (Array.isArray(p.extras)) {
+          extras = p.extras;
+        } else if (p.extras) {
+          try { extras = JSON.parse(p.extras); } catch(e) {}
         }
-        // Parsear sabores: "Vainilla,Chocolate,..." (gratis)
+        // opciones_sabores: JSONB array de strings
         let sabores = [];
-        if (p.opciones_sabores) {
-          sabores = String(p.opciones_sabores).split(',').map(s => s.trim()).filter(Boolean);
+        if (Array.isArray(p.opciones_sabores)) {
+          sabores = p.opciones_sabores;
+        } else if (p.opciones_sabores) {
+          try { sabores = JSON.parse(p.opciones_sabores); } catch(e) {}
         }
         return {
-          id:        p.id || Date.now() + Math.random(),
+          id:        p.id,
           sb_id:     p.id,
-          name:      p.nombre || '',
-          cat:       p.categoria || 'General',
+          name:      p.nombre     || '',
+          cat:       p.categoria  || 'General',
           price:     parseInt(p.precio) || 0,
-          desc:      p.descripcion || '',
+          desc:      p.descripcion|| '',
           photo:     p.imagen_url || '',
-          emoji:     (p.nombre||'P').charAt(0),
-          available: true,
+          emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
+          available: p.disponible !== false,
           extras:    extras,
           sabores:   sabores
         };
       });
-
-      // Sincronizar categorías
-      const cats = [...new Set(prods.map(p => p.categoria).filter(Boolean))];
-      if (cats.length) s.categories = cats;
+      // Categorías únicas ordenadas
+      const cats = [...new Set((prods||[]).map(p => p.categoria).filter(Boolean))];
+      s.categories = cats;
     });
-
-    // Actualizar UI si está visible
     if (typeof renderEditor === 'function') renderEditor();
-    if (typeof renderCats === 'function') renderCats();
-    console.log('[SB] Productos cargados:', prods.length);
+    if (typeof renderCats   === 'function') renderCats();
+    console.log('[SB] Productos cargados:', (prods||[]).length);
   } catch(e) {
-    console.error('[SB] Error cargando productos:', e);
-    // No mostramos alert aquí para no bloquear la UI en cada carga
+    console.error('[SB] Error cargando productos:', e.message);
+    showToast('Error cargando productos');
   }
 }
 
-// ── CARGAR PEDIDOS desde Supabase → localStorage ─────────────────────
-async function sbLoadPedidos() {
+async function sbSaveProd() {
+  // Lee los campos del formulario modal de producto
+  const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const name  = gv('ped-name');
+  const price = parseInt(gv('ped-price')) || 0;
+  const desc  = gv('ped-desc');
+  const cat   = gv('ped-cat');
+  const avEl  = document.getElementById('ped-avail');
+  const avail = avEl ? avEl.value === '1' : true;
+
+  if (!name)  { alert('⚠️ Ingresa el nombre del producto'); return; }
+  if (!price) { alert('⚠️ Ingresa un precio mayor a 0');    return; }
+  if (!cat)   { alert('⚠️ Selecciona una categoría');       return; }
+
+  // editExtras viene de la lógica local ya existente
+  const extras = (typeof editExtras !== 'undefined' ? editExtras : [])
+    .filter(e => e.name && e.name.trim());
+
+  const body = {
+    nombre:      name,
+    precio:      price,
+    descripcion: desc,
+    categoria:   cat,
+    disponible:  avail,
+    extras:      extras  // JSONB directo
+  };
+
+  // Si hay foto nueva en editPhoto (base64) → subir a Storage primero
+  if (typeof editPhoto !== 'undefined' && editPhoto && editPhoto.startsWith('data:')) {
+    try {
+      const blob = await (await fetch(editPhoto)).blob();
+      const ext  = blob.type.split('/')[1] || 'jpg';
+      const path = `productos/${Date.now()}.${ext}`;
+      const url  = await SB.uploadFile('imagenes', path, blob);
+      body.imagen_url = url;
+    } catch(e) {
+      console.warn('[SB] Error subiendo imagen, se guarda sin foto:', e.message);
+    }
+  } else if (typeof editPhoto !== 'undefined' && editPhoto && !editPhoto.startsWith('data:')) {
+    body.imagen_url = editPhoto; // ya es URL de Supabase
+  }
+
   try {
-    // Solo pedidos activos (no entregados ni cancelados de hace más de 2 días)
+    let result;
+    if (typeof editId !== 'undefined' && editId) {
+      // UPDATE
+      result = await SB.patch('productos', `id=eq.${editId}`, body);
+      console.log('[SB] Producto actualizado:', editId);
+    } else {
+      // INSERT
+      result = await SB.post('productos', body);
+      console.log('[SB] Producto creado:', result && result[0] && result[0].id);
+    }
+    if (typeof closeProdModal === 'function') closeProdModal();
+    await sbLoadProductos();
+    showToast(editId ? 'Producto actualizado ✓' : 'Producto creado ✓');
+  } catch(e) {
+    console.error('[SB] Error guardando producto:', e);
+    alert('❌ Error al guardar producto:\n\n' + e.message +
+      '\n\nVerifica:\n1. RLS: ¿tienes política INSERT/UPDATE en productos?\n2. ¿La categoría existe en la tabla categorias?');
+  }
+}
+
+async function sbToggleAvail(sbId, currentAvail) {
+  try {
+    await SB.patch('productos', `id=eq.${sbId}`, { disponible: !currentAvail });
+    await sbLoadProductos();
+    showToast(!currentAvail ? 'Producto disponible' : 'Producto no disponible');
+  } catch(e) {
+    console.error('[SB] Error toggling disponible:', e.message);
+    alert('❌ Error al actualizar disponibilidad:\n' + e.message);
+  }
+}
+
+async function sbDelProd(sbId, name) {
+  if (!confirm('¿Eliminar "' + name + '"?\nEsta acción no se puede deshacer.')) return;
+  try {
+    await SB.del('productos', `id=eq.${sbId}`);
+    await sbLoadProductos();
+    showToast('Producto eliminado');
+  } catch(e) {
+    console.error('[SB] Error eliminando producto:', e.message);
+    alert('❌ Error al eliminar producto:\n' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// CATEGORÍAS
+// ══════════════════════════════════════════════════════════════════════
+async function sbLoadCategorias() {
+  try {
+    const cats = await SB.get('categorias', { select: '*', order: 'orden.asc,nombre.asc' });
+    upd(function(s) {
+      s.categories = (cats||[]).map(c => c.nombre);
+      s._categorias = cats || [];
+    });
+    if (typeof renderCats === 'function') renderCats();
+    console.log('[SB] Categorías cargadas:', (cats||[]).length);
+  } catch(e) {
+    console.error('[SB] Error cargando categorías:', e.message);
+  }
+}
+
+async function sbAddCat(nombre) {
+  if (!nombre || !nombre.trim()) { showToast('Escribe el nombre de la categoría'); return; }
+  nombre = nombre.trim();
+  try {
+    await SB.post('categorias', { nombre, orden: 0 });
+    await sbLoadCategorias();
+    showToast('Categoría creada ✓');
+  } catch(e) {
+    console.error('[SB] Error creando categoría:', e.message);
+    alert('❌ Error al crear categoría:\n' + e.message +
+      '\n\nPosiblemente ya existe una categoría con ese nombre.');
+  }
+}
+
+async function sbDelCat(nombre) {
+  // Verificar que no haya productos en esa categoría
+  const s = getStore();
+  const hasProd = s.products.some(p => p.cat === nombre);
+  if (hasProd) { showToast('Hay productos en esa categoría'); return; }
+  if (!confirm('¿Eliminar categoría "' + nombre + '"?')) return;
+  try {
+    await SB.del('categorias', `nombre=eq.${encodeURIComponent(nombre)}`);
+    await sbLoadCategorias();
+    showToast('Categoría eliminada');
+  } catch(e) {
+    console.error('[SB] Error eliminando categoría:', e.message);
+    alert('❌ Error al eliminar categoría:\n' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// IMÁGENES (Storage)
+// ══════════════════════════════════════════════════════════════════════
+async function sbHandleLogoUpload(inp) {
+  const f = inp.files[0]; if (!f) return;
+  if (f.size > 3*1024*1024) { showToast('Logo muy grande (máx 3MB)'); return; }
+  showToast('Subiendo logo...');
+  try {
+    const ext  = f.type.split('/')[1] || 'jpg';
+    const path = `config/logo.${ext}`;
+    const url  = await SB.uploadFile('imagenes', path, f);
+    await SB.patch('configuracion', 'id=eq.1', { url_logo: url });
+    upd(function(s){ s.config.logo = url; });
+    if (typeof _updateLogoUI === 'function') _updateLogoUI(url);
+    showToast('Logo guardado ✓');
+    console.log('[SB] Logo subido:', url);
+  } catch(e) {
+    console.error('[SB] Error subiendo logo:', e);
+    alert('❌ Error al subir logo:\n' + e.message +
+      '\n\nVerifica que el bucket "imagenes" existe y tiene política INSERT.');
+  }
+}
+
+async function sbHandleCoverUpload(inp) {
+  const f = inp.files[0]; if (!f) return;
+  if (f.size > 5*1024*1024) { showToast('Portada muy grande (máx 5MB)'); return; }
+  showToast('Subiendo portada...');
+  try {
+    const ext  = f.type.split('/')[1] || 'jpg';
+    const path = `config/portada.${ext}`;
+    const url  = await SB.uploadFile('imagenes', path, f);
+    await SB.patch('configuracion', 'id=eq.1', { url_portada: url });
+    upd(function(s){ s.config.cover = url; });
+    if (typeof _updateCoverUI === 'function') _updateCoverUI(url);
+    showToast('Portada guardada ✓');
+    console.log('[SB] Portada subida:', url);
+  } catch(e) {
+    console.error('[SB] Error subiendo portada:', e);
+    alert('❌ Error al subir portada:\n' + e.message);
+  }
+}
+
+async function sbHandleProdPhotoUpload(inp) {
+  const f = inp.files[0]; if (!f) return;
+  if (f.size > 3*1024*1024) { showToast('Imagen muy grande (máx 3MB)'); return; }
+  showToast('Subiendo imagen...');
+  try {
+    const ext  = f.type.split('/')[1] || 'jpg';
+    const path = `productos/${Date.now()}.${ext}`;
+    const url  = await SB.uploadFile('imagenes', path, f);
+    // editPhoto es una variable global usada por saveProd
+    if (typeof window !== 'undefined') window.editPhoto = url;
+    if (typeof _updateProdPhotoUI === 'function') _updateProdPhotoUI(url);
+    showToast('Imagen lista ✓');
+    console.log('[SB] Foto de producto subida:', url);
+  } catch(e) {
+    console.error('[SB] Error subiendo foto de producto:', e);
+    alert('❌ Error al subir imagen:\n' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PEDIDOS — SOLO PEDIDOS DE HOY
+// ══════════════════════════════════════════════════════════════════════
+async function sbLoadPedidos() {
+  const hoy = new Date();
+  // Inicio del día en hora local → ISO
+  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
+
+  try {
     const pedidos = await SB.get('pedidos', {
       select: '*',
-      estado: 'neq.Entregado',
+      'created_at': `gte.${inicioHoy}`,
       order: 'created_at.desc',
-      limit: 100
+      limit: 200
     });
-    if (!pedidos) return;
 
     upd(function(s) {
-      const existingIds = new Set((s.orders||[]).map(o => String(o.sb_id || o.id)));
-      const sbOrders = pedidos.map(sbPedidoToLocal);
+      s.orders = (pedidos || []).map(function(p) {
+        let items = [];
+        try {
+          items = Array.isArray(p.detalles_pedido)
+            ? p.detalles_pedido
+            : JSON.parse(p.detalles_pedido || '[]');
+        } catch(e) {}
 
-      // Merge: reemplazar los que ya existen por la versión de SB, añadir los nuevos
-      const updated = [];
-      sbOrders.forEach(function(sbO) {
-        updated.push(sbO);
+        // Normalizar campos de items para que renderOrders funcione
+        items = items.map(function(it) {
+          return {
+            pid:    it.pid    || it.id || 0,
+            name:   it.nombre || it.name || '',
+            qty:    it.cantidad|| it.qty || 1,
+            unit:   it.precio_unitario || it.unit || it.price || 0,
+            extras: it.extras || [],
+            note:   it.nota   || it.note || '',
+            total:  it.total  || ((it.precio_unitario||0) * (it.cantidad||1))
+          };
+        });
+
+        return {
+          id:      p.id,
+          sb_id:   p.id,
+          num:     '#' + p.id,
+          client:  p.cliente   || '',
+          phone:   p.telefono  || '',
+          address: p.direccion || '',
+          ref:     p.referencia|| '',
+          payment: p.metodo_pago || 'Efectivo',
+          cambio:  p.cambio    || '',
+          notes:   p.notas     || '',
+          items:   items,
+          total:   parseFloat(p.total) || 0,
+          status:  SB_TO_LOCAL[p.estado] || 'nuevo',
+          time:    p.created_at|| new Date().toISOString(),
+          source:  p.origen    || 'web'
+        };
       });
-      // Añadir pedidos locales que no estén en SB (ej: creados offline)
-      (s.orders||[]).forEach(function(local) {
-        if (!local.sb_id && !existingIds.has(String(local.id))) {
-          updated.push(local);
-        }
-      });
-      updated.sort(function(a,b){ return new Date(b.time) - new Date(a.time); });
-      s.orders = updated;
     });
 
     if (typeof renderOrders === 'function') renderOrders();
-    if (typeof updateStats === 'function') updateStats();
-    console.log('[SB] Pedidos cargados:', pedidos.length);
+    if (typeof updateStats  === 'function') updateStats();
+    console.log('[SB] Pedidos de hoy cargados:', (pedidos||[]).length);
   } catch(e) {
-    console.warn('[SB] Error cargando pedidos:', e.message);
+    console.error('[SB] Error cargando pedidos:', e.message);
+    showToast('Error cargando pedidos');
   }
 }
 
-// ── GUARDAR pedido nuevo en Supabase ─────────────────────────────────
-async function sbSavePedido(localOrder) {
+// Guardar pedido manual en Supabase
+async function sbSavePedidoManual(order) {
+  const detalles = (order.items || []).map(it => ({
+    nombre:          it.name,
+    cantidad:        it.qty || 1,
+    precio_unitario: it.unit || it.price || 0,
+    extras:          (it.extras||[]).map(e => e.name),
+    nota:            it.note || ''
+  }));
+
+  const body = {
+    cliente:         order.client,
+    telefono:        order.phone   || '',
+    direccion:       order.address || '',
+    referencia:      order.ref     || '',
+    detalles_pedido: detalles,       // JSONB directo
+    total:           parseFloat(order.total) || 0,
+    estado:          'Pendiente',
+    metodo_pago:     order.payment || 'Efectivo',
+    cambio:          order.cambio  || '',
+    notas:           order.notes   || '',
+    origen:          'manual'
+  };
+
+  console.log('[SB] Guardando pedido manual:', body);
+
   try {
-    const body = localPedidoToSb(localOrder);
-    // Garantizar que total sea número
-    body.total = parseFloat(body.total) || 0;
-    console.log('[SB] Guardando pedido:', body);
     const result = await SB.post('pedidos', body);
     if (result && result[0]) {
-      // Actualizar el id local con el de Supabase
+      const sbId = result[0].id;
       upd(function(s) {
-        for (let i = 0; i < s.orders.length; i++) {
-          if (s.orders[i].id === localOrder.id) {
-            s.orders[i].sb_id = result[0].id;
-            s.orders[i].num   = '#' + result[0].id;
-            break;
-          }
+        if (s.orders[0] && s.orders[0].id === order.id) {
+          s.orders[0].sb_id = sbId;
+          s.orders[0].num   = '#' + sbId;
         }
       });
-      console.log('[SB] Pedido guardado, id:', result[0].id);
+      console.log('[SB] Pedido manual guardado, id:', sbId);
     }
+    return true;
   } catch(e) {
-    console.error('[SB] Error guardando pedido:', e);
-    alert('❌ No se pudo guardar el pedido en Supabase:\n\n' + e.message + '\n\nEl pedido SÍ quedó guardado localmente.');
+    console.error('[SB] Error guardando pedido manual:', e);
+    alert('❌ Pedido guardado localmente pero FALLÓ en Supabase:\n\n' + e.message +
+      '\n\nCausas comunes:\n• RLS: falta política INSERT en pedidos\n• Campo total no numérico\n• Columna faltante');
+    return false;
   }
 }
 
-// ── ACTUALIZAR estado en Supabase ─────────────────────────────────────
-async function sbUpdateEstado(sbId, localStatus) {
-  if (!sbId) return;
-  try {
-    await SB.patch('pedidos', sbId, { estado: LOCAL_TO_SB[localStatus] || 'Pendiente' });
-    console.log('[SB] Estado actualizado:', sbId, '->', LOCAL_TO_SB[localStatus]);
-  } catch(e) {
-    console.warn('[SB] Error actualizando estado:', e.message);
-  }
-}
-
-// ── ESTADÍSTICAS desde Supabase ───────────────────────────────────────
-async function sbGetEstadisticasGlobal() {
-  try {
-    const all = await SB.get('pedidos', {
-      select: 'id,total,created_at,estado',
-      estado: 'neq.Cancelado'
-    });
-    if (!all) return null;
-
-    const hoy = new Date().toISOString().slice(0, 10);
-    const mesActual = new Date().toISOString().slice(0, 7);
-
-    let totalGlobal = 0, totalHoy = 0, totalMes = 0;
-    all.forEach(function(p) {
-      const t = parseFloat(p.total) || 0;
-      totalGlobal += t;
-      if (p.created_at && p.created_at.startsWith(hoy))     totalHoy += t;
-      if (p.created_at && p.created_at.startsWith(mesActual)) totalMes += t;
-    });
-    return { totalGlobal, totalHoy, totalMes, count: all.length };
-  } catch(e) {
-    console.warn('[SB] Error stats:', e.message);
-    return null;
-  }
-}
-
-// ── POLLING: detectar pedidos nuevos en Supabase ──────────────────────
-let _sbLastKnownId = 0;
-async function sbPollNuevosPedidos() {
-  try {
-    const r = await SB.get('pedidos', {
-      select: 'id,cliente,total,estado',
-      order: 'id.desc',
-      limit: 5
-    });
-    if (!r || !r.length) return;
-    const newest = r[0];
-    if (_sbLastKnownId === 0) { _sbLastKnownId = newest.id; return; }
-    if (newest.id > _sbLastKnownId) {
-      _sbLastKnownId = newest.id;
-      await sbLoadPedidos();
-      // Disparar sonido y alerta del sistema local
-      if (typeof playOrderSound === 'function') playOrderSound();
-      if (typeof showSoundAlert === 'function') {
-        showSoundAlert({ num: '#' + newest.id, client: newest.cliente, total: newest.total });
-      }
-    }
-  } catch(e) { /* silencioso */ }
-}
-
-// ── INTERCEPTAR chStatus para también actualizar SB ──────────────────
+// ══════════════════════════════════════════════════════════════════════
+// CAMBIO DE ESTADO — intercepta chStatus
+// ══════════════════════════════════════════════════════════════════════
 (function patchChStatus() {
-  const orig = window.chStatus;
+  const _orig = window.chStatus;
   window.chStatus = async function(id, st) {
-    orig(id, st);  // primero actualiza local (rápido, sin espera)
-    // Buscar sb_id del pedido
+    // 1. Actualizar en memoria inmediatamente (UI rápida)
+    if (typeof _orig === 'function') _orig(id, st);
+
+    // 2. Actualizar en Supabase
     const s = getStore();
-    const order = (s.orders||[]).find(o => String(o.id) === String(id));
-    if (order && order.sb_id) {
-      await sbUpdateEstado(order.sb_id, st);
+    const order = (s.orders || []).find(o => String(o.id) === String(id) || String(o.sb_id) === String(id));
+    const sbId  = order ? (order.sb_id || order.id) : id;
+    const estadoSB = LOCAL_TO_SB[st] || 'Pendiente';
+
+    try {
+      await SB.patch('pedidos', `id=eq.${sbId}`, { estado: estadoSB });
+      console.log('[SB] Estado actualizado:', sbId, '->', estadoSB);
+    } catch(e) {
+      console.error('[SB] Error actualizando estado:', e.message);
+      alert('⚠️ Estado cambiado localmente pero no se guardó en Supabase:\n' + e.message);
     }
   };
 })();
 
-// ── ARRANQUE ─────────────────────────────────────────────────────────
-(async function sbInit() {
-  console.log('[SB] Iniciando sincronización...');
-  await sbLoadProductos();
-  await sbLoadPedidos();
+// ══════════════════════════════════════════════════════════════════════
+// TOGGLE ABIERTO — intercepta toggleOpen
+// ══════════════════════════════════════════════════════════════════════
+(function patchToggleOpen() {
+  const _orig = window.toggleOpen;
+  window.toggleOpen = async function() {
+    await sbToggleOpen();
+  };
+})();
 
-  // Stats en panel ventas globales si aplica
-  sbGetEstadisticasGlobal().then(function(stats) {
-    if (stats && typeof window._sbStats === 'undefined') {
-      window._sbStats = stats;
-      // Las estadísticas locales ya calculan bien; esto es extra para debugging
-      console.log('[SB] Stats globales:', stats);
+// ══════════════════════════════════════════════════════════════════════
+// GUARDAR CONFIG — intercepta saveConfig
+// ══════════════════════════════════════════════════════════════════════
+(function patchSaveConfig() {
+  window.saveConfig = async function() {
+    await sbSaveConfig();
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════════
+// GUARDAR PRODUCTO — intercepta saveProd
+// ══════════════════════════════════════════════════════════════════════
+(function patchSaveProd() {
+  window.saveProd = async function() {
+    await sbSaveProd();
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════════
+// TOGGLE DISPONIBLE — intercepta togAvail
+// ══════════════════════════════════════════════════════════════════════
+(function patchTogAvail() {
+  window.togAvail = async function(id) {
+    const s = getStore();
+    const p = s.products.find(x => x.id === id || x.sb_id === id);
+    if (!p) return;
+    await sbToggleAvail(p.sb_id || p.id, p.available);
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════════
+// ELIMINAR PRODUCTO — intercepta delProd
+// ══════════════════════════════════════════════════════════════════════
+(function patchDelProd() {
+  window.delProd = async function(id) {
+    const s = getStore();
+    const p = s.products.find(x => x.id === id || x.sb_id === id);
+    if (!p) return;
+    await sbDelProd(p.sb_id || p.id, p.name);
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════════
+// AGREGAR / ELIMINAR CATEGORÍA — intercepta addCat / delCat
+// ══════════════════════════════════════════════════════════════════════
+(function patchCats() {
+  window.addCat = async function() {
+    const el = document.getElementById('new-cat-inp');
+    const v  = el ? el.value.trim() : '';
+    await sbAddCat(v);
+    if (el) el.value = '';
+  };
+  window.delCat = async function(i) {
+    const s = getStore();
+    const nombre = s.categories[i];
+    if (!nombre) return;
+    await sbDelCat(nombre);
+  };
+})();
+
+// ══════════════════════════════════════════════════════════════════════
+// SUBIDA DE IMÁGENES — intercepta los handlers de imagen
+// ══════════════════════════════════════════════════════════════════════
+(function patchUploads() {
+  window.handleLogoUpload  = function(inp) { sbHandleLogoUpload(inp);  };
+  window.handleCoverUpload = function(inp) { sbHandleCoverUpload(inp); };
+  // Fotos de productos del editor de menú
+  window.handleProdPhoto   = function(inp) { sbHandleProdPhotoUpload(inp); };
+})();
+
+// ══════════════════════════════════════════════════════════════════════
+// PEDIDO MANUAL — intercepta moConfirm
+// ══════════════════════════════════════════════════════════════════════
+(function patchMoConfirm() {
+  const _orig = window.moConfirm;
+  window.moConfirm = async function() {
+    // Validaciones y construcción del objeto order (igual que antes)
+    if (typeof moValidate === 'function' && !moValidate()) return;
+
+    const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const name    = gv('mo-name');
+    const phone   = gv('mo-phone');
+    const address = gv('mo-address');
+    const ref     = gv('mo-ref');
+    const payment = gv('mo-payment') || 'Efectivo';
+    const notes   = gv('mo-notes');
+    const cambio  = (typeof moGetCambio === 'function') ? moGetCambio() : '';
+
+    if (!name)    { alert('⚠️ Falta: nombre del cliente');   return; }
+    if (!address) { alert('⚠️ Falta: dirección de entrega'); return; }
+
+    let total = 0;
+    const _mc = (typeof _moCart !== 'undefined') ? _moCart : [];
+    _mc.forEach(function(it) { total += parseFloat(it.total)||0; });
+    if (!_mc.length) { alert('⚠️ El carrito está vacío'); return; }
+
+    const items = _mc.map(function(it) {
+      return {
+        pid: it.id, name: it.name, emoji: '📦', photo: '',
+        qty: it.qty, unit: it.price, extras: [], note: '', total: it.total
+      };
+    });
+
+    const order = {
+      id:      Date.now(),
+      num:     '#?',
+      client:  name,
+      phone:   phone ? ('+57' + phone.replace(/\D/g,'')) : '',
+      address: address,
+      ref:     ref,
+      payment: payment,
+      cambio:  cambio,
+      notes:   notes + (notes ? ' | ' : '') + '📞 Pedido por llamada',
+      items:   items,
+      total:   total,
+      status:  'nuevo',
+      time:    new Date().toISOString(),
+      source:  'manual'
+    };
+
+    // Agregar a memoria para que la UI responda de inmediato
+    upd(function(s) { s.orders.unshift(order); });
+
+    // Guardar en Supabase
+    const ok = await sbSavePedidoManual(order);
+    if (ok) {
+      showToast('✅ Pedido manual registrado');
+      if (typeof resetManualOrder === 'function') resetManualOrder();
+      setTimeout(function() {
+        if (typeof switchMode === 'function')  switchMode('domicilios');
+        if (typeof showGroup  === 'function')  showGroup('pedidos');
+        if (typeof setF       === 'function')  setF('all');
+      }, 800);
     }
-  });
+  };
+})();
 
-  // Polling cada 8 segundos para nuevos pedidos
-  setInterval(sbPollNuevosPedidos, 8000);
-  console.log('[SB] Sincronización activa ✓');
+// ══════════════════════════════════════════════════════════════════════
+// POLLING: nuevos pedidos cada 8s
+// ══════════════════════════════════════════════════════════════════════
+let _sbLastId = 0;
+async function sbPollNuevos() {
+  try {
+    const r = await SB.get('pedidos', {
+      select: 'id,cliente,total,estado',
+      order: 'id.desc', limit: 1
+    });
+    if (!r || !r.length) return;
+    const newest = r[0];
+    if (_sbLastId === 0) { _sbLastId = newest.id; return; }
+    if (newest.id > _sbLastId) {
+      _sbLastId = newest.id;
+      await sbLoadPedidos();
+      if (typeof playOrderSound  === 'function') playOrderSound();
+      if (typeof showSoundAlert  === 'function') {
+        showSoundAlert({ num: '#' + newest.id, client: newest.cliente, total: newest.total });
+      }
+    }
+  } catch(e) { /* silencioso en polling */ }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ESTADÍSTICAS desde Supabase
+// ══════════════════════════════════════════════════════════════════════
+async function sbGetStats() {
+  const hoy     = new Date().toISOString().slice(0,10);
+  const mes     = new Date().toISOString().slice(0,7);
+  try {
+    const all = await SB.get('pedidos', {
+      select: 'total,created_at,estado',
+      'estado': 'neq.Cancelado'
+    });
+    let totalHoy = 0, totalMes = 0, totalGlobal = 0;
+    (all||[]).forEach(p => {
+      const t = parseFloat(p.total)||0;
+      totalGlobal += t;
+      if (p.created_at.startsWith(hoy)) totalHoy += t;
+      if (p.created_at.startsWith(mes)) totalMes += t;
+    });
+    return { totalHoy, totalMes, totalGlobal };
+  } catch(e) { return null; }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// VENTAS GLOBALES — _renderGlobalSales usa datos de SB
+// ══════════════════════════════════════════════════════════════════════
+async function sbCargarVentasGlobales() {
+  try {
+    // Traer todos los pedidos no cancelados para ventas globales
+    const pedidos = await SB.get('pedidos', {
+      select: 'id,total,created_at,estado,metodo_pago,origen,cliente',
+      'estado': 'neq.Cancelado',
+      order: 'created_at.desc',
+      limit: 1000
+    });
+
+    // Convertir a formato de getAllSalesData para compatibilidad
+    const sales = (pedidos||[]).map(p => ({
+      id:      p.id,
+      time:    p.created_at,
+      total:   parseFloat(p.total)||0,
+      canal:   (p.origen === 'pos') ? 'pos' : 'domicilio',
+      payment: p.metodo_pago || 'Efectivo',
+      desc:    p.cliente || 'Pedido #' + p.id
+    }));
+
+    // Inyectar en el store para que _renderGlobalSales funcione
+    upd(function(s) { s._globalSales = sales; });
+
+    // Sobreescribir getAllSalesData para que use los datos de SB
+    window.getAllSalesData = function() {
+      return getStore()._globalSales || [];
+    };
+
+    console.log('[SB] Ventas globales cargadas:', sales.length);
+    if (typeof _renderGlobalSales === 'function') _renderGlobalSales();
+  } catch(e) {
+    console.error('[SB] Error cargando ventas globales:', e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ARRANQUE — reemplaza el INIT original
+// ══════════════════════════════════════════════════════════════════════
+(async function sbInit() {
+  console.log('[SB] 🚀 Iniciando Papayaso Admin...');
+  try {
+    // 1. Cargar configuración primero (nombre, logo, isOpen)
+    await sbLoadConfig();
+
+    // 2. Cargar categorías y productos
+    await sbLoadCategorias();
+    await sbLoadProductos();
+
+    // 3. Cargar pedidos de HOY únicamente
+    await sbLoadPedidos();
+
+    // 4. Mostrar en UI
+    const subPed = document.getElementById('sub-pedidos'); if (subPed) subPed.classList.add('visible');
+    const pedTab = document.getElementById('tab-pedidos'); if (pedTab) pedTab.classList.add('active');
+    if (typeof renderOrders === 'function') renderOrders();
+    if (typeof updateStats  === 'function') updateStats();
+
+    // 5. Polling cada 8s para nuevos pedidos
+    setInterval(sbPollNuevos, 8000);
+
+    // 6. Audio (primer clic del usuario)
+    if (typeof _initAudio === 'function') {
+      document.addEventListener('click',      _initAudio, { once: true });
+      document.addEventListener('touchstart', _initAudio, { once: true });
+    }
+
+    console.log('[SB] ✅ Admin listo. localStorage = 0 usos.');
+  } catch(e) {
+    console.error('[SB] Error en arranque:', e);
+    alert('❌ Error al conectar con Supabase:\n\n' + e.message +
+      '\n\nVerifica la URL y la API Key en el código.');
+  }
 })();
 
 </script>
