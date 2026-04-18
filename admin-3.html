@@ -1313,7 +1313,25 @@ function setF(val) {
 
 function loadPanel(p) {
   if (p === 'pedidos-todos')  { renderOrders(); updateStats(); return; }
-  if (p === 'ventas-hoy')     { renderSalesToday(); return; }
+  if (p === 'ventas-hoy')     {
+    // Recargar historial fresco de SB y luego renderizar
+    sbCargarHistorialCompleto().then(function() { renderSalesToday(); });
+    return;
+  }
+  if (p === 'ventas-hist')    {
+    sbCargarHistorialCompleto().then(function() { initDateFilter('dom'); });
+    return;
+  }
+  if (p === 'ventas-global')  {
+    sbCargarHistorialCompleto().then(function() { initDateFilter('global'); });
+    return;
+  }
+  if (p === 'estadisticas')   {
+    sbCargarHistorialCompleto().then(function() {
+      if (typeof renderEstadisticas === 'function') renderEstadisticas();
+    });
+    return;
+  }
   if (p === 'ventas-hist')    { initDateFilter('dom'); return; }
   if (p === 'estadisticas')   { renderEstadisticas(); return; }
   if (p === 'ventas-global')  { initDateFilter('global'); return; }
@@ -1510,28 +1528,44 @@ function assignRider(id) {
 }
 
 function updateStats() {
-  var s = getStore();
-  var pos = getPosStore();
+  var s   = getStore();
 
-  var todayDom = s.orders.filter(function(o) { return isToday(o.time) && o.status !== 'cancelado'; });
-  var todayPos = (pos.sales || []).filter(function(sa) { return isToday(sa.time); });
-
-  var revDom = 0; for (var i=0;i<todayDom.length;i++) revDom += parseFloat(todayDom[i].total)||0;
-  var revPos = 0; for (var j=0;j<todayPos.length;j++) revPos += parseFloat(todayPos[j].total)||0;
-  var revTotal = revDom + revPos;
-
-  var pend = s.orders.filter(function(o) { return o.status !== 'entregado' && o.status !== 'cancelado'; }).length;
+  // ── Pedidos activos (de HOY — s.orders ya viene filtrado por fecha) ──
+  var pend = s.orders.filter(function(o) {
+    return o.status !== 'entregado' && o.status !== 'cancelado';
+  }).length;
   var nN = s.orders.filter(function(o) { return o.status === 'nuevo'; }).length;
+
+  // ── Facturado HOY (domicilios de hoy en s.orders) ──
+  var todayDom = s.orders.filter(function(o) {
+    return isToday(o.time) && o.status !== 'cancelado';
+  });
+  var revHoy = 0;
+  for (var i = 0; i < todayDom.length; i++) revHoy += parseFloat(todayDom[i].total)||0;
+
+  // ── Acumulado histórico desde _globalSales (toda la BD) ──
+  var allSales   = getAllSalesData();  // lleno por sbCargarHistorialCompleto
+  var revGlobal  = 0;
+  var revMes     = 0;
+  var mes        = new Date().toISOString().slice(0, 7);
+  for (var j = 0; j < allSales.length; j++) {
+    var t = parseFloat(allSales[j].total)||0;
+    revGlobal += t;
+    if (allSales[j].time && allSales[j].time.startsWith(mes)) revMes += t;
+  }
 
   var sr = document.getElementById('stats-row');
   if (sr) {
-    sr.innerHTML = '<div class="sc"><div class="sc-val">' + (todayDom.length+todayPos.length) + '</div><div class="sc-lbl">Ventas hoy (total)</div></div>'
-      + '<div class="sc"><div class="sc-val" style="color:var(--warn)">' + pend + '</div><div class="sc-lbl">Domicilios en proceso</div></div>'
-      + '<div class="sc"><div class="sc-val" style="color:var(--green)">' + fp(revTotal) + '</div><div class="sc-lbl">Facturado hoy</div></div>'
-      + '<div class="sc"><div class="sc-val" style="color:var(--info)">' + nN + '</div><div class="sc-lbl">Nuevos</div></div>';
+    sr.innerHTML =
+      '<div class="sc"><div class="sc-val">'                                          + (todayDom.length)  + '</div><div class="sc-lbl">Domicilios hoy</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--warn)">'               + pend               + '</div><div class="sc-lbl">En proceso</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--green)">'              + fp(revHoy)         + '</div><div class="sc-lbl">Facturado hoy</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--info)">'               + nN                 + '</div><div class="sc-lbl">Nuevos</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--ok)">'                 + fp(revMes)         + '</div><div class="sc-lbl">Este mes</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--purple);font-size:15px">'+ fp(revGlobal)    + '</div><div class="sc-lbl">Total histórico</div></div>';
   }
-  var b = document.getElementById('di-badge');
-  if (b) { b.style.display = nN > 0 ? 'inline' : 'none'; b.textContent = nN; }
+  var b  = document.getElementById('di-badge');
+  if (b)  { b.style.display  = nN > 0 ? 'inline' : 'none'; b.textContent  = nN; }
   var nb = document.getElementById('nbadge');
   if (nb) { nb.style.display = nN > 0 ? 'inline' : 'none'; nb.textContent = nN; }
 }
@@ -1641,33 +1675,52 @@ function registerGlobalSale(sale) {
   var arr = getGlobalSales(); arr.unshift(sale); saveGlobalSales(arr);
 }
 
-// VENTAS HOY — solo domicilios
+// VENTAS HOY — domicilios de hoy usando historial completo de SB
 function renderSalesToday() {
-  var s = getStore();
   var fechaEl = document.getElementById('ventas-hoy-fecha');
   if (fechaEl) fechaEl.textContent = new Date().toLocaleDateString('es-CO',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  var orders = s.orders.filter(function(o) { return isToday(o.time) && o.status !== 'cancelado'; });
-  var rev=0; var del=0;
-  for(var i=0;i<orders.length;i++){rev+=parseFloat(orders[i].total)||0;if(orders[i].status==='entregado')del++;}
-  var sr=document.getElementById('sales-hoy-stats');
-  if(sr){sr.innerHTML='<div class="sc"><div class="sc-val">'+orders.length+'</div><div class="sc-lbl">Pedidos hoy</div></div>'
-    +'<div class="sc"><div class="sc-val" style="color:var(--ok)">'+del+'</div><div class="sc-lbl">Entregados</div></div>'
-    +'<div class="sc"><div class="sc-val" style="color:var(--green)">'+fp(rev)+'</div><div class="sc-lbl">Total domicilios</div></div>';}
-  var br=document.getElementById('dom-hoy-pago-breakdown');
-  if(br) br.innerHTML=buildPaymentBreakdown(orders);
-  var body=document.getElementById('sales-hoy-body');
-  if(!body) return;
-  if(!orders.length){body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Sin pedidos domicilio hoy</td></tr>';return;}
-  var rows='';
-  for(var j=0;j<orders.length;j++){
-    var o=orders[j]; var names=[];
-    for(var k=0;k<o.items.length;k++) names.push((o.items[k].qty||1)+'x '+o.items[k].name);
-    var hora=''; try{hora=new Date(o.time).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});}catch(e){}
-    rows+='<tr><td style="font-weight:700">'+o.num+'</td><td style="color:var(--muted);font-size:12px">'+hora+'</td>'
-      +'<td>'+o.client+'</td><td style="color:var(--muted);font-size:12px">'+names.join(', ')+'</td>'
-      +'<td style="font-size:12px">'+(o.payment||'')+'</td><td style="color:var(--green);font-weight:600">'+fp(o.total)+'</td></tr>';
+
+  // Leer del historial completo (no solo s.orders que son los activos actuales)
+  var allData  = getAllSalesData();
+  var hoyStr   = localDateStr();
+  var orders   = allData.filter(function(v) {
+    return v.canal === 'domicilio' && localDateStr(v.time) === hoyStr;
+  });
+
+  var rev = 0;
+  for (var i = 0; i < orders.length; i++) rev += parseFloat(orders[i].total)||0;
+
+  var sr = document.getElementById('sales-hoy-stats');
+  if (sr) {
+    sr.innerHTML =
+      '<div class="sc"><div class="sc-val">' + orders.length + '</div><div class="sc-lbl">Pedidos hoy</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--green)">' + fp(rev) + '</div><div class="sc-lbl">Total domicilios</div></div>';
   }
-  body.innerHTML=rows;
+  var br = document.getElementById('dom-hoy-pago-breakdown');
+  if (br) br.innerHTML = buildPaymentBreakdown(orders);
+
+  var body = document.getElementById('sales-hoy-body');
+  if (!body) return;
+  if (!orders.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Sin pedidos domicilio hoy</td></tr>';
+    return;
+  }
+  var rows = '';
+  for (var j = 0; j < orders.length; j++) {
+    var v = orders[j];
+    var clienteNombre = (v.desc || '').split('·')[0].trim() || 'Cliente';
+    var hora = '';
+    try { hora = new Date(v.time).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); } catch(e) {}
+    rows += '<tr>'
+      + '<td style="font-weight:700">' + (v.num||('#'+v.id)) + '</td>'
+      + '<td style="color:var(--muted);font-size:12px">' + hora + '</td>'
+      + '<td>' + clienteNombre + '</td>'
+      + '<td style="color:var(--muted);font-size:12px">' + (v.items||'') + '</td>'
+      + '<td style="font-size:12px">' + (v.payment||'') + '</td>'
+      + '<td style="color:var(--green);font-weight:600">' + fp(v.total) + '</td>'
+      + '</tr>';
+  }
+  body.innerHTML = rows;
 }
 
 // VENTAS DOM o GLOBAL por fecha
@@ -1687,32 +1740,52 @@ function renderSalesByDate(mode) {
 }
 
 function _renderDomSalesByDate() {
-  var s=getStore();
-  var from=(document.getElementById('date-from-dom')||{}).value||'';
-  var to=(document.getElementById('date-to-dom')||{}).value||'';
-  var orders=s.orders.filter(function(o){
-    var d=localDateStr(o.time); return d>=from&&d<=to&&o.status!=='cancelado';
+  var from = (document.getElementById('date-from-dom')||{}).value||'';
+  var to   = (document.getElementById('date-to-dom')||{}).value||'';
+
+  // Usar historial completo de SB (no solo s.orders que son solo de hoy)
+  var allData = getAllSalesData();
+  var orders  = allData.filter(function(v) {
+    if (v.canal !== 'domicilio') return false;
+    var d = localDateStr(v.time);
+    return d >= from && d <= to;
   });
-  var rev=0; var del=0;
-  for(var i=0;i<orders.length;i++){rev+=parseFloat(orders[i].total)||0;if(orders[i].status==='entregado')del++;}
-  var sr=document.getElementById('sales-dom-hist-stats');
-  if(sr){sr.innerHTML='<div class="sc"><div class="sc-val">'+orders.length+'</div><div class="sc-lbl">Pedidos</div></div>'
-    +'<div class="sc"><div class="sc-val" style="color:var(--ok)">'+del+'</div><div class="sc-lbl">Entregados</div></div>'
-    +'<div class="sc"><div class="sc-val" style="color:var(--green)">'+fp(rev)+'</div><div class="sc-lbl">Total</div></div>';}
-  var br=document.getElementById('dom-hist-pago-breakdown');
-  if(br) br.innerHTML=buildPaymentBreakdown(orders);
-  var body=document.getElementById('sales-dom-hist-body');
-  if(!body)return;
-  if(!orders.length){body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Sin pedidos en ese rango</td></tr>';return;}
-  var rows='';
-  for(var j=0;j<orders.length;j++){
-    var o=orders[j]; var names=[];
-    for(var k=0;k<o.items.length;k++) names.push((o.items[k].qty||1)+'x '+o.items[k].name);
-    rows+='<tr><td style="font-weight:700">'+o.num+'</td><td style="color:var(--muted);font-size:12px">'+fmtTime(o.time)+'</td>'
-      +'<td>'+o.client+'</td><td style="color:var(--muted);font-size:12px">'+names.join(', ')+'</td>'
-      +'<td style="font-size:12px">'+(o.payment||'')+'</td><td style="color:var(--green);font-weight:600">'+fp(o.total)+'</td></tr>';
+
+  var rev = 0, del = 0;
+  for (var i = 0; i < orders.length; i++) {
+    rev += parseFloat(orders[i].total)||0;
+    // En el historial global, los entregados tienen estado implícito
+    // (sbCargarHistorialCompleto excluye cancelados)
+    del++;
   }
-  body.innerHTML=rows;
+  var sr = document.getElementById('sales-dom-hist-stats');
+  if (sr) {
+    sr.innerHTML = '<div class="sc"><div class="sc-val">'+orders.length+'</div><div class="sc-lbl">Pedidos</div></div>'
+      + '<div class="sc"><div class="sc-val" style="color:var(--ok)">'+del+'</div><div class="sc-lbl">Completados</div></div>'
+      + '<div class="sc"><div class="sc-val" style="color:var(--green)">'+fp(rev)+'</div><div class="sc-lbl">Total</div></div>';
+  }
+  var br = document.getElementById('dom-hist-pago-breakdown');
+  if (br) br.innerHTML = buildPaymentBreakdown(orders);
+  var body = document.getElementById('sales-dom-hist-body');
+  if (!body) return;
+  if (!orders.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Sin pedidos en ese rango</td></tr>';
+    return;
+  }
+  var rows = '';
+  for (var j = 0; j < orders.length; j++) {
+    var v = orders[j];
+    var clienteNombre = (v.desc || '').split('·')[0].trim() || 'Cliente';
+    rows += '<tr>'
+      + '<td style="font-weight:700">' + (v.num||('#'+v.id)) + '</td>'
+      + '<td style="color:var(--muted);font-size:12px">' + fmtTime(v.time) + '</td>'
+      + '<td>' + clienteNombre + '</td>'
+      + '<td style="color:var(--muted);font-size:12px">' + (v.items||'') + '</td>'
+      + '<td style="font-size:12px">' + (v.payment||'') + '</td>'
+      + '<td style="color:var(--green);font-weight:600">' + fp(v.total) + '</td>'
+      + '</tr>';
+  }
+  body.innerHTML = rows;
 }
 
 function _renderGlobalSales() {
@@ -2472,17 +2545,27 @@ function showPosPanel(panel) {
   if (panel === 'caja') {
     if (posView) posView.classList.add('open');
     if (page) page.style.display = 'none';
-    renderPosCats();
-    renderPosGrid('all');
-    switchPosPane('prods');
+    // Recargar productos/categorías desde pos_productos y pos_categorias
+    (async function() {
+      await sbPosLoadCategorias();
+      await sbPosLoadProductos();
+      renderPosCats();
+      renderPosGrid('all');
+      switchPosPane('prods');
+    })();
   } else {
     if (posView) posView.classList.remove('open');
     if (page) page.style.display = '';
     var target = document.getElementById('panel-pos-' + panel);
     if (target) target.classList.add('active');
-    if (panel === 'prod') renderPosEditor();
-    if (panel === 'cats') renderPosCatsList();
-    if (panel === 'ventas') renderPosSales();
+    // Recargar desde Supabase antes de renderizar
+    if (panel === 'prod') {
+      sbPosLoadProductos().then(function() { renderPosEditor(); });
+    } else if (panel === 'cats') {
+      sbPosLoadCategorias().then(function() { renderPosCatsList(); });
+    } else if (panel === 'ventas') {
+      renderPosSales();
+    }
   }
 }
 
@@ -2654,11 +2737,104 @@ function posCheckout(payMethod) {
     canal: 'pos', payment: payMethod, total: total
   });
 
+  // ── Guardar en Supabase (tabla pedidos, origen='pos') ──────────────
+  (async function() {
+    try {
+      var detalles = posCart.map(function(it) {
+        return { nombre: it.name, cantidad: it.qty, precio_unitario: it.price, total: it.total };
+      });
+      await SB.post('pedidos', {
+        cliente:         'Venta en caja',
+        telefono:        '',
+        direccion:       '',
+        detalles_pedido: detalles,
+        total:           total,
+        estado:          'Entregado',   // venta POS = entregada inmediatamente
+        metodo_pago:     payMethod,
+        origen:          'pos'
+      });
+      console.log('[SB-POS] Venta registrada en pedidos');
+    } catch(e) {
+      console.warn('[SB-POS] No se pudo guardar venta en Supabase:', e.message);
+      // No bloquear — la venta ya se registró en memoria
+    }
+  })();
+
   showPosReceipt(sale);
   posOrderNum++;
   posCart = [];
   renderPosCart();
   switchPosPane('prods');
+}
+
+// ══════════════════════════════════════════════════════════════
+// SUPABASE POS — carga desde pos_productos y pos_categorias
+// ══════════════════════════════════════════════════════════════
+async function sbPosLoadProductos() {
+  try {
+    var prods = await SB.get('pos_productos', {
+      select: '*', order: 'categoria.asc,nombre.asc'
+    });
+    updPos(function(s) {
+      s.products = (prods || []).map(function(p) {
+        return {
+          id:        p.id,
+          sb_id:     p.id,
+          name:      p.nombre      || '',
+          cat:       p.categoria   || '',
+          price:     parseInt(p.precio) || 0,
+          desc:      p.descripcion || '',
+          photo:     p.imagen_url  || '',
+          emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
+          available: p.disponible !== false
+        };
+      });
+    });
+    if (typeof renderPosEditor === 'function') renderPosEditor();
+    if (typeof renderPosCats   === 'function') renderPosCats();
+    if (typeof renderPosGrid   === 'function') renderPosGrid('all');
+    console.log('[SB-POS] Productos cargados:', (prods||[]).length);
+  } catch(e) {
+    console.error('[SB-POS] Error cargando pos_productos:', e.message);
+    // Si la tabla no existe aún, aviso claro
+    if (e.message.indexOf('42P01') >= 0 || e.message.indexOf('does not exist') >= 0) {
+      console.warn('[SB-POS] La tabla pos_productos no existe. Créala con el SQL del README.');
+    }
+  }
+}
+
+async function sbPosLoadCategorias() {
+  try {
+    var cats = await SB.get('pos_categorias', {
+      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc'
+    });
+    updPos(function(s) {
+      s.categories = (cats || []).map(function(c) { return c.nombre; });
+      s._cats_raw  = cats || [];
+    });
+    if (typeof renderPosCatsList === 'function') renderPosCatsList();
+    // Rellenar el select del modal de producto POS
+    var sel = document.getElementById('pos-ped-cat');
+    if (sel) {
+      var s = getPosStore();
+      sel.innerHTML = s.categories.map(function(c) {
+        return '<option value="' + c + '">' + c + '</option>';
+      }).join('');
+    }
+    console.log('[SB-POS] Categorías cargadas:', (cats||[]).length);
+  } catch(e) {
+    console.error('[SB-POS] Error cargando pos_categorias:', e.message);
+    if (e.message.indexOf('42P01') >= 0 || e.message.indexOf('does not exist') >= 0) {
+      console.warn('[SB-POS] La tabla pos_categorias no existe. Créala con el SQL del README.');
+    }
+  }
+}
+
+// Arranque POS — se llama desde sbInit general
+async function sbPosInit() {
+  await sbPosLoadCategorias();
+  await sbPosLoadProductos();
+  console.log('[SB-POS] ✅ POS listo desde Supabase');
 }
 
 var _lastPosSale = null;
@@ -2923,10 +3099,17 @@ function togglePosAvail(id) {
 function deletePosProd(id) {
   var s = getPosStore();
   var p = s.products.filter(function(x) { return x.id === id; })[0];
-  if (!confirm('Eliminar "' + (p ? p.name : id) + '"?')) return;
-  updPos(function(s) { s.products = s.products.filter(function(x) { return x.id !== id; }); });
-  renderPosEditor();
-  showToast('Producto eliminado del POS');
+  if (!confirm('¿Eliminar "' + (p ? p.name : id) + '" del POS?\nEsta acción no se puede deshacer.')) return;
+  (async function() {
+    try {
+      await SB.del('pos_productos', 'id=eq.' + id);
+      await sbPosLoadProductos();
+      showToast('Producto eliminado del POS');
+    } catch(e) {
+      console.error('[SB-POS] Error eliminando producto:', e.message);
+      alert('❌ Error al eliminar producto:\n' + e.message);
+    }
+  })();
 }
 
 function openPosProdModal(id) {
@@ -2984,32 +3167,50 @@ function updatePosPhotoUI() {
 function removePosPhoto() { posEditPhoto = ''; updatePosPhotoUI(); }
 
 function savePosProd() {
-  var nameEl = document.getElementById('pos-ped-name');
+  var nameEl  = document.getElementById('pos-ped-name');
   var priceEl = document.getElementById('pos-ped-price');
-  var descEl = document.getElementById('pos-ped-desc');
-  var catEl = document.getElementById('pos-ped-cat');
+  var descEl  = document.getElementById('pos-ped-desc');
+  var catEl   = document.getElementById('pos-ped-cat');
   var availEl = document.getElementById('pos-ped-avail');
-  var name = nameEl ? nameEl.value.trim() : '';
-  var price = parseInt(priceEl ? priceEl.value : 0) || 0;
-  var desc = descEl ? descEl.value.trim() : '';
-  var cat = catEl ? catEl.value : '';
-  var available = availEl ? availEl.value === '1' : true;
-  if (!name) { showToast('Ingresa el nombre del producto'); return; }
-  updPos(function(s) {
-    if (posEditId) {
-      for (var i = 0; i < s.products.length; i++) {
-        if (s.products[i].id === posEditId) {
-          s.products[i].name = name; s.products[i].price = price;
-          s.products[i].desc = desc; s.products[i].cat = cat;
-          s.products[i].available = available; s.products[i].photo = posEditPhoto;
-          break;
-        }
+  var name    = nameEl  ? nameEl.value.trim()              : '';
+  var price   = parseInt(priceEl ? priceEl.value : 0) || 0;
+  var desc    = descEl  ? descEl.value.trim()              : '';
+  var cat     = catEl   ? catEl.value                      : '';
+  var available = availEl ? availEl.value === '1'          : true;
+
+  if (!name)  { alert('⚠️ Ingresa el nombre del producto'); return; }
+  if (!price) { alert('⚠️ Ingresa un precio mayor a 0');   return; }
+  if (!cat)   { alert('⚠️ Selecciona una categoría');      return; }
+
+  var body = {
+    nombre:     name,
+    precio:     price,
+    descripcion: desc,
+    categoria:  cat,
+    disponible: available,
+    imagen_url: posEditPhoto || null
+  };
+
+  (async function() {
+    try {
+      var result;
+      if (posEditId) {
+        result = await SB.patch('pos_productos', 'id=eq.' + posEditId, body);
+        console.log('[SB-POS] Producto actualizado:', posEditId);
+      } else {
+        result = await SB.post('pos_productos', body);
+        console.log('[SB-POS] Producto creado:', result && result[0] && result[0].id);
       }
-    } else {
-      s.products.push({id:Date.now(),name:name,price:price,desc:desc,cat:cat,available:available,emoji:name.charAt(0),photo:posEditPhoto});
+      closePosProdModal();
+      await sbPosLoadProductos();      // recargar desde Supabase
+      showToast('Producto POS guardado ✓');
+    } catch(e) {
+      console.error('[SB-POS] Error guardando producto:', e.message);
+      alert('❌ Error al guardar producto POS:\n\n' + e.message +
+        '\n\nVerifica que la tabla pos_productos exista y tenga las columnas:\n' +
+        'nombre, precio, descripcion, categoria, disponible, imagen_url');
     }
-  });
-  closePosProdModal(); renderPosEditor(); showToast('Producto POS guardado');
+  })();
 }
 
 function renderPosCatsList() {
@@ -3044,40 +3245,76 @@ function startEditPosCat(i) {
 }
 function cancelEditPosCat(i) { var r = document.getElementById('pos-cat-edit-' + i); if (r) r.style.display = 'none'; }
 function savePosCat(i) {
-  var inp = document.getElementById('pos-cat-inp-' + i);
+  var inp     = document.getElementById('pos-cat-inp-' + i);
   var newName = inp ? inp.value.trim() : '';
-  if (!newName) { showToast('El nombre no puede estar vacio'); return; }
-  var s = getPosStore();
+  if (!newName) { showToast('El nombre no puede estar vacío'); return; }
+  var s       = getPosStore();
   var oldName = s.categories[i];
   if (newName === oldName) { cancelEditPosCat(i); return; }
-  updPos(function(s) {
-    s.categories[i] = newName;
-    for (var j = 0; j < s.products.length; j++) {
-      if (s.products[j].cat === oldName) s.products[j].cat = newName;
+  (async function() {
+    try {
+      // Buscar id en Supabase
+      var rows = await SB.get('pos_categorias', { select: 'id', 'nombre': 'eq.' + oldName, limit: 1 });
+      if (rows && rows[0]) {
+        await SB.patch('pos_categorias', 'id=eq.' + rows[0].id, { nombre: newName });
+      }
+      // Actualizar nombre en productos POS que usen la categoría vieja
+      var prods = s.products.filter(function(p) { return p.cat === oldName; });
+      for (var k = 0; k < prods.length; k++) {
+        if (prods[k].sb_id) {
+          await SB.patch('pos_productos', 'id=eq.' + prods[k].sb_id, { categoria: newName });
+        }
+      }
+      await sbPosLoadCategorias();
+      await sbPosLoadProductos();
+      showToast('Categoría actualizada ✓');
+    } catch(e) {
+      console.error('[SB-POS] Error actualizando categoría:', e.message);
+      alert('❌ Error al actualizar categoría:\n' + e.message);
     }
-  });
-  renderPosCatsList(); showToast('Categoria actualizada');
+  })();
 }
 
 function addPosCat() {
   var inp = document.getElementById('pos-new-cat');
-  var v = inp ? inp.value.trim() : '';
-  if (!v) return;
+  var v   = inp ? inp.value.trim() : '';
+  if (!v) { showToast('Escribe el nombre de la categoría'); return; }
   var s = getPosStore();
-  if (s.categories.indexOf(v) >= 0) { showToast('Ya existe esa categoria'); return; }
-  updPos(function(s) { s.categories.push(v); });
-  if (inp) inp.value = '';
-  renderPosCatsList(); showToast('Categoria agregada al POS');
+  if (s.categories.indexOf(v) >= 0) { showToast('Ya existe esa categoría'); return; }
+  (async function() {
+    try {
+      await SB.post('pos_categorias', { nombre: v, orden: s.categories.length });
+      if (inp) inp.value = '';
+      await sbPosLoadCategorias();
+      showToast('Categoría POS creada ✓');
+    } catch(e) {
+      console.error('[SB-POS] Error creando categoría:', e.message);
+      alert('❌ Error al crear categoría POS:\n\n' + e.message +
+        '\n\nVerifica que la tabla pos_categorias exista y tenga las columnas: nombre, orden');
+    }
+  })();
 }
 
 function deletePosCat(i) {
   var s = getPosStore();
   var cat = s.categories[i];
-  var hasProd = false;
-  for (var j = 0; j < s.products.length; j++) { if (s.products[j].cat === cat) { hasProd = true; break; } }
-  if (hasProd) { showToast('Hay productos en esa categoria'); return; }
-  updPos(function(s) { s.categories.splice(i, 1); });
-  renderPosCatsList();
+  var hasProd = s.products.some(function(p) { return p.cat === cat; });
+  if (hasProd) { showToast('Hay productos en esa categoría'); return; }
+  if (!confirm('¿Eliminar la categoría "' + cat + '"?')) return;
+  (async function() {
+    try {
+      // Buscar el id real en Supabase
+      var rows = await SB.get('pos_categorias', { select: 'id', 'nombre': 'eq.' + cat, limit: 1 });
+      if (rows && rows[0]) {
+        await SB.del('pos_categorias', 'id=eq.' + rows[0].id);
+      }
+      await sbPosLoadCategorias();
+      showToast('Categoría eliminada');
+    } catch(e) {
+      console.error('[SB-POS] Error eliminando categoría:', e.message);
+      alert('❌ Error al eliminar categoría:\n' + e.message);
+    }
+  })();
 }
 
 
@@ -5259,8 +5496,9 @@ async function sbPollNuevos() {
 // ESTADÍSTICAS desde Supabase
 // ══════════════════════════════════════════════════════════════════════
 async function sbGetStats() {
-  const hoy     = new Date().toISOString().slice(0,10);
-  const mes     = new Date().toISOString().slice(0,7);
+  // Esta función ya no se usa directamente — sbCargarHistorialCompleto la reemplaza
+  const hoy = new Date().toISOString().slice(0,10);
+  const mes  = new Date().toISOString().slice(0,7);
   try {
     const all = await SB.get('pedidos', {
       select: 'total,created_at,estado',
@@ -5278,41 +5516,81 @@ async function sbGetStats() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// VENTAS GLOBALES — _renderGlobalSales usa datos de SB
+// HISTORIAL COMPLETO — separa dos responsabilidades:
+//
+//   A) s.orders  → solo pedidos ACTIVOS de hoy (panel Pedidos)
+//   B) _globalSales → TODOS los pedidos históricos (panel Ventas)
+//
+// De esta forma el panel de Pedidos solo muestra los de hoy
+// y las Estadísticas y Ventas muestran el acumulado total.
 // ══════════════════════════════════════════════════════════════════════
-async function sbCargarVentasGlobales() {
+async function sbCargarHistorialCompleto() {
   try {
-    // Traer todos los pedidos no cancelados para ventas globales
-    const pedidos = await SB.get('pedidos', {
-      select: 'id,total,created_at,estado,metodo_pago,origen,cliente',
+    // Traer TODOS los pedidos (sin límite de fecha) no cancelados
+    // para las estadísticas y el panel de ventas
+    const todos = await SB.get('pedidos', {
+      select: 'id,total,created_at,estado,metodo_pago,origen,cliente,telefono',
       'estado': 'neq.Cancelado',
-      order: 'created_at.desc',
-      limit: 1000
+      order:  'created_at.desc',
+      limit:  5000   // suficiente para cualquier negocio
     });
 
-    // Convertir a formato de getAllSalesData para compatibilidad
-    const sales = (pedidos||[]).map(p => ({
+    // Convertir al formato que usa getAllSalesData / _renderGlobalSales
+    const sales = (todos||[]).map(p => ({
       id:      p.id,
+      num:     '#' + p.id,
       time:    p.created_at,
       total:   parseFloat(p.total)||0,
       canal:   (p.origen === 'pos') ? 'pos' : 'domicilio',
       payment: p.metodo_pago || 'Efectivo',
-      desc:    p.cliente || 'Pedido #' + p.id
+      desc:    (p.cliente || '') + (p.telefono ? ' · ' + p.telefono : ''),
+      items:   'Pedido #' + p.id
     }));
 
-    // Inyectar en el store para que _renderGlobalSales funcione
+    // Inyectar en el store — getAllSalesData() los leerá desde aquí
     upd(function(s) { s._globalSales = sales; });
-
-    // Sobreescribir getAllSalesData para que use los datos de SB
     window.getAllSalesData = function() {
       return getStore()._globalSales || [];
     };
 
-    console.log('[SB] Ventas globales cargadas:', sales.length);
+    // ── Calcular y actualizar las tarjetas de estadísticas globales ──
+    const hoy = new Date().toISOString().slice(0, 10);
+    const mes  = new Date().toISOString().slice(0, 7);
+    let totalHoy = 0, totalMes = 0, totalGlobal = 0;
+    sales.forEach(function(v) {
+      totalGlobal += v.total;
+      if (v.time && v.time.startsWith(hoy)) totalHoy += v.total;
+      if (v.time && v.time.startsWith(mes))  totalMes  += v.total;
+    });
+
+    // Tarjetas resumen de estadísticas (si el panel de estadísticas las muestra)
+    var statsCards = [
+      { id: 'stat-total-global', val: fp(totalGlobal), lbl: 'Total histórico' },
+      { id: 'stat-total-mes',    val: fp(totalMes),    lbl: 'Este mes' },
+      { id: 'stat-total-hoy',    val: fp(totalHoy),    lbl: 'Hoy' },
+      { id: 'stat-num-ventas',   val: sales.length,    lbl: 'Ventas totales' }
+    ];
+    statsCards.forEach(function(c) {
+      var el = document.getElementById(c.id);
+      if (el) el.textContent = c.val;
+    });
+
+    console.log('[SB] Historial cargado — total registros:', sales.length,
+      '| hoy:', fp(totalHoy), '| mes:', fp(totalMes), '| global:', fp(totalGlobal));
+
+    // Si el panel de ventas globales ya está visible, re-renderizarlo
     if (typeof _renderGlobalSales === 'function') _renderGlobalSales();
+
+    return { totalHoy, totalMes, totalGlobal, count: sales.length };
   } catch(e) {
-    console.error('[SB] Error cargando ventas globales:', e.message);
+    console.error('[SB] Error cargando historial completo:', e.message);
+    return null;
   }
+}
+
+// Alias para compatibilidad con código anterior
+async function sbCargarVentasGlobales() {
+  return sbCargarHistorialCompleto();
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -5328,10 +5606,16 @@ async function sbCargarVentasGlobales() {
     await sbLoadCategorias();
     await sbLoadProductos();
 
-    // 3. Cargar pedidos de HOY únicamente
+    // 3. Cargar pedidos ACTIVOS de hoy (panel Pedidos)
     await sbLoadPedidos();
 
-    // 4. Mostrar en UI
+    // 4. Cargar historial COMPLETO para estadísticas y ventas globales
+    sbCargarHistorialCompleto(); // async sin await — no bloquea el render inicial
+
+    // 5. Cargar datos del POS desde sus propias tablas
+    await sbPosInit();
+
+    // 5. Mostrar en UI
     const subPed = document.getElementById('sub-pedidos'); if (subPed) subPed.classList.add('visible');
     const pedTab = document.getElementById('tab-pedidos'); if (pedTab) pedTab.classList.add('active');
     if (typeof renderOrders === 'function') renderOrders();
