@@ -2203,6 +2203,9 @@ async function sbInsertPedido(orderData) {
       const sbId = result[0].id;
       _lastSbPedidoId = sbId;
 
+      // ── Persistir ID en localStorage para sobrevivir recargas ──────
+      persistirIdPedido(sbId);
+
       // Agregar al store en memoria para que el tracking funcione
       _STORE.orders = _STORE.orders || [];
       _STORE.orders.unshift({
@@ -2337,6 +2340,12 @@ async function sbTrackingPoll() {
     if (!rows || !rows[0]) return;
     const nuevoEstado = SB_TO_LOCAL[rows[0].estado] || 'nuevo';
 
+    // Si el pedido fue entregado o cancelado → limpiar localStorage
+    if (rows[0].estado === 'Entregado' || rows[0].estado === 'Cancelado') {
+      limpiarIdPedido();
+      console.log('[Track] Pedido finalizado, localStorage limpiado');
+    }
+
     // Actualizar en memoria
     const orders = _STORE.orders || [];
     let changed = false;
@@ -2374,23 +2383,116 @@ async function sbTrackingPoll() {
 })();
 
 // ══════════════════════════════════════════════════════════════
+// 5. PERSISTENCIA DEL SEGUIMIENTO — localStorage solo para el ID
+// El ID del pedido sobrevive recargas; el estado siempre viene de Supabase
+// ══════════════════════════════════════════════════════════════
+const TRACKING_KEY = 'papayaso_tracking_id';
+
+function persistirIdPedido(sbId) {
+  try {
+    localStorage.setItem(TRACKING_KEY, String(sbId));
+    console.log('[Track] ID persistido en localStorage:', sbId);
+  } catch(e) {
+    console.warn('[Track] No se pudo persistir el ID:', e.message);
+  }
+}
+
+function limpiarIdPedido() {
+  try {
+    localStorage.removeItem(TRACKING_KEY);
+    console.log('[Track] ID de pedido limpiado');
+  } catch(e) {}
+}
+
+function leerIdPedidoGuardado() {
+  try {
+    var id = localStorage.getItem(TRACKING_KEY);
+    return id ? parseInt(id) : null;
+  } catch(e) { return null; }
+}
+
+// Restaurar pedido al recargar: consulta Supabase con el ID guardado
+async function restaurarSeguimientoSiExiste() {
+  var idGuardado = leerIdPedidoGuardado();
+  if (!idGuardado) return;
+
+  console.log('[Track] ID guardado encontrado:', idGuardado, '— consultando Supabase...');
+  try {
+    const rows = await SB.get('pedidos', {
+      select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at',
+      'id': 'eq.' + idGuardado,
+      limit: 1
+    });
+    if (!rows || !rows.length) {
+      // Pedido no existe o fue purgado — limpiar
+      limpiarIdPedido();
+      console.log('[Track] Pedido no encontrado en Supabase, limpiando');
+      return;
+    }
+    const p = rows[0];
+    const estadoLocal = SB_TO_LOCAL[p.estado] || 'nuevo';
+
+    // Si ya fue entregado o cancelado → limpiar y no mostrar tracking
+    if (p.estado === 'Entregado' || p.estado === 'Cancelado') {
+      limpiarIdPedido();
+      console.log('[Track] Pedido ya finalizado (' + p.estado + '), limpiando');
+      return;
+    }
+
+    // Reconstruir el pedido en memoria
+    var items = [];
+    try {
+      items = Array.isArray(p.detalles_pedido) ? p.detalles_pedido : JSON.parse(p.detalles_pedido || '[]');
+    } catch(e) {}
+
+    _lastSbPedidoId = p.id;
+    _STORE.orders = _STORE.orders || [];
+    _STORE.orders.unshift({
+      id:      p.id,
+      sb_id:   p.id,
+      num:     '#' + p.id,
+      client:  p.cliente   || '',
+      phone:   p.telefono  || '',
+      address: p.direccion || '',
+      items:   items,
+      total:   parseFloat(p.total) || 0,
+      status:  estadoLocal,
+      time:    p.created_at || new Date().toISOString()
+    });
+
+    console.log('[Track] Pedido restaurado — estado:', p.estado);
+
+    // Mostrar FAB y abrir tracking automáticamente
+    if (typeof showTrackFab  === 'function') showTrackFab();
+    if (typeof renderTracking === 'function') renderTracking();
+    if (typeof openTracking  === 'function') openTracking();
+
+  } catch(e) {
+    console.error('[Track] Error restaurando pedido:', e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // 6. ARRANQUE — carga config + productos, luego renderiza
 // ══════════════════════════════════════════════════════════════
 (async function sbMenuInit() {
   console.log('[SB] 🚀 Cargando menú de Papayaso...');
   try {
-    // Cargar config y productos en paralelo
+    // 1. Cargar config y productos en paralelo
     await Promise.all([sbCargarConfig(), sbCargarProductos()]);
 
-    // Renderizar UI con datos de Supabase
+    // 2. Renderizar UI con datos de Supabase
     if (typeof init          === 'function') init();
     if (typeof renderCats    === 'function') renderCats(getStore());
     if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
 
-    console.log('[SB] ✅ Menú listo. localStorage = 0 usos.');
+    // 3. Restaurar seguimiento si el cliente tiene un pedido activo guardado
+    //    (sobrevive recargas de página via localStorage)
+    await restaurarSeguimientoSiExiste();
+
+    console.log('[SB] ✅ Menú listo.');
   } catch(e) {
     console.error('[SB] Error en arranque del menú:', e.message);
-    // Fallback: renderizar con datos seed
     if (typeof init          === 'function') init();
     if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
   }
