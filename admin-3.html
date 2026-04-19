@@ -875,8 +875,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
   <div class="sec-hd"><h2>Categorías</h2></div>
   <div style="max-width:460px">
     <div id="cats-list"></div>
-    <div class="add-row">
-      <div class="fg"><label>Nueva categoría</label><input type="text" id="new-cat" placeholder="Ej: Combos"></div>
+    <div class="add-row" id="add-cat-row">
+      <div class="fg"><label>Nueva categoría</label><input type="text" id="new-category-input" placeholder="Ej: Combos" onkeydown="if(event.key==='Enter')addCat()"></div>
       <div style="display:flex;align-items:flex-end;padding-bottom:14px">
         <button class="btn btn-p" onclick="addCat()">Agregar</button>
       </div>
@@ -1919,7 +1919,14 @@ function openProdModal(id) {
     }
     catSel.innerHTML = catHtml;
   }
-  editExtras = (p && p.extras) ? p.extras.map(function(e) { return {name: e.name, price: e.price}; }) : [];
+  // Inicializar extras: si vienen de Supabase como JSONB [{name,price}] o null → siempre array
+  var rawExtras = (p && p.extras) ? p.extras : [];
+  if (!Array.isArray(rawExtras)) {
+    try { rawExtras = JSON.parse(rawExtras); } catch(e) { rawExtras = []; }
+  }
+  editExtras = rawExtras.map(function(e) {
+    return { name: String(e.name || ''), price: parseInt(e.price) || 0 };
+  });
   updatePhotoUI(); renderXs();
   var modal = document.getElementById('prod-modal');
   if (modal) { modal.classList.add('open'); setTimeout(function() { modal.scrollIntoView({behavior:'smooth',block:'start'}); }, 40); }
@@ -1995,9 +2002,10 @@ function saveProd() {
     return;
   }
 
-  var extras = editExtras.filter(function(e) { return e.name.trim(); });
+  var extras = editExtras.filter(function(e) { return e.name && e.name.trim(); })
+                         .map(function(e) { return { name: e.name.trim(), price: parseInt(e.price)||0 }; });
 
-  // Guardar en localStorage (igual que antes)
+  // Actualizar en memoria
   upd(function(s) {
     if (editId) {
       for (var i = 0; i < s.products.length; i++) {
@@ -2013,47 +2021,47 @@ function saveProd() {
     }
   });
 
-  // ── Guardar/actualizar en Supabase (columnas reales: nombre, precio, descripcion, categoria, imagen, disponible)
+  // ── Guardar en Supabase con tipos correctos ──────────────────────────
   (async function() {
     try {
-      // Convertir extras a texto "Nombre+Precio,..."
-      const extrasStr = extras.map(function(e) {
-        return e.name + (e.price ? '+' + e.price : '+0');
-      }).join(',');
-
       const body = {
         nombre:      name,
         precio:      price,
         descripcion: desc,
         categoria:   cat,
-        imagen:      editPhoto || null,
-        disponible:  available
+        imagen_url:  editPhoto || null,
+        disponible:  available,
+        // extras: JSONB [{name, price}] — columna tipo jsonb en Supabase
+        extras:      extras,
+        // opciones_extras: también JSONB, se guarda vacío si no hay adiciones de categoría
+        // Las adiciones por categoría se persisten en saveAddon(), no aquí
       };
-      if (extrasStr) body.opciones_extras = extrasStr;
 
       let result;
       if (editId) {
-        // UPDATE: buscar sb_id del producto actual
-        var s = getStore();
-        var prod = null;
-        for (var i=0;i<s.products.length;i++) { if(s.products[i].id===editId){prod=s.products[i];break;} }
-        var sbId = prod && prod.sb_id ? prod.sb_id : editId;
-        result = await SB.patch('productos', sbId, body);
-        console.log('[SB] Producto actualizado en Supabase:', result);
+        var s2 = getStore();
+        var prod2 = null;
+        for (var ii = 0; ii < s2.products.length; ii++) {
+          if (s2.products[ii].id === editId) { prod2 = s2.products[ii]; break; }
+        }
+        var sbId2 = prod2 && prod2.sb_id ? prod2.sb_id : editId;
+        result = await SB.patch('productos', 'id=eq.' + sbId2, body);
+        console.log('[SB] Producto actualizado:', sbId2, '| extras:', extras.length);
       } else {
         result = await SB.post('productos', body);
-        console.log('[SB] Producto creado en Supabase:', result);
-        // Guardar sb_id en el producto local
         if (result && result[0]) {
-          upd(function(s) {
-            var last = s.products[s.products.length - 1];
-            if (last && last.name === name) last.sb_id = result[0].id;
+          const newSbId = result[0].id;
+          console.log('[SB] Producto creado:', newSbId, '| extras:', extras.length);
+          upd(function(s3) {
+            var last = s3.products[s3.products.length - 1];
+            if (last && last.name === name) last.sb_id = newSbId;
           });
         }
       }
     } catch(err) {
       console.error('[SB] Error al guardar producto:', err);
-      alert('❌ Error de Supabase al guardar el producto:\n\n' + err.message + '\n\nVerifica:\n1. RLS activado sin política de INSERT\n2. Columnas incorrectas\n3. Conexión a internet');
+      alert('❌ Error de Supabase al guardar el producto:\n\n' + err.message +
+        '\n\nVerifica:\n• La columna extras es de tipo JSONB\n• La columna imagen_url existe (no "imagen")\n• RLS permite INSERT/UPDATE');
     }
   })();
 
@@ -2120,13 +2128,15 @@ function saveCat(i) {
 }
 
 function addCat() {
-  var inp = document.getElementById('new-cat');
-  var v = (inp ? inp.value : '').trim(); if (!v) return;
+  // Leer del id canónico — el interceptor de Supabase también usa este id
+  var inp = document.getElementById('new-category-input');
+  var v = (inp ? inp.value : '').trim();
+  if (!v) { showToast('Escribe el nombre de la categoría'); return; }
   var s = getStore();
-  if (s.categories.indexOf(v) >= 0) { showToast('Ya existe esa categoria'); return; }
+  if (s.categories.indexOf(v) >= 0) { showToast('Ya existe esa categoría'); return; }
   upd(function(s) { s.categories.push(v); });
   if (inp) inp.value = '';
-  renderCats(); showToast('Categoria agregada');
+  renderCats(); showToast('Categoría agregada');
 }
 
 function delCat(i) {
@@ -2154,20 +2164,31 @@ function renderGlobalExtras() {
 }
 
 function addGlobalExtra() {
-  var nameEl = document.getElementById('new-extra-name');
+  var nameEl  = document.getElementById('new-extra-name');
   var priceEl = document.getElementById('new-extra-price');
-  var name = (nameEl ? nameEl.value : '').trim();
-  var price = parseInt(priceEl ? priceEl.value : 0) || 0;
+  var name    = (nameEl  ? nameEl.value  : '').trim();
+  var price   = parseInt(priceEl ? priceEl.value : 0) || 0;
   if (!name) { showToast('Ingresa el nombre del extra'); return; }
-  upd(function(s) { if (!s.globalExtras) s.globalExtras = []; s.globalExtras.push({id:Date.now(),name:name,price:price}); });
-  if (nameEl) nameEl.value = '';
+
+  // Actualizar en memoria
+  upd(function(s) {
+    if (!s.globalExtras) s.globalExtras = [];
+    s.globalExtras.push({ id: Date.now(), name: name, price: price });
+  });
+  if (nameEl)  nameEl.value  = '';
   if (priceEl) priceEl.value = '';
-  renderGlobalExtras(); showToast('Extra agregado');
+  renderGlobalExtras();
+  showToast('Extra agregado');
+
+  // Los extras globales son plantillas en memoria — se aplican a productos
+  // al guardarlos. Cada producto guarda sus propios extras en productos.extras (JSONB).
+  console.log('[SB] Extra global añadido en memoria. Se persistirá al guardar el producto.');
 }
 
 function delGlobalExtra(i) {
   upd(function(s) { if (s.globalExtras) s.globalExtras.splice(i, 1); });
   renderGlobalExtras();
+  console.log('[SB] Extra global eliminado de memoria.');
 }
 
 function loadConfig() {
@@ -4262,42 +4283,99 @@ function addAddonOption(){
   if(nameEl)nameEl.focus();
 }
 
-function saveAddon(){
-  var name=(document.getElementById('addon-name')||{}).value||'';
-  var cat=(document.getElementById('addon-cat')||{}).value||'';
-  var type=(document.getElementById('addon-type')||{}).value||'required';
-  var min=parseInt((document.getElementById('addon-min')||{}).value)||1;
-  if(!name.trim()){showToast('Escribe el nombre del grupo');return;}
-  if(!cat){showToast('Selecciona una categoría');return;}
-  if(!_addonOptions.length){showToast('Agrega al menos una opción');return;}
-  var addons=getAddons();
-  if(_addonEditId){
-    for(var i=0;i<addons.length;i++){
-      if(addons[i].id===_addonEditId){addons[i]={id:_addonEditId,name:name.trim(),cat:cat,type:type,min:min,options:_addonOptions.slice()};break;}
+// Helper: persiste adiciones por categoría en la tabla 'categorias'
+// Cada grupo de adiciones se guarda en la fila de su categoría,
+// en la columna 'adiciones' (JSONB).
+async function _persistAddonsSB() {
+  try {
+    const addons = getStore()._catAddons || [];
+
+    // Agrupar adiciones por categoría
+    const byCat = {};
+    addons.forEach(function(addon) {
+      if (!byCat[addon.cat]) byCat[addon.cat] = [];
+      byCat[addon.cat].push(addon);
+    });
+
+    // Para cada categoría: buscar su fila en categorias y hacer PATCH
+    const cats = Object.keys(byCat);
+    for (let i = 0; i < cats.length; i++) {
+      const catNombre = cats[i];
+      const catRows = await SB.get('categorias', {
+        select: 'id',
+        'nombre': 'eq.' + encodeURIComponent(catNombre),
+        limit: 1
+      });
+      if (catRows && catRows[0]) {
+        await SB.patch('categorias', 'id=eq.' + catRows[0].id, {
+          adiciones: byCat[catNombre]
+        });
+      }
+    }
+
+    // Categorías que ya no tienen adiciones → limpiar su columna
+    const allCats = getStore().categories || [];
+    for (let j = 0; j < allCats.length; j++) {
+      if (!byCat[allCats[j]]) {
+        const catRows2 = await SB.get('categorias', {
+          select: 'id,adiciones',
+          'nombre': 'eq.' + encodeURIComponent(allCats[j]),
+          limit: 1
+        });
+        if (catRows2 && catRows2[0] && catRows2[0].adiciones) {
+          await SB.patch('categorias', 'id=eq.' + catRows2[0].id, { adiciones: [] });
+        }
+      }
+    }
+
+    console.log('[SB] Adiciones por categoría guardadas en tabla categorias');
+  } catch(e) {
+    console.error('[SB] Error guardando adiciones en categorias:', e.message);
+  }
+}
+
+function saveAddon() {
+  var name = (document.getElementById('addon-name')||{}).value||'';
+  var cat  = (document.getElementById('addon-cat') ||{}).value||'';
+  var type = (document.getElementById('addon-type')||{value:'required'}).value||'required';
+  var min  = parseInt((document.getElementById('addon-min')||{value:'1'}).value)||1;
+  if (!name.trim())      { showToast('Escribe el nombre del grupo');       return; }
+  if (!cat)              { showToast('Selecciona una categoría');           return; }
+  if (!_addonOptions.length) { showToast('Agrega al menos una opción');   return; }
+
+  var addons = getAddons();
+  if (_addonEditId) {
+    for (var i = 0; i < addons.length; i++) {
+      if (addons[i].id === _addonEditId) {
+        addons[i] = { id: _addonEditId, name: name.trim(), cat: cat, type: type, min: min, options: _addonOptions.slice() };
+        break;
+      }
     }
   } else {
-    addons.push({id:'addon'+Date.now(),name:name.trim(),cat:cat,type:type,min:min,options:_addonOptions.slice()});
+    addons.push({ id: 'addon' + Date.now(), name: name.trim(), cat: cat, type: type, min: min, options: _addonOptions.slice() });
   }
   saveAddons(addons);
   closeAddonModal();
   renderAddons();
   showToast('Adición guardada ✓');
+  _persistAddonsSB();   // persistir en Supabase sin bloquear UI
 }
 
-function deleteAddon(id){
-  var addons=getAddons().filter(function(a){return a.id!==id;});
+function deleteAddon(id) {
+  var addons = getAddons().filter(function(a) { return a.id !== id; });
   saveAddons(addons);
   renderAddons();
   showToast('Adición eliminada');
+  _persistAddonsSB();
 }
 
-function toggleAddonOpt(addonId, optId){
-  var addons=getAddons();
-  for(var i=0;i<addons.length;i++){
-    if(addons[i].id!==addonId) continue;
-    for(var j=0;j<addons[i].options.length;j++){
-      if(addons[i].options[j].id===optId){
-        addons[i].options[j].available=!addons[i].options[j].available;
+function toggleAddonOpt(addonId, optId) {
+  var addons = getAddons();
+  for (var i = 0; i < addons.length; i++) {
+    if (addons[i].id !== addonId) continue;
+    for (var j = 0; j < addons[i].options.length; j++) {
+      if (addons[i].options[j].id === optId) {
+        addons[i].options[j].available = !addons[i].options[j].available;
         break;
       }
     }
@@ -4305,6 +4383,7 @@ function toggleAddonOpt(addonId, optId){
   }
   saveAddons(addons);
   renderAddons();
+  _persistAddonsSB();
 }
 // =====================================================================
 // FIN ADICIONES
@@ -5079,13 +5158,31 @@ async function sbDelProd(sbId, name) {
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadCategorias() {
   try {
-    const cats = await SB.get('categorias', { select: '*', order: 'orden.asc,nombre.asc' });
-    upd(function(s) {
-      s.categories = (cats||[]).map(c => c.nombre);
-      s._categorias = cats || [];
+    // Pedir también la columna 'adiciones' donde se guardan las adiciones por categoría
+    const cats = await SB.get('categorias', {
+      select: 'id,nombre,orden,adiciones', order: 'orden.asc,nombre.asc'
     });
-    if (typeof renderCats === 'function') renderCats();
-    console.log('[SB] Categorías cargadas:', (cats||[]).length);
+    upd(function(s) {
+      s.categories  = (cats||[]).map(function(c) { return c.nombre; });
+      s._categorias = cats || [];
+
+      // Reconstruir _catAddons leyendo la columna adiciones de cada fila
+      var allAddons = [];
+      (cats||[]).forEach(function(cat) {
+        if (!cat.adiciones) return;
+        var arr = Array.isArray(cat.adiciones) ? cat.adiciones : [];
+        if (!Array.isArray(cat.adiciones) && typeof cat.adiciones === 'string') {
+          try { arr = JSON.parse(cat.adiciones); } catch(e) { arr = []; }
+        }
+        arr.forEach(function(addon) { allAddons.push(addon); });
+      });
+      s._catAddons = allAddons;
+    });
+    if (typeof renderCats   === 'function') renderCats();
+    if (typeof renderAddons === 'function') renderAddons(); // actualizar adiciones tras cargar
+    if (typeof renderAddons === 'function') renderAddons();
+    console.log('[SB] Categorías cargadas:', (cats||[]).length,
+      '| Adiciones:', getStore()._catAddons.length);
   } catch(e) {
     console.error('[SB] Error cargando categorías:', e.message);
   }
@@ -5374,21 +5471,38 @@ async function sbSavePedidoManual(order) {
 })();
 
 // ══════════════════════════════════════════════════════════════════════
-// AGREGAR / ELIMINAR CATEGORÍA — intercepta addCat / delCat
+// ══════════════════════════════════════════════════════════════════════
+// CATEGORÍAS — intercepta addCat / delCat + delegación de eventos
 // ══════════════════════════════════════════════════════════════════════
 (function patchCats() {
+  // addCat: lee de id="new-category-input" (id canónico en HTML y en esta función)
   window.addCat = async function() {
-    const el = document.getElementById('new-cat-inp');
+    const el = document.getElementById('new-category-input');
     const v  = el ? el.value.trim() : '';
+    if (!v) { if(typeof showToast==='function') showToast('Escribe el nombre de la categoría'); return; }
     await sbAddCat(v);
-    if (el) el.value = '';
+    if (el) { el.value = ''; el.focus(); }
   };
+
   window.delCat = async function(i) {
     const s = getStore();
     const nombre = s.categories[i];
     if (!nombre) return;
     await sbDelCat(nombre);
   };
+
+  // Delegación de eventos en el contenedor padre del input de categoría.
+  // Funciona aunque el DOM sea re-renderizado después de agregar.
+  document.addEventListener('click', function(e) {
+    // Si el clic fue en el botón de agregar dentro del panel de categorías
+    if (e.target && e.target.closest && e.target.closest('#add-cat-row')) {
+      const btn = e.target.closest('button');
+      if (btn && btn.textContent.trim() === 'Agregar') {
+        e.preventDefault();
+        window.addCat();
+      }
+    }
+  });
 })();
 
 // ══════════════════════════════════════════════════════════════════════
