@@ -345,6 +345,72 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 @keyframes slideDown{from{transform:translateX(-50%) translateY(-16px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
 
 /* ===== PRINT STYLES ===== */
+/* ═══════════════════════════════════════════════════════════
+   LOGIN — pantalla de autenticación
+   ═══════════════════════════════════════════════════════════ */
+#login-container {
+  position: fixed; inset: 0;
+  background: var(--dark);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999; padding: 20px;
+}
+#login-container.hidden { display: none; }
+
+.login-box {
+  background: #1a1a1a;
+  border-radius: 20px;
+  padding: 40px 32px 36px;
+  max-width: 360px; width: 100%;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0,0,0,.5);
+}
+.login-logo {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 28px; font-weight: 900;
+  color: var(--gold); letter-spacing: -1px;
+  margin-bottom: 4px;
+}
+.login-sub {
+  font-size: 13px; color: rgba(255,255,255,.4);
+  margin-bottom: 28px;
+}
+.login-field {
+  width: 100%; padding: 14px 16px;
+  background: rgba(255,255,255,.07);
+  border: 1.5px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  font-family: inherit; font-size: 14px;
+  color: #fff; margin-bottom: 12px;
+  transition: border-color .2s;
+}
+.login-field:focus {
+  outline: none;
+  border-color: var(--green);
+}
+.login-field::placeholder { color: rgba(255,255,255,.3); }
+.login-btn {
+  width: 100%; padding: 15px;
+  background: var(--green); color: #fff;
+  border: none; border-radius: 10px;
+  font-family: inherit; font-size: 15px; font-weight: 800;
+  cursor: pointer; margin-top: 4px;
+  transition: opacity .15s;
+}
+.login-btn:hover { opacity: .9; }
+.login-btn:disabled { opacity: .5; cursor: not-allowed; }
+.login-error {
+  color: #ef5350; font-size: 13px; font-weight: 600;
+  margin-top: 12px; min-height: 20px;
+}
+.login-loading {
+  color: rgba(255,255,255,.4); font-size: 13px;
+  margin-top: 10px; display: none;
+}
+
+/* Admin content: oculto por defecto, el auth lo muestra */
+#admin-content { display: none; }
+#admin-content.visible { display: block; }
+
 @media print {
   /* ── Tamaño de página: rollo térmico 80mm ─────────────────────── */
   @page {
@@ -449,6 +515,37 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 </head>
 <body>
 
+<!-- ══════════ PANTALLA DE LOGIN ══════════ -->
+<div id="login-container">
+  <div class="login-box">
+    <div class="login-logo">🍔 Papayaso</div>
+    <div class="login-sub">Panel de administración</div>
+
+    <input
+      class="login-field" id="login-email"
+      type="email" placeholder="Correo electrónico"
+      autocomplete="username"
+      onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"
+    >
+    <input
+      class="login-field" id="login-pass"
+      type="password" placeholder="Contraseña"
+      autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')authLogin()"
+    >
+
+    <button class="login-btn" id="login-btn" onclick="authLogin()">
+      Entrar →
+    </button>
+
+    <div class="login-loading" id="login-loading">Verificando...</div>
+    <div class="login-error"  id="login-error"></div>
+  </div>
+</div>
+
+<!-- ══════════ CONTENIDO DEL ADMIN (oculto hasta autenticación) ══════════ -->
+<div id="admin-content">
+
 <!-- TOPBAR -->
 <div class="topbar">
   <div class="t-name" id="t-name">Papayaso</div>
@@ -469,6 +566,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <button class="vmenu-item" onclick="goVentas();closeVMenu()">📊 Ventas globales</button>
       <div class="vmenu-divider"></div>
       <button class="vmenu-item" onclick="goConfig();closeVMenu()">⚙️ Configuración</button>
+      <div class="vmenu-divider"></div>
+      <button class="vmenu-item" style="color:#ef5350" onclick="authLogout();closeVMenu()">🚪 Cerrar sesión</button>
     </div>
   </div>
 </div>
@@ -5087,7 +5186,6 @@ function dailyCleanup() {
 
 
 <!-- ===== SUPABASE — 100% sin localStorage ===== -->
-<script>
 /* =============================================================
    CAPA SUPABASE — ADMIN  (100% Supabase, 0% localStorage)
    Fuente de verdad: Supabase
@@ -6131,7 +6229,7 @@ async function sbCargarVentasGlobales() {
 // ══════════════════════════════════════════════════════════════════════
 // ARRANQUE — reemplaza el INIT original
 // ══════════════════════════════════════════════════════════════════════
-(async function sbInit() {
+async function sbInit() {
   console.log('[SB] 🚀 Iniciando Papayaso Admin...');
   try {
     // 1. Cargar configuración primero (nombre, logo, isOpen)
@@ -6171,7 +6269,243 @@ async function sbCargarVentasGlobales() {
     alert('❌ Error al conectar con Supabase:\n\n' + e.message +
       '\n\nVerifica la URL y la API Key en el código.');
   }
+}
+
+// sbInit ya NO se llama aquí — lo llama el sistema de auth cuando confirma sesión
+
+</script>
+
+</div><!-- #admin-content -->
+
+<!-- ═══════════════════════════════════════════════════════════
+     AUTENTICACIÓN — Supabase Auth (fetch directo, sin CDN)
+     Debe estar DESPUÉS del script principal para poder llamar sbInit()
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── Constantes (ya definidas en el script anterior, aquí como alias) ──
+const AUTH_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
+const AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
+
+// Clave para guardar la sesión en sessionStorage (no localStorage — se borra al cerrar tab)
+const SESSION_KEY = 'papayaso_admin_session';
+
+// ── Estado de sesión ────────────────────────────────────────────────
+let _authSession = null;   // { access_token, refresh_token, expires_at, user }
+
+// ── Mostrar / ocultar capas ─────────────────────────────────────────
+function _mostrarAdmin() {
+  const login = document.getElementById('login-container');
+  const admin = document.getElementById('admin-content');
+  if (login) login.classList.add('hidden');
+  if (admin) admin.classList.add('visible');
+}
+
+function _mostrarLogin(errorMsg) {
+  const login = document.getElementById('login-container');
+  const admin = document.getElementById('admin-content');
+  if (login) login.classList.remove('hidden');
+  if (admin) admin.classList.remove('visible');
+  if (errorMsg) _setLoginError(errorMsg);
+}
+
+function _setLoginError(msg) {
+  const el = document.getElementById('login-error');
+  if (el) el.textContent = msg || '';
+}
+
+function _setLoginLoading(on) {
+  const btn  = document.getElementById('login-btn');
+  const load = document.getElementById('login-loading');
+  if (btn)  { btn.disabled  = on; btn.textContent = on ? 'Verificando...' : 'Entrar →'; }
+  if (load) { load.style.display = on ? 'block' : 'none'; }
+}
+
+// ── Llamada directa a Supabase Auth ────────────────────────────────
+async function _authFetch(endpoint, body) {
+  const r = await fetch(AUTH_URL + '/auth/v1/' + endpoint, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey':       AUTH_KEY
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error de autenticación');
+  return data;
+}
+
+async function _authRefreshFetch(refreshToken) {
+  const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || 'Sesión expirada');
+  return data;
+}
+
+// ── Guardar / leer / limpiar sesión en sessionStorage ──────────────
+function _guardarSesion(session) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e) {}
+}
+
+function _leerSesion() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+function _limpiarSesion() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {}
+  _authSession = null;
+}
+
+// ── Activar el admin (llamar sbInit y mostrar UI) ───────────────────
+async function _activarAdmin(session) {
+  _authSession = session;
+  _guardarSesion(session);
+  _mostrarAdmin();
+
+  // Inicializar el admin solo ahora que el usuario está autenticado
+  if (typeof sbInit === 'function') {
+    await sbInit();
+  }
+}
+
+// ── LOGIN ───────────────────────────────────────────────────────────
+async function authLogin() {
+  const emailEl = document.getElementById('login-email');
+  const passEl  = document.getElementById('login-pass');
+  const email   = emailEl ? emailEl.value.trim() : '';
+  const pass    = passEl  ? passEl.value         : '';
+
+  _setLoginError('');
+
+  if (!email || !pass) {
+    _setLoginError('Ingresa tu correo y contraseña');
+    return;
+  }
+
+  _setLoginLoading(true);
+
+  try {
+    const data = await _authFetch('token?grant_type=password', {
+      email:    email,
+      password: pass
+    });
+
+    if (!data.access_token) throw new Error('Respuesta inesperada del servidor');
+
+    const session = {
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+      user:          data.user
+    };
+
+    console.log('[Auth] ✅ Login exitoso:', session.user.email);
+    await _activarAdmin(session);
+
+  } catch(e) {
+    console.error('[Auth] Error de login:', e.message);
+    _setLoginError('Acceso denegado — ' + (e.message.includes('Invalid') ? 'correo o contraseña incorrectos' : e.message));
+    _setLoginLoading(false);
+    // Vibrar el campo de contraseña como feedback
+    if (passEl) { passEl.value = ''; passEl.focus(); }
+  }
+}
+
+// ── LOGOUT ──────────────────────────────────────────────────────────
+async function authLogout() {
+  if (!confirm('¿Cerrar sesión del panel de administración?')) return;
+
+  try {
+    if (_authSession && _authSession.access_token) {
+      await fetch(AUTH_URL + '/auth/v1/logout', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'apikey':        AUTH_KEY,
+          'Authorization': 'Bearer ' + _authSession.access_token
+        }
+      });
+    }
+  } catch(e) {
+    console.warn('[Auth] Error al cerrar sesión en servidor:', e.message);
+    // Continuar con la limpieza local de todas formas
+  }
+
+  _limpiarSesion();
+  // Limpiar datos en memoria
+  if (typeof _STORE !== 'undefined') {
+    _STORE = null;
+  }
+  // Redirigir a login
+  _mostrarLogin('Sesión cerrada');
+  console.log('[Auth] Sesión cerrada correctamente');
+}
+
+// ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
+// Verificar al cargar si hay sesión guardada; si expiró, intentar renovar.
+(async function onLoad() {
+  const session = _leerSesion();
+
+  if (!session || !session.access_token) {
+    // Sin sesión → mostrar login
+    _mostrarLogin();
+    console.log('[Auth] Sin sesión activa — mostrando login');
+    return;
+  }
+
+  const ahoraMs = Date.now();
+  const margenMs = 5 * 60 * 1000; // renovar si expira en menos de 5 min
+
+  if (session.expires_at && ahoraMs < session.expires_at - margenMs) {
+    // Sesión válida → entrar directamente
+    console.log('[Auth] Sesión activa encontrada —', session.user && session.user.email);
+    await _activarAdmin(session);
+    return;
+  }
+
+  // Sesión expirada — intentar renovar con refresh_token
+  if (session.refresh_token) {
+    try {
+      console.log('[Auth] Renovando sesión...');
+      const data = await _authRefreshFetch(session.refresh_token);
+      const newSession = {
+        access_token:  data.access_token,
+        refresh_token: data.refresh_token || session.refresh_token,
+        expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+        user:          data.user || session.user
+      };
+      console.log('[Auth] ✅ Sesión renovada');
+      await _activarAdmin(newSession);
+    } catch(e) {
+      console.warn('[Auth] No se pudo renovar la sesión:', e.message);
+      _limpiarSesion();
+      _mostrarLogin();
+    }
+  } else {
+    _limpiarSesion();
+    _mostrarLogin();
+  }
 })();
+
+// ── Tecla Enter en el email va al password ──────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  var emailEl = document.getElementById('login-email');
+  if (emailEl) emailEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      var p = document.getElementById('login-pass');
+      if (p) p.focus();
+    }
+  });
+});
 
 </script>
 </body>
