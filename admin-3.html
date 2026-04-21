@@ -2156,8 +2156,10 @@ function renderGlobalExtras() {
   if (!ge.length) { el.innerHTML = '<p style="color:var(--muted);padding:12px 0">No hay extras globales</p>'; return; }
   var html = '';
   for (var i = 0; i < ge.length; i++) {
-    var pStr = ge[i].price > 0 ? '+' + fp(ge[i].price) : 'Gratis';
-    html += '<div class="litem"><span class="litem-name">' + ge[i].name + '</span><span class="litem-sub">' + pStr + '</span>'
+    var _nombre = ge[i].nombre || ge[i].name || '';
+    var _precio = parseInt(ge[i].precio || ge[i].price) || 0;
+    var pStr = _precio > 0 ? '+' + fp(_precio) : 'Gratis';
+    html += '<div class="litem"><span class="litem-name">' + _nombre + '</span><span class="litem-sub">' + pStr + '</span>'
       + '<button class="btn btn-d btn-xs" onclick="delGlobalExtra(' + i + ')">Eliminar</button></div>';
   }
   el.innerHTML = html;
@@ -2170,25 +2172,54 @@ function addGlobalExtra() {
   var price   = parseInt(priceEl ? priceEl.value : 0) || 0;
   if (!name) { showToast('Ingresa el nombre del extra'); return; }
 
-  // Actualizar en memoria
+  // Actualizar en memoria — formato: {nombre, precio} según la BD
   upd(function(s) {
     if (!s.globalExtras) s.globalExtras = [];
-    s.globalExtras.push({ id: Date.now(), name: name, price: price });
+    s.globalExtras.push({ nombre: name, precio: price });
   });
   if (nameEl)  nameEl.value  = '';
   if (priceEl) priceEl.value = '';
   renderGlobalExtras();
-  showToast('Extra agregado');
+  showToast('Extra guardado ✓');
 
-  // Los extras globales son plantillas en memoria — se aplican a productos
-  // al guardarlos. Cada producto guarda sus propios extras en productos.extras (JSONB).
-  console.log('[SB] Extra global añadido en memoria. Se persistirá al guardar el producto.');
+  // Persistir en categorias.extras_categoria (fila especial '__extras_globales__')
+  _persistExtrasGlobalesSB();
 }
 
 function delGlobalExtra(i) {
   upd(function(s) { if (s.globalExtras) s.globalExtras.splice(i, 1); });
   renderGlobalExtras();
-  console.log('[SB] Extra global eliminado de memoria.');
+  showToast('Extra eliminado');
+  _persistExtrasGlobalesSB();
+}
+
+// Persiste globalExtras en la columna extras_categoria de la fila especial
+// '__extras_globales__' en la tabla categorias.
+// Formato: [{"nombre": "Queso", "precio": 2000}]
+async function _persistExtrasGlobalesSB() {
+  const ge = getStore().globalExtras || [];
+  const payload = ge.map(function(e) {
+    return { nombre: e.nombre || e.name || '', precio: parseInt(e.precio || e.price) || 0 };
+  });
+  try {
+    const rows = await SB.get('categorias', {
+      select: 'id', 'nombre': 'eq.__extras_globales__', limit: 1
+    });
+    if (rows && rows[0]) {
+      await SB.patch('categorias', 'id=eq.' + rows[0].id, { extras_categoria: payload });
+    } else {
+      // Crear la fila especial si no existe todavía
+      await SB.post('categorias', {
+        nombre: '__extras_globales__',
+        orden: 9999,
+        extras_categoria: payload,
+        adiciones_categoria: []
+      });
+    }
+    console.log('[SB] extras_categoria guardados:', payload.length);
+  } catch(e) {
+    console.error('[SB] Error persistiendo extras globales:', e.message);
+  }
 }
 
 function loadConfig() {
@@ -4290,17 +4321,20 @@ async function _persistAddonsSB() {
   try {
     const addons = getStore()._catAddons || [];
 
-    // Agrupar adiciones por categoría
+    // Agrupar opciones por categoría → strings simples para adiciones_categoria
+    // Formato final en BD: ["Salsa especial", "mayonesa"]
     const byCat = {};
     addons.forEach(function(addon) {
       if (!byCat[addon.cat]) byCat[addon.cat] = [];
-      byCat[addon.cat].push(addon);
+      (addon.options || []).forEach(function(opt) {
+        if (opt.name && opt.name.trim()) byCat[addon.cat].push(opt.name.trim());
+      });
     });
 
-    // Para cada categoría: buscar su fila en categorias y hacer PATCH
-    const cats = Object.keys(byCat);
-    for (let i = 0; i < cats.length; i++) {
-      const catNombre = cats[i];
+    // PATCH adiciones_categoria en la fila de cada categoría
+    const catNombres = Object.keys(byCat);
+    for (let i = 0; i < catNombres.length; i++) {
+      const catNombre = catNombres[i];
       const catRows = await SB.get('categorias', {
         select: 'id',
         'nombre': 'eq.' + encodeURIComponent(catNombre),
@@ -4308,29 +4342,32 @@ async function _persistAddonsSB() {
       });
       if (catRows && catRows[0]) {
         await SB.patch('categorias', 'id=eq.' + catRows[0].id, {
-          adiciones: byCat[catNombre]
+          adiciones_categoria: byCat[catNombre]   // ["Salsa especial", "mayonesa"]
         });
+        console.log('[SB] adiciones_categoria ->', catNombre, ':', byCat[catNombre].length);
       }
     }
 
-    // Categorías que ya no tienen adiciones → limpiar su columna
+    // Categorías sin adiciones → vaciar adiciones_categoria (evitar datos fantasma)
     const allCats = getStore().categories || [];
     for (let j = 0; j < allCats.length; j++) {
       if (!byCat[allCats[j]]) {
-        const catRows2 = await SB.get('categorias', {
-          select: 'id,adiciones',
+        const rows2 = await SB.get('categorias', {
+          select: 'id,adiciones_categoria',
           'nombre': 'eq.' + encodeURIComponent(allCats[j]),
           limit: 1
         });
-        if (catRows2 && catRows2[0] && catRows2[0].adiciones) {
-          await SB.patch('categorias', 'id=eq.' + catRows2[0].id, { adiciones: [] });
+        if (rows2 && rows2[0] &&
+            Array.isArray(rows2[0].adiciones_categoria) &&
+            rows2[0].adiciones_categoria.length > 0) {
+          await SB.patch('categorias', 'id=eq.' + rows2[0].id, { adiciones_categoria: [] });
         }
       }
     }
 
-    console.log('[SB] Adiciones por categoría guardadas en tabla categorias');
+    console.log('[SB] adiciones_categoria persistidas en tabla categorias');
   } catch(e) {
-    console.error('[SB] Error guardando adiciones en categorias:', e.message);
+    console.error('[SB] Error guardando adiciones_categoria:', e.message);
   }
 }
 
@@ -5158,31 +5195,59 @@ async function sbDelProd(sbId, name) {
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadCategorias() {
   try {
-    // Pedir también la columna 'adiciones' donde se guardan las adiciones por categoría
+    // Pedir las dos columnas correctas: extras_categoria y adiciones_categoria
     const cats = await SB.get('categorias', {
-      select: 'id,nombre,orden,adiciones', order: 'orden.asc,nombre.asc'
+      select: 'id,nombre,orden,extras_categoria,adiciones_categoria',
+      order: 'orden.asc,nombre.asc'
     });
-    upd(function(s) {
-      s.categories  = (cats||[]).map(function(c) { return c.nombre; });
-      s._categorias = cats || [];
 
-      // Reconstruir _catAddons leyendo la columna adiciones de cada fila
+    upd(function(s) {
+      // Separar la fila especial '__extras_globales__' de las categorías reales
+      var reales = (cats || []).filter(function(c) { return c.nombre !== '__extras_globales__'; });
+      s.categories  = reales.map(function(c) { return c.nombre; });
+      s._categorias = reales;
+
+      // ── Extras globales desde la fila especial ─────────────────────
+      // Formato en BD: [{"nombre": "Queso", "precio": 2000}]
+      var globRow = (cats || []).find(function(c) { return c.nombre === '__extras_globales__'; });
+      if (globRow && Array.isArray(globRow.extras_categoria) && globRow.extras_categoria.length) {
+        s.globalExtras = globRow.extras_categoria.map(function(e) {
+          return { nombre: e.nombre || e.name || '', precio: parseInt(e.precio || e.price) || 0 };
+        });
+      } else {
+        if (!s.globalExtras) s.globalExtras = [];
+      }
+
+      // ── Adiciones por categoría desde adiciones_categoria ──────────
+      // Formato en BD: ["Salsa especial", "mayonesa"]
+      // Formato en memoria: grupos con options para el modal de adiciones
       var allAddons = [];
-      (cats||[]).forEach(function(cat) {
-        if (!cat.adiciones) return;
-        var arr = Array.isArray(cat.adiciones) ? cat.adiciones : [];
-        if (!Array.isArray(cat.adiciones) && typeof cat.adiciones === 'string') {
-          try { arr = JSON.parse(cat.adiciones); } catch(e) { arr = []; }
-        }
-        arr.forEach(function(addon) { allAddons.push(addon); });
+      reales.forEach(function(cat) {
+        var arr = Array.isArray(cat.adiciones_categoria) ? cat.adiciones_categoria : [];
+        if (!arr.length) return;
+        allAddons.push({
+          id:      'addon_' + cat.id,
+          name:    'Adiciones — ' + cat.nombre,
+          cat:     cat.nombre,
+          type:    'optional',
+          min:     0,
+          options: arr.map(function(item, idx) {
+            var nombreOpt = typeof item === 'string' ? item : (item.nombre || '');
+            return { id: 'opt_' + cat.id + '_' + idx, name: nombreOpt, price: 0, available: true };
+          })
+        });
       });
       s._catAddons = allAddons;
     });
-    if (typeof renderCats   === 'function') renderCats();
-    if (typeof renderAddons === 'function') renderAddons(); // actualizar adiciones tras cargar
-    if (typeof renderAddons === 'function') renderAddons();
-    console.log('[SB] Categorías cargadas:', (cats||[]).length,
-      '| Adiciones:', getStore()._catAddons.length);
+
+    if (typeof renderCats         === 'function') renderCats();
+    if (typeof renderAddons       === 'function') renderAddons();
+    if (typeof renderGlobalExtras === 'function') renderGlobalExtras();
+
+    const st = getStore();
+    console.log('[SB] Categorías:', (cats||[]).length,
+      '| extras_globales:', (st.globalExtras||[]).length,
+      '| grupos adiciones:', (st._catAddons||[]).length);
   } catch(e) {
     console.error('[SB] Error cargando categorías:', e.message);
   }
@@ -5191,14 +5256,38 @@ async function sbLoadCategorias() {
 async function sbAddCat(nombre) {
   if (!nombre || !nombre.trim()) { showToast('Escribe el nombre de la categoría'); return; }
   nombre = nombre.trim();
+
+  // Anti-409: deshabilitar el botón ANTES del POST para evitar doble envío
+  const btn = document.querySelector('#add-cat-row button');
+  const btnTxt = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  // Verificar duplicado en memoria antes de ir a Supabase
+  if ((getStore().categories || []).indexOf(nombre) >= 0) {
+    showToast('Ya existe esa categoría');
+    if (btn) { btn.disabled = false; btn.textContent = btnTxt; }
+    return;
+  }
+
   try {
-    await SB.post('categorias', { nombre, orden: 0 });
+    await SB.post('categorias', {
+      nombre:              nombre,
+      orden:               (getStore().categories || []).length,
+      extras_categoria:    [],   // [{nombre, precio}]
+      adiciones_categoria: []    // ["string", ...]
+    });
     await sbLoadCategorias();
     showToast('Categoría creada ✓');
   } catch(e) {
     console.error('[SB] Error creando categoría:', e.message);
-    alert('❌ Error al crear categoría:\n' + e.message +
-      '\n\nPosiblemente ya existe una categoría con ese nombre.');
+    if (e.message.includes('409') || e.message.includes('duplicate') || e.message.includes('unique')) {
+      showToast('Ya existe esa categoría en Supabase');
+    } else {
+      alert('❌ Error al crear categoría:\n' + e.message);
+    }
+  } finally {
+    // Siempre rehabilitar el botón, haya éxito o fallo
+    if (btn) { btn.disabled = false; btn.textContent = btnTxt; }
   }
 }
 
