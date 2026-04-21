@@ -2689,7 +2689,8 @@ function showPosPanel(panel) {
     } else if (panel === 'cats') {
       sbPosLoadCategorias().then(function() { renderPosCatsList(); });
     } else if (panel === 'ventas') {
-      renderPosSales();
+      // Cargar desde Supabase siempre — no depender de memoria temporal
+      sbPosLoadVentas().then(function() { renderPosSales(); });
     }
   }
 }
@@ -2874,14 +2875,15 @@ function posCheckout(payMethod) {
         direccion:       '',
         detalles_pedido: detalles,
         total:           total,
-        estado:          'Entregado',   // venta POS = entregada inmediatamente
+        estado:          'Entregado',
         metodo_pago:     payMethod,
         origen:          'pos'
       });
-      console.log('[SB-POS] Venta registrada en pedidos');
+      console.log('[SB-POS] Venta registrada en pedidos con origen=pos, metodo_pago=' + payMethod);
+      // Refrescar ventas en memoria para que la pestaña las muestre correctamente
+      await sbPosLoadVentas();
     } catch(e) {
       console.warn('[SB-POS] No se pudo guardar venta en Supabase:', e.message);
-      // No bloquear — la venta ya se registró en memoria
     }
   })();
 
@@ -2959,7 +2961,71 @@ async function sbPosLoadCategorias() {
 async function sbPosInit() {
   await sbPosLoadCategorias();
   await sbPosLoadProductos();
+  // Cargar ventas del día para que estén disponibles al abrir la pestaña
+  await sbPosLoadVentas();
   console.log('[SB-POS] ✅ POS listo desde Supabase');
+}
+// Fuente de verdad: tabla pedidos donde origen = 'pos'
+// Filtro de fecha: hoy por defecto, pero acepta rango opcional
+async function sbPosLoadVentas(fechaDesde, fechaHasta) {
+  try {
+    // Construir rango de fechas — por defecto el día actual
+    var hoy = new Date();
+    var inicio = fechaDesde
+      ? new Date(fechaDesde).toISOString()
+      : new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
+    var fin = fechaHasta
+      ? new Date(fechaHasta + 'T23:59:59').toISOString()
+      : new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1).toISOString();
+
+    var rows = await SB.get('pedidos', {
+      select: 'id,cliente,detalles_pedido,total,metodo_pago,created_at,estado',
+      'origen':     'eq.pos',          // solo ventas de caja
+      'created_at': 'gte.' + inicio,
+      'created_at2':'lte.' + fin,       // alias — PostgREST acepta mismo param repetido
+      order: 'created_at.desc',
+      limit: 500
+    });
+
+    // Normalizar al formato que usa renderPosSales
+    var sales = (rows || []).map(function(p) {
+      var items = [];
+      try {
+        items = Array.isArray(p.detalles_pedido)
+          ? p.detalles_pedido
+          : JSON.parse(p.detalles_pedido || '[]');
+      } catch(e) {}
+
+      // Normalizar campos de items (JSONB puede venir con nombre/nombre)
+      items = items.map(function(it) {
+        return {
+          name:  it.nombre || it.name  || '',
+          qty:   it.cantidad || it.qty || 1,
+          price: it.precio_unitario || it.price || 0,
+          total: it.total || 0
+        };
+      });
+
+      return {
+        id:      p.id,
+        num:     'POS-' + p.id,
+        items:   items,
+        total:   parseFloat(p.total) || 0,
+        payment: p.metodo_pago || 'Efectivo',
+        time:    p.created_at  || new Date().toISOString()
+      };
+    });
+
+    // Inyectar en _POS_STORE para que renderPosSales los lea
+    updPos(function(s) { s.sales = sales; });
+
+    console.log('[SB-POS] Ventas POS cargadas:', sales.length,
+      '| Total:', sales.reduce(function(acc, v) { return acc + v.total; }, 0));
+    return sales;
+  } catch(e) {
+    console.error('[SB-POS] Error cargando ventas POS:', e.message);
+    return [];
+  }
 }
 
 var _lastPosSale = null;
@@ -3135,36 +3201,49 @@ function closePosReceiptBtn() {
 }
 
 function renderPosSales() {
-  var s = getPosStore();
+  var s     = getPosStore();
   var sales = s.sales || [];
-  var total = 0; var cnt = sales.length;
-  for (var i = 0; i < sales.length; i++) total += sales[i].total;
+
+  // Recalcular totales desde los datos actuales (no desde memoria acumulada)
+  var totalFacturado = 0;
+  var cnt = sales.length;
+  for (var i = 0; i < sales.length; i++) totalFacturado += parseFloat(sales[i].total) || 0;
+
   var sr = document.getElementById('pos-stats-row');
   if (sr) {
-    sr.innerHTML = '<div class="sc"><div class="sc-val">' + cnt + '</div><div class="sc-lbl">Ventas en caja</div></div>'
-      + '<div class="sc"><div class="sc-val" style="color:var(--green)">' + fp(total) + '</div><div class="sc-lbl">Total facturado</div></div>';
+    sr.innerHTML =
+      '<div class="sc"><div class="sc-val">'                             + cnt              + '</div><div class="sc-lbl">Ventas en caja</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--green)">' + fp(totalFacturado)+ '</div><div class="sc-lbl">Total facturado</div></div>';
   }
+
   // Desglose por método de pago
   var br = document.getElementById('pos-pago-breakdown');
   if (br) br.innerHTML = buildPaymentBreakdown(sales);
 
   var body = document.getElementById('pos-ventas-body');
   if (!body) return;
+
   if (!sales.length) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">Sin ventas registradas</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Sin ventas registradas hoy</td></tr>';
     return;
   }
+
   var rows = '';
   for (var j = 0; j < sales.length; j++) {
-    var sa = sales[j];
-    var names = [];
-    for (var k = 0; k < sa.items.length; k++) names.push(sa.items[k].qty + 'x ' + sa.items[k].name);
+    var sa    = sales[j];
+    var items = sa.items || [];
+    var names = items.map(function(it) {
+      var nom = it.nombre || it.name || '';
+      var qty = it.cantidad || it.qty || 1;
+      return qty + 'x ' + nom;
+    }).filter(Boolean).join(', ') || '—';
+
     rows += '<tr>'
-      + '<td style="font-weight:600">' + sa.num + '</td>'
-      + '<td style="color:var(--muted);font-size:12px">' + fmtTime(sa.time) + '</td>'
-      + '<td style="font-size:12px;color:var(--muted)">' + names.join(', ') + '</td>'
-      + '<td style="color:var(--green);font-weight:700">' + fp(sa.total) + '</td>'
-      + '<td>' + sa.payment + '</td>'
+      + '<td style="font-weight:600">'              + (sa.num || '#' + sa.id) + '</td>'
+      + '<td style="color:var(--muted);font-size:12px">' + fmtTime(sa.time)  + '</td>'
+      + '<td style="font-size:12px;color:var(--muted)">' + names             + '</td>'
+      + '<td style="color:var(--green);font-weight:700">' + fp(sa.total)     + '</td>'
+      + '<td style="font-size:12px">'               + (sa.payment || '')     + '</td>'
       + '</tr>';
   }
   body.innerHTML = rows;
