@@ -1553,33 +1553,20 @@ function updateStats() {
   }).length;
   var nN = s.orders.filter(function(o) { return o.status === 'nuevo'; }).length;
 
-  // ── Facturado HOY (domicilios de hoy en s.orders) ──
+  // ── Facturado HOY — solo domicilios y manuales (pos ya filtrado en sbLoadPedidos) ──
   var todayDom = s.orders.filter(function(o) {
     return isToday(o.time) && o.status !== 'cancelado';
   });
   var revHoy = 0;
   for (var i = 0; i < todayDom.length; i++) revHoy += parseFloat(todayDom[i].total)||0;
 
-  // ── Acumulado histórico desde _globalSales (toda la BD) ──
-  var allSales   = getAllSalesData();  // lleno por sbCargarHistorialCompleto
-  var revGlobal  = 0;
-  var revMes     = 0;
-  var mes        = new Date().toISOString().slice(0, 7);
-  for (var j = 0; j < allSales.length; j++) {
-    var t = parseFloat(allSales[j].total)||0;
-    revGlobal += t;
-    if (allSales[j].time && allSales[j].time.startsWith(mes)) revMes += t;
-  }
-
   var sr = document.getElementById('stats-row');
   if (sr) {
     sr.innerHTML =
-      '<div class="sc"><div class="sc-val">'                                          + (todayDom.length)  + '</div><div class="sc-lbl">Domicilios hoy</div></div>'
-    + '<div class="sc"><div class="sc-val" style="color:var(--warn)">'               + pend               + '</div><div class="sc-lbl">En proceso</div></div>'
-    + '<div class="sc"><div class="sc-val" style="color:var(--green)">'              + fp(revHoy)         + '</div><div class="sc-lbl">Facturado hoy</div></div>'
-    + '<div class="sc"><div class="sc-val" style="color:var(--info)">'               + nN                 + '</div><div class="sc-lbl">Nuevos</div></div>'
-    + '<div class="sc"><div class="sc-val" style="color:var(--ok)">'                 + fp(revMes)         + '</div><div class="sc-lbl">Este mes</div></div>'
-    + '<div class="sc"><div class="sc-val" style="color:var(--purple);font-size:15px">'+ fp(revGlobal)    + '</div><div class="sc-lbl">Total histórico</div></div>';
+      '<div class="sc"><div class="sc-val">'                             + (todayDom.length) + '</div><div class="sc-lbl">Domicilios hoy</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--warn)">'  + pend              + '</div><div class="sc-lbl">En proceso</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--green)">' + fp(revHoy)        + '</div><div class="sc-lbl">Facturado hoy</div></div>'
+    + '<div class="sc"><div class="sc-val" style="color:var(--info)">'  + nN                + '</div><div class="sc-lbl">Nuevos</div></div>';
   }
   var b  = document.getElementById('di-badge');
   if (b)  { b.style.display  = nN > 0 ? 'inline' : 'none'; b.textContent  = nN; }
@@ -5526,6 +5513,8 @@ async function sbLoadPedidos() {
     const pedidos = await SB.get('pedidos', {
       select: '*',
       'created_at': `gte.${inicioHoy}`,
+      // Excluir ventas de caja/POS — solo domicilios y pedidos manuales
+      'origen': 'neq.pos',
       order: 'created_at.desc',
       limit: 200
     });
