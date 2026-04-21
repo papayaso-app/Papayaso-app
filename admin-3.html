@@ -886,14 +886,31 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 <!-- EXTRAS GLOBALES -->
 <div id="panel-menu-extras" class="panel">
-  <div class="sec-hd"><h2>Extras globales</h2></div>
-  <div style="max-width:460px">
+  <div class="sec-hd">
+    <div>
+      <h2>Extras por categoría</h2>
+      <p style="font-size:13px;color:var(--muted);margin-top:2px">Cada extra se asigna a una categoría y aparece automáticamente en todos sus productos.</p>
+    </div>
+  </div>
+  <div style="max-width:520px">
     <div id="extras-global-list"></div>
-    <div class="add-row">
-      <div class="fg"><label>Nombre</label><input type="text" id="new-extra-name" placeholder="Ej: Salsa extra"></div>
-      <div class="fg" style="max-width:130px"><label>Precio ($)</label><input type="number" id="new-extra-price" placeholder="0"></div>
-      <div style="display:flex;align-items:flex-end;padding-bottom:14px">
-        <button class="btn btn-p" onclick="addGlobalExtra()">Agregar</button>
+    <div class="add-row" id="add-extra-row" style="flex-wrap:wrap;gap:10px;align-items:flex-end;padding:14px;background:var(--white);border-radius:var(--r);border:1.5px solid var(--border);margin-top:8px">
+      <div class="fg" style="min-width:160px;flex:1">
+        <label>Nombre del extra</label>
+        <input type="text" id="new-extra-name" placeholder="Ej: Queso extra, Tocino..." onkeydown="if(event.key==='Enter')addGlobalExtra()">
+      </div>
+      <div class="fg" style="max-width:120px">
+        <label>Precio ($)</label>
+        <input type="number" id="new-extra-price" placeholder="0" min="0">
+      </div>
+      <div class="fg" style="min-width:160px;flex:1">
+        <label>Categoría</label>
+        <select id="new-extra-cat" class="fsel" style="width:100%">
+          <option value="">— Selecciona —</option>
+        </select>
+      </div>
+      <div style="padding-bottom:2px">
+        <button class="btn btn-p" onclick="addGlobalExtra()">+ Agregar extra</button>
       </div>
     </div>
   </div>
@@ -2153,77 +2170,142 @@ function delCat(i) {
   renderCats();
 }
 
+// ── Llenar el select de categorías del formulario de extras ────────────
+function _fillExtraCatSelect() {
+  var sel = document.getElementById('new-extra-cat');
+  if (!sel) return;
+  var cats = getStore().categories || [];
+  sel.innerHTML = '<option value="">— Selecciona categoría —</option>'
+    + cats.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+}
+
 function renderGlobalExtras() {
-  var s = getStore();
-  var el = document.getElementById('extras-global-list'); if (!el) return;
-  var ge = s.globalExtras || [];
-  if (!ge.length) { el.innerHTML = '<p style="color:var(--muted);padding:12px 0">No hay extras globales</p>'; return; }
+  var s  = getStore();
+  var el = document.getElementById('extras-global-list');
+  if (!el) return;
+
+  // Reconstruir la lista completa desde _categorias (todas las filas reales)
+  // Cada fila tiene extras_categoria: [{nombre, precio}]
+  var categorias = s._categorias || [];
+  var allExtras  = [];   // [{nombre, precio, categoria}]
+
+  categorias.forEach(function(cat) {
+    if (!cat.nombre || cat.nombre === '__extras_globales__') return;
+    var arr = Array.isArray(cat.extras_categoria) ? cat.extras_categoria : [];
+    arr.forEach(function(e) {
+      if (e && (e.nombre || e.name)) {
+        allExtras.push({
+          nombre:    e.nombre    || e.name  || '',
+          precio:    parseInt(e.precio !== undefined ? e.precio : (e.price || 0)) || 0,
+          categoria: cat.nombre,
+          cat_id:    cat.id
+        });
+      }
+    });
+  });
+
+  // Sincronizar globalExtras en memoria (fuente de verdad visual)
+  upd(function(s2) { s2.globalExtras = allExtras; });
+
+  if (!allExtras.length) {
+    el.innerHTML = '<p style="color:var(--muted);padding:14px 0;font-size:13px">No hay extras creados. Agrega uno abajo.</p>';
+    _fillExtraCatSelect();
+    return;
+  }
+
   var html = '';
-  for (var i = 0; i < ge.length; i++) {
-    var _nombre = ge[i].nombre || ge[i].name || '';
-    var _precio = parseInt(ge[i].precio || ge[i].price) || 0;
-    var pStr = _precio > 0 ? '+' + fp(_precio) : 'Gratis';
-    html += '<div class="litem"><span class="litem-name">' + _nombre + '</span><span class="litem-sub">' + pStr + '</span>'
-      + '<button class="btn btn-d btn-xs" onclick="delGlobalExtra(' + i + ')">Eliminar</button></div>';
+  for (var i = 0; i < allExtras.length; i++) {
+    var ge    = allExtras[i];
+    var pStr  = ge.precio > 0 ? '+' + fp(ge.precio) : 'Gratis';
+    html += '<div class="litem" style="align-items:center">'
+      + '<div style="flex:1;min-width:0">'
+      +   '<span class="litem-name">' + ge.nombre + '</span>'
+      +   '<span class="litem-sub" style="margin-left:8px">' + pStr + '</span>'
+      +   '<span style="display:inline-block;margin-left:8px;background:var(--green-bg);color:var(--green);'
+      +     'font-size:10px;font-weight:700;padding:1px 8px;border-radius:100px;border:1px solid var(--green-bd)">'
+      +     ge.categoria
+      +   '</span>'
+      + '</div>'
+      + '<button class="btn btn-d btn-xs" onclick="delGlobalExtra(' + i + ')">Eliminar</button>'
+      + '</div>';
   }
   el.innerHTML = html;
+  _fillExtraCatSelect();
 }
 
 function addGlobalExtra() {
   var nameEl  = document.getElementById('new-extra-name');
   var priceEl = document.getElementById('new-extra-price');
-  var name    = (nameEl  ? nameEl.value  : '').trim();
+  var catEl   = document.getElementById('new-extra-cat');
+  var name    = (nameEl  ? nameEl.value.trim()                  : '');
   var price   = parseInt(priceEl ? priceEl.value : 0) || 0;
-  if (!name) { showToast('Ingresa el nombre del extra'); return; }
+  var catName = catEl    ? catEl.value                          : '';
 
-  // Actualizar en memoria — formato: {nombre, precio} según la BD
-  upd(function(s) {
-    if (!s.globalExtras) s.globalExtras = [];
-    s.globalExtras.push({ nombre: name, precio: price });
-  });
+  if (!name)    { showToast('Ingresa el nombre del extra');      return; }
+  if (!catName) { showToast('Selecciona una categoría');         return; }
+
+  var s = getStore();
+  // Buscar la fila de esa categoría en _categorias
+  var catRow = (s._categorias || []).find(function(c) { return c.nombre === catName; });
+  if (!catRow) { showToast('Categoría no encontrada'); return; }
+
+  // Construir el nuevo array de extras para esa categoría
+  var existentes = Array.isArray(catRow.extras_categoria) ? catRow.extras_categoria.slice() : [];
+  existentes.push({ nombre: name, precio: price });
+
+  // Limpiar formulario
   if (nameEl)  nameEl.value  = '';
   if (priceEl) priceEl.value = '';
-  renderGlobalExtras();
-  showToast('Extra guardado ✓');
+  if (catEl)   catEl.value   = '';
 
-  // Persistir en categorias.extras_categoria (fila especial '__extras_globales__')
-  _persistExtrasGlobalesSB();
+  // Persistir en Supabase: PATCH solo la fila de esa categoría
+  (async function() {
+    try {
+      await SB.patch('categorias', 'id=eq.' + catRow.id, { extras_categoria: existentes });
+      // Actualizar _categorias en memoria
+      upd(function(s2) {
+        var cat = (s2._categorias || []).find(function(c) { return c.id === catRow.id; });
+        if (cat) cat.extras_categoria = existentes;
+      });
+      renderGlobalExtras();
+      showToast('Extra "' + name + '" agregado a ' + catName + ' ✓');
+      console.log('[SB] extras_categoria actualizado para', catName, ':', existentes.length);
+    } catch(e) {
+      console.error('[SB] Error guardando extra:', e.message);
+      alert('❌ Error al guardar el extra:\n' + e.message);
+    }
+  })();
 }
 
 function delGlobalExtra(i) {
-  upd(function(s) { if (s.globalExtras) s.globalExtras.splice(i, 1); });
-  renderGlobalExtras();
-  showToast('Extra eliminado');
-  _persistExtrasGlobalesSB();
-}
+  var s       = getStore();
+  var ge      = (s.globalExtras || [])[i];
+  if (!ge) return;
 
-// Persiste globalExtras en la columna extras_categoria de la fila especial
-// '__extras_globales__' en la tabla categorias.
-// Formato: [{"nombre": "Queso", "precio": 2000}]
-async function _persistExtrasGlobalesSB() {
-  const ge = getStore().globalExtras || [];
-  const payload = ge.map(function(e) {
-    return { nombre: e.nombre || e.name || '', precio: parseInt(e.precio || e.price) || 0 };
-  });
-  try {
-    const rows = await SB.get('categorias', {
-      select: 'id', 'nombre': 'eq.__extras_globales__', limit: 1
-    });
-    if (rows && rows[0]) {
-      await SB.patch('categorias', 'id=eq.' + rows[0].id, { extras_categoria: payload });
-    } else {
-      // Crear la fila especial si no existe todavía
-      await SB.post('categorias', {
-        nombre: '__extras_globales__',
-        orden: 9999,
-        extras_categoria: payload,
-        adiciones_categoria: []
+  if (!confirm('¿Eliminar el extra "' + ge.nombre + '" de la categoría "' + ge.categoria + '"?')) return;
+
+  // Encontrar la fila de la categoría y quitar ese extra
+  var catRow = (s._categorias || []).find(function(c) { return c.nombre === ge.categoria; });
+  if (!catRow) { showToast('Categoría no encontrada'); return; }
+
+  var nuevos = (Array.isArray(catRow.extras_categoria) ? catRow.extras_categoria : [])
+    .filter(function(e) { return (e.nombre || e.name) !== ge.nombre; });
+
+  (async function() {
+    try {
+      await SB.patch('categorias', 'id=eq.' + catRow.id, { extras_categoria: nuevos });
+      upd(function(s2) {
+        var cat = (s2._categorias || []).find(function(c) { return c.id === catRow.id; });
+        if (cat) cat.extras_categoria = nuevos;
       });
+      renderGlobalExtras();
+      showToast('Extra eliminado');
+      console.log('[SB] Extra eliminado de', ge.categoria, '— quedan:', nuevos.length);
+    } catch(e) {
+      console.error('[SB] Error eliminando extra:', e.message);
+      alert('❌ Error al eliminar el extra:\n' + e.message);
     }
-    console.log('[SB] extras_categoria guardados:', payload.length);
-  } catch(e) {
-    console.error('[SB] Error persistiendo extras globales:', e.message);
-  }
+  })();
 }
 
 function loadConfig() {
@@ -5272,21 +5354,14 @@ async function sbLoadCategorias() {
     });
 
     upd(function(s) {
-      // Separar la fila especial '__extras_globales__' de las categorías reales
+      // Todas las categorías reales (ya no existe la fila __extras_globales__)
       var reales = (cats || []).filter(function(c) { return c.nombre !== '__extras_globales__'; });
       s.categories  = reales.map(function(c) { return c.nombre; });
-      s._categorias = reales;
+      s._categorias = reales;   // conservar el objeto completo con extras_categoria y adiciones_categoria
 
-      // ── Extras globales desde la fila especial ─────────────────────
-      // Formato en BD: [{"nombre": "Queso", "precio": 2000}]
-      var globRow = (cats || []).find(function(c) { return c.nombre === '__extras_globales__'; });
-      if (globRow && Array.isArray(globRow.extras_categoria) && globRow.extras_categoria.length) {
-        s.globalExtras = globRow.extras_categoria.map(function(e) {
-          return { nombre: e.nombre || e.name || '', precio: parseInt(e.precio || e.price) || 0 };
-        });
-      } else {
-        if (!s.globalExtras) s.globalExtras = [];
-      }
+      // globalExtras se reconstruye en renderGlobalExtras() leyendo _categorias
+      // No inicializar aquí para evitar que se muestre vacío mientras renderGlobalExtras corre
+      if (!s.globalExtras) s.globalExtras = [];
 
       // ── Adiciones por categoría desde adiciones_categoria ──────────
       // Formato en BD: ["Salsa especial", "mayonesa"]
