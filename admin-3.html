@@ -5076,7 +5076,7 @@ Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 async function sbLoadConfig() {
   try {
     const rows = await SB.get('configuracion', {
-      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,nit,telefono_local,url_logo,url_portada,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto',
+      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,nit,telefono_local,url_logo,url_portada,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto,horario_semanal',
       'id': 'eq.1',
       limit: 1
     });
@@ -5102,6 +5102,11 @@ async function sbLoadConfig() {
       // Si la columna está vacía (''), mantener lo que ya había en memoria.
       if (c.url_logo   && c.url_logo.trim())    s.config.logo  = c.url_logo.trim();
       if (c.url_portada && c.url_portada.trim()) s.config.cover = c.url_portada.trim();
+
+      // Cargar horario semanal para que renderScheduleEditor lo muestre correctamente
+      if (c.horario_semanal && typeof c.horario_semanal === 'object') {
+        s.config.schedule = c.horario_semanal;
+      }
     });
 
     // ── Actualizar topbar ────────────────────────────────────────────────
@@ -5154,6 +5159,9 @@ async function sbSaveConfig() {
     pin_repartidor:     gv('cfg-rider-pin')     || '1234',
     tiempo_entrega_min: parseInt(gv('cfg-delivery-min')) || 30,
     tiempo_entrega_max: parseInt(gv('cfg-delivery-max')) || 60,
+    // Guardar horario semanal como JSONB — el menú lo lee para calcular isOpen automáticamente
+    // Formato: { lun:{open:true,from:"11:00 AM",to:"9:00 PM"}, mar:{...}, ... }
+    horario_semanal:    sched
   };
 
   try {
