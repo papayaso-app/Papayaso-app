@@ -345,10 +345,71 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 @keyframes slideDown{from{transform:translateX(-50%) translateY(-16px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
 
 /* ===== PRINT STYLES ===== */
-@media print{
-  body *{visibility:hidden!important;}
-  #thermal-print-area,#thermal-print-area *{visibility:visible!important;}
-  #thermal-print-area{position:fixed!important;top:0!important;left:0!important;width:80mm!important;margin:0!important;padding:0!important;}
+@media print {
+  /* ── Tamaño de página: rollo térmico 80mm ─────────────────────── */
+  @page {
+    size: 80mm auto;   /* ancho fijo, alto automático según contenido */
+    margin: 0;         /* sin márgenes — la impresora tiene los suyos */
+  }
+
+  /* ── Suprimir encabezado/pie automático del navegador ──────────── */
+  /* (URL, fecha, número de página que Chrome/Firefox añaden) */
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── Ocultar TODO el interfaz excepto el ticket ─────────────────── */
+  body * { visibility: hidden !important; }
+
+  /* Solo el área térmica es visible */
+  #thermal-print-area,
+  #thermal-print-area * { visibility: visible !important; }
+
+  /* ── Body: ancho exacto del rollo ────────────────────────────────── */
+  body {
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── Área de impresión: posicionada en la esquina superior ──────── */
+  #thermal-print-area {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #fff !important;
+  }
+
+  /* ── Clase .print-receipt dentro del área térmica ───────────────── */
+  .print-receipt {
+    width: 72mm !important;       /* 80mm - 4mm de padding de cada lado */
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  /* ── Ocultar elementos de UI que nunca deben imprimirse ─────────── */
+  .topbar, .nav-bar, .sub-nav, .mode-bar,
+  .page, .panel, .pos-view,
+  .print-modal-overlay, .print-modal-box,
+  .pos-receipt, #pos-receipt, #addon-modal,
+  #toast, #toast-bar, #print-modal,
+  button, .btn,
+  .vmenu-wrap, .vmenu-dropdown {
+    display: none !important;
+    visibility: hidden !important;
+  }
 }
 
 /* ===== PEDIDO MANUAL ===== */
@@ -4271,7 +4332,7 @@ function buildTicket(o, cfg) {
   return t;
 }
 
-// Construye el HTML real que se imprimirá (más limpio que texto plano)
+// Construye el HTML real que se imprimirá en impresora térmica de 80mm
 function buildPrintArea(o, cfg) {
   var area = document.getElementById('thermal-print-area');
   if (!area) return;
@@ -4281,54 +4342,102 @@ function buildPrintArea(o, cfg) {
   var fechaStr = pad2(now.getDate())+'/'+pad2(now.getMonth()+1)+'/'+now.getFullYear()
     +' '+pad2(now.getHours())+':'+pad2(now.getMinutes());
 
+  // ── Ítems del pedido ──────────────────────────────────────────────
   var itemsHtml = '';
-  for (var i=0;i<o.items.length;i++) {
+  for (var i = 0; i < o.items.length; i++) {
     var item = o.items[i];
-    itemsHtml += '<tr><td style="padding:2px 0">'+(item.qty||1)+'x '+item.name+'</td><td style="text-align:right;padding:2px 0;white-space:nowrap">'+fp(item.total)+'</td></tr>';
+    itemsHtml += '<tr>'
+      + '<td style="padding:3px 0;font-size:11px">' + (item.qty||1) + 'x ' + item.name + '</td>'
+      + '<td style="text-align:right;padding:3px 0;font-size:11px;white-space:nowrap;font-weight:700">' + fp(item.total) + '</td>'
+      + '</tr>';
     if (item.extras && item.extras.length) {
-      for (var ei=0;ei<item.extras.length;ei++) {
-        itemsHtml += '<tr><td style="padding:0 0 0 10px;font-size:10px;color:#555">+ '+item.extras[ei].name+(item.extras[ei].price?' +'+fp(item.extras[ei].price):'')+'</td><td></td></tr>';
+      for (var ei = 0; ei < item.extras.length; ei++) {
+        itemsHtml += '<tr><td colspan="2" style="padding:0 0 2px 12px;font-size:10px;color:#444">'
+          + '+ ' + item.extras[ei].name
+          + (item.extras[ei].price ? ' <span style="color:#000">+' + fp(item.extras[ei].price) + '</span>' : '')
+          + '</td></tr>';
       }
     }
     if (item.note) {
-      itemsHtml += '<tr><td style="padding:0 0 0 10px;font-size:10px;font-style:italic;color:#555">* '+item.note+'</td><td></td></tr>';
+      itemsHtml += '<tr><td colspan="2" style="padding:0 0 2px 12px;font-size:10px;font-style:italic;color:#555">'
+        + '* ' + item.note + '</td></tr>';
     }
   }
 
-  var logo = cfg.logo
-    ? '<img src="'+cfg.logo+'" style="width:60px;height:60px;object-fit:contain;display:block;margin:0 auto 4px"><br>'
-    : '<div style="font-size:20px;font-weight:900;text-align:center;letter-spacing:-1px">'+(cfg.name||'')+'</div>';
+  // ── Cabecera: logo o nombre ───────────────────────────────────────
+  var cabecera = cfg.logo
+    ? '<img src="' + cfg.logo + '" style="width:56px;height:56px;object-fit:contain;display:block;margin:0 auto 4px">'
+    : '<div style="font-size:18px;font-weight:900;text-align:center;letter-spacing:-0.5px;margin-bottom:2px">' + (cfg.name || '') + '</div>';
 
-  area.innerHTML = '<div style="width:80mm;font-family:Courier New,monospace;font-size:11px;color:#000;margin:0 auto;padding:4mm 3mm;">'
-    + logo
-    + (cfg.nit ? '<div style="text-align:center;font-size:10px">NIT: '+cfg.nit+'</div>' : '')
-    + (cfg.phone ? '<div style="text-align:center;font-size:10px">Tel: '+cfg.phone+'</div>' : '')
-    + (cfg.address ? '<div style="text-align:center;font-size:10px">'+cfg.address+'</div>' : '')
-    + (cfg.hours ? '<div style="text-align:center;font-size:10px">'+cfg.hours+'</div>' : '')
-    + '<hr style="border:1px dashed #000;margin:4px 0">'
-    + '<div style="text-align:center;font-weight:900;font-size:13px">** DOMICILIO **</div>'
-    + '<hr style="border:1px dashed #000;margin:4px 0">'
-    + '<table style="width:100%;border-collapse:collapse;font-size:11px">'
-    + '<tr><td>Pedido:</td><td style="text-align:right;font-weight:900">'+o.num+'</td></tr>'
-    + '<tr><td>Fecha:</td><td style="text-align:right">'+fechaStr+'</td></tr>'
-    + '<tr><td>Cliente:</td><td style="text-align:right">'+(o.client||'')+'</td></tr>'
-    + (o.phone ? '<tr><td>Tel:</td><td style="text-align:right">'+o.phone+'</td></tr>' : '')
-    + (o.address ? '<tr><td>Dir:</td><td style="text-align:right">'+o.address+'</td></tr>' : '')
-    + (o.ref ? '<tr><td>Ref:</td><td style="text-align:right">'+o.ref+'</td></tr>' : '')
-    + '<tr><td>Pago:</td><td style="text-align:right">'+(o.payment||'')+'</td></tr>'
-    + (o.cambio && o.cambio!=='Exacto' ? '<tr><td>Cambio para:</td><td style="text-align:right">'+o.cambio+'</td></tr>' : '')
+  // ── HTML completo del ticket ──────────────────────────────────────
+  var html = ''
+    // Contenedor principal: 72mm centrado dentro del rollo de 80mm
+    + '<div class="print-receipt" style="'
+    +   'width:72mm;margin:0 auto;padding:3mm 2mm;'
+    +   'font-family:Courier New,Courier,monospace;'
+    +   'font-size:11px;color:#000;'
+    +   'box-shadow:none;border:none;background:#fff'
+    + '">'
+
+    // Encabezado negocio
+    + cabecera
+    + (cfg.nit     ? '<div style="text-align:center;font-size:10px">NIT: ' + cfg.nit + '</div>' : '')
+    + (cfg.phone   ? '<div style="text-align:center;font-size:10px">Tel: ' + cfg.phone + '</div>' : '')
+    + (cfg.address ? '<div style="text-align:center;font-size:10px">' + cfg.address + '</div>' : '')
+    + (cfg.hours   ? '<div style="text-align:center;font-size:10px">' + cfg.hours + '</div>' : '')
+
+    + '<hr style="border:none;border-top:2px dashed #000;margin:5px 0">'
+    + '<div style="text-align:center;font-weight:900;font-size:12px;letter-spacing:1px">** DOMICILIO **</div>'
+    + '<hr style="border:none;border-top:2px dashed #000;margin:5px 0">'
+
+    // ── N.° de pedido — grande y en negrita para que el domiciliario lo lea ──
+    + '<div style="'
+    +   'display:flex;justify-content:space-between;align-items:baseline;'
+    +   'margin-bottom:4px'
+    + '">'
+    +   '<span style="font-size:11px">Pedido:</span>'
+    +   '<span style="font-size:16px;font-weight:900;letter-spacing:0.5px">' + o.num + '</span>'
+    + '</div>'
+
+    // Datos del cliente
+    + '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:2px">'
+    + '<tr><td style="padding:1px 0;color:#444">Fecha:</td>'
+    +     '<td style="text-align:right;padding:1px 0">' + fechaStr + '</td></tr>'
+    + '<tr><td style="padding:1px 0;color:#444">Cliente:</td>'
+    +     '<td style="text-align:right;padding:1px 0;font-weight:700">' + (o.client||'') + '</td></tr>'
+    + (o.phone   ? '<tr><td style="padding:1px 0;color:#444">Tel:</td><td style="text-align:right;padding:1px 0">' + o.phone + '</td></tr>' : '')
+    + (o.address ? '<tr><td style="padding:1px 0;color:#444">Dir:</td><td style="text-align:right;padding:1px 0;font-weight:700">' + o.address + '</td></tr>' : '')
+    + (o.ref     ? '<tr><td style="padding:1px 0;color:#444">Ref:</td><td style="text-align:right;padding:1px 0">' + o.ref + '</td></tr>' : '')
+    + '<tr><td style="padding:1px 0;color:#444">Pago:</td>'
+    +     '<td style="text-align:right;padding:1px 0;font-weight:700">' + (o.payment||'Efectivo') + '</td></tr>'
+    + (o.cambio && o.cambio !== 'Exacto'
+        ? '<tr><td style="padding:1px 0;color:#444">Paga con:</td><td style="text-align:right;padding:1px 0">' + o.cambio + '</td></tr>'
+        : '')
     + '</table>'
-    + '<hr style="border:1px dashed #000;margin:4px 0">'
-    + '<div style="font-weight:900;font-size:11px">PRODUCTOS:</div>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:3px">'+itemsHtml+'</table>'
-    + (o.notes ? '<div style="font-size:10px;margin-top:4px;font-style:italic">Nota: '+o.notes+'</div>' : '')
-    + '<hr style="border:2px solid #000;margin:4px 0">'
-    + '<table style="width:100%;border-collapse:collapse;font-size:13px;font-weight:900">'
-    + '<tr><td>TOTAL:</td><td style="text-align:right">'+fp(o.total)+'</td></tr>'
-    + '</table>'
-    + '<hr style="border:1px dashed #000;margin:4px 0">'
-    + '<div style="text-align:center;font-size:10px;margin-top:4px">Gracias por tu pedido!</div>'
-    + '</div>';
+
+    + '<hr style="border:none;border-top:1px dashed #000;margin:5px 0">'
+    + '<div style="font-weight:900;font-size:11px;margin-bottom:3px">PRODUCTOS:</div>'
+    + '<table style="width:100%;border-collapse:collapse">' + itemsHtml + '</table>'
+
+    + (o.notes ? '<div style="font-size:10px;margin-top:5px;padding:4px 0;font-style:italic;border-top:1px dotted #ccc">📝 ' + o.notes + '</div>' : '')
+
+    // ── Total — grande y en negrita para que el domiciliario lo lea ──
+    + '<hr style="border:none;border-top:3px solid #000;margin:6px 0 3px">'
+    + '<div style="'
+    +   'display:flex;justify-content:space-between;align-items:baseline'
+    + '">'
+    +   '<span style="font-size:14px;font-weight:900;letter-spacing:0.5px">TOTAL:</span>'
+    +   '<span style="font-size:18px;font-weight:900">' + fp(o.total) + '</span>'
+    + '</div>'
+    + '<hr style="border:none;border-top:3px solid #000;margin:3px 0 8px">'
+
+    + '<div style="text-align:center;font-size:10px;margin-top:2px">¡Gracias por tu pedido!</div>'
+    + (cfg.welcome ? '<div style="text-align:center;font-size:9px;margin-top:2px;color:#555">' + cfg.welcome + '</div>' : '')
+    + '<div style="height:8mm"></div>' // espacio al final para que la cortadora corte limpio
+
+    + '</div>'; // .print-receipt
+
+  area.innerHTML = html;
 }
 // =====================================================================
 // FIN IMPRESIÓN Y SONIDO
