@@ -1501,21 +1501,52 @@ function closeTracking() {
 
 function getLastOrder() {
   var s = getStore();
-  if (!s || !s.orders || !s.orders.length) return null;
-  // Only consider orders from today (after daily admin cleanup, old orders are removed)
-  var _today = (function(){var n=new Date();var p=function(x){return x<10?'0'+x:''+x;};return n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate());})();
-  var todayOrders = [];
-  for (var ti=0;ti<s.orders.length;ti++) {
-    if (s.orders[ti].time && s.orders[ti].time.slice(0,10) === _today) todayOrders.push(s.orders[ti]);
+
+  // ── Prioridad 1: buscar por el id exacto de Supabase ──────────────
+  // _lastSbPedidoId se setea en sbInsertPedido (sesión actual) o en
+  // restaurarSeguimientoSiExiste (vuelta tras recarga).
+  if (_lastSbPedidoId && s.orders && s.orders.length) {
+    for (var i = 0; i < s.orders.length; i++) {
+      if (String(s.orders[i].id) === String(_lastSbPedidoId)) {
+        return { order: s.orders[i], config: s.config };
+      }
+    }
+    // El id está en memoria pero el pedido no está en _STORE.orders todavía
+    // (posible si sbInsertPedido terminó pero el push aún no se propagó)
+    // Devolver un objeto mínimo para que renderTracking muestre el estado correcto
+    return {
+      order: {
+        id:      _lastSbPedidoId,
+        sb_id:   _lastSbPedidoId,
+        num:     '#' + _lastSbPedidoId,
+        client:  '',
+        status:  'nuevo',
+        time:    new Date().toISOString()
+      },
+      config: s.config
+    };
   }
-  if (!todayOrders.length) return null; // No orders from today
-  // Buscar por _lastSbPedidoId (id de Supabase) o devolver el primero
-  if (_lastSbPedidoId) {
-    for (var i = 0; i < todayOrders.length; i++) {
-      if (String(todayOrders[i].id) === String(_lastSbPedidoId)) return {order: todayOrders[i], config: s.config};
+
+  // ── Prioridad 2: primer pedido de hoy en memoria ───────────────────
+  // Usamos hora local (no UTC) para evitar el desfase Colombia UTC-5
+  if (!s || !s.orders || !s.orders.length) return null;
+  var ahora  = new Date();
+  var hoyStr = ahora.getFullYear() + '-'
+    + (ahora.getMonth() + 1 < 10 ? '0' : '') + (ahora.getMonth() + 1) + '-'
+    + (ahora.getDate() < 10 ? '0' : '') + ahora.getDate();
+
+  for (var j = 0; j < s.orders.length; j++) {
+    var o = s.orders[j];
+    // Comparar fecha local del pedido — toLocaleDateString es más fiable que slice
+    if (o.time) {
+      var orderDate = new Date(o.time);
+      var orderStr  = orderDate.getFullYear() + '-'
+        + (orderDate.getMonth() + 1 < 10 ? '0' : '') + (orderDate.getMonth() + 1) + '-'
+        + (orderDate.getDate() < 10 ? '0' : '') + orderDate.getDate();
+      if (orderStr === hoyStr) return { order: o, config: s.config };
     }
   }
-  return todayOrders.length ? {order: todayOrders[0], config: s.config} : null;
+  return null;
 }
 
 function renderTracking() {
@@ -2103,16 +2134,13 @@ const SB_TO_LOCAL = {
 async function sbCargarConfig() {
   try {
     const rows = await SB.get('configuracion', {
-      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,mensaje_bienvenida,esta_abierto,url_logo,url_portada,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor',
+      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,mensaje_bienvenida,esta_abierto,url_logo,url_portada,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal',
       'id': 'eq.1',
       limit: 1
     });
     if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
     const c = rows[0];
 
-    // Actualizar solo los campos que Supabase devuelve con valor real.
-    // Las imágenes (logo / portada) se sobreescriben SOLO si la columna
-    // contiene una URL no vacía — así nunca se borra lo que ya existe.
     const prev = _STORE.config;
     _STORE.config = {
       name:        c.nombre_negocio        || prev.name        || 'Papayaso',
@@ -2120,43 +2148,138 @@ async function sbCargarConfig() {
       address:     c.direccion             || prev.address     || '',
       desc:        c.descripcion           || prev.desc        || '',
       welcome:     c.mensaje_bienvenida    || prev.welcome     || '',
+      // isOpen se calcula primero por horario automático; si no hay horario,
+      // usa el toggle manual (esta_abierto)
       isOpen:      c.esta_abierto !== false,
-      // ── Imágenes: usar URL de Supabase si existe; si no, mantener la que ya había ──
       logo:        (c.url_logo  && c.url_logo.trim())   ? c.url_logo.trim()  : (prev.logo  || ''),
       cover:       (c.url_portada && c.url_portada.trim()) ? c.url_portada.trim(): (prev.cover || ''),
       deliveryMin: String(c.tiempo_entrega_min || prev.deliveryMin || 30),
       deliveryMax: String(c.tiempo_entrega_max || prev.deliveryMax || 60),
       menuUrl:     c.url_menu         || prev.menuUrl    || 'menu.html',
       riderUrl:    c.url_repartidor   || prev.riderUrl   || 'repartidor.html',
-      riderPin:    c.pin_repartidor   || prev.riderPin   || '1234'
+      riderPin:    c.pin_repartidor   || prev.riderPin   || '1234',
+      // Guardar el horario semanal para cálculo automático
+      schedule:    (c.horario_semanal && typeof c.horario_semanal === 'object')
+                     ? c.horario_semanal
+                     : (prev.schedule || null)
     };
 
-    // ── Aplicar logo al <img id="hero-logo-img"> inmediatamente ──────────
+    // Si hay horario configurado, calcular isOpen automáticamente según la hora actual
+    if (_STORE.config.schedule) {
+      _STORE.config.isOpen = calcularIsOpenPorHorario(_STORE.config.schedule);
+      console.log('[SB] isOpen calculado por horario:', _STORE.config.isOpen,
+        '| toggle manual era:', c.esta_abierto);
+    }
+
+    // Aplicar logo
     const logoEl = document.getElementById('hero-logo-img');
     if (logoEl) {
       if (_STORE.config.logo) {
         logoEl.src = _STORE.config.logo;
         logoEl.style.display = 'block';
-        logoEl.onerror = function() {
-          // Si la URL falla (imagen borrada del bucket), ocultar sin romper
-          logoEl.style.display = 'none';
-          console.warn('[SB] url_logo no cargó:', _STORE.config.logo);
-        };
+        logoEl.onerror = function() { logoEl.style.display = 'none'; };
       }
-      // Si no hay URL, NO tocar display — puede haber un fallback visual en el CSS
     }
 
-    // ── Aplicar portada al <div id="hero-bg-el"> inmediatamente ──────────
+    // Aplicar portada
     const coverEl = document.getElementById('hero-bg-el');
     if (coverEl && _STORE.config.cover) {
       coverEl.style.backgroundImage = 'url(' + JSON.stringify(_STORE.config.cover) + ')';
     }
 
-    console.log('[SB] Config cargada — logo:', _STORE.config.logo || '(sin url)', '| portada:', _STORE.config.cover || '(sin url)');
+    console.log('[SB] Config cargada — nombre:', _STORE.config.name,
+      '| isOpen:', _STORE.config.isOpen,
+      '| schedule:', _STORE.config.schedule ? 'sí' : 'no');
   } catch(e) {
     console.error('[SB] Error cargando config:', e.message);
-    // No propagar — la UI sigue funcionando con los valores anteriores
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// HORARIO AUTOMÁTICO — calcula si el negocio está abierto ahora
+// ══════════════════════════════════════════════════════════════
+function calcularIsOpenPorHorario(schedule) {
+  if (!schedule) return true; // sin horario → asumir abierto
+
+  var now   = new Date();
+  var dia   = now.getDay(); // 0=dom, 1=lun, ... 6=sab
+  // Mapear getDay() al key del horario
+  var keyMap = ['dom','lun','mar','mie','jue','vie','sab'];
+  var key    = keyMap[dia];
+  var info   = schedule[key];
+
+  // Si el día no está configurado o marcado como cerrado → cerrado
+  if (!info || info.open === false) return false;
+  // Si está marcado abierto pero sin horas → abierto todo el día
+  if (!info.from || !info.to) return true;
+
+  // Parsear hora de apertura y cierre
+  var apertura = parsearHora(info.from);
+  var cierre   = parsearHora(info.to);
+  if (!apertura || !cierre) return true; // formato inválido → asumir abierto
+
+  // Comparar con la hora actual en minutos desde medianoche
+  var ahoraMin = now.getHours() * 60 + now.getMinutes();
+
+  return ahoraMin >= apertura && ahoraMin < cierre;
+}
+
+// Parsear "11:00 AM", "9:00 PM", "21:00", "9:30 pm", etc. → minutos desde medianoche
+function parsearHora(str) {
+  if (!str) return null;
+  str = String(str).trim().toUpperCase();
+
+  // Formato 24h: "21:00", "09:30"
+  var m24 = str.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    var h = parseInt(m24[1]);
+    var mn = parseInt(m24[2]);
+    return h * 60 + mn;
+  }
+
+  // Formato 12h: "9:00 PM", "11:30 AM", "12:00 PM"
+  var m12 = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (m12) {
+    var h12 = parseInt(m12[1]);
+    var mn12 = parseInt(m12[2]);
+    var period = m12[3];
+    if (period === 'PM' && h12 !== 12) h12 += 12;
+    if (period === 'AM' && h12 === 12) h12 = 0;
+    return h12 * 60 + mn12;
+  }
+
+  // Formato sin minutos: "9 PM", "11 AM"
+  var mShort = str.match(/^(\d{1,2})\s*(AM|PM)$/);
+  if (mShort) {
+    var hS = parseInt(mShort[1]);
+    var pS = mShort[2];
+    if (pS === 'PM' && hS !== 12) hS += 12;
+    if (pS === 'AM' && hS === 12) hS = 0;
+    return hS * 60;
+  }
+
+  return null; // formato no reconocido
+}
+
+// Actualizar el badge de "Abierto/Cerrado" en el hero del menú
+function aplicarEstadoAbierto() {
+  var isOpen = _STORE.config.isOpen;
+  // Recalcular si hay horario
+  if (_STORE.config.schedule) {
+    isOpen = calcularIsOpenPorHorario(_STORE.config.schedule);
+    _STORE.config.isOpen = isOpen;
+  }
+  // Badge en el hero
+  var badge = document.getElementById('hero-closed-badge');
+  if (badge) badge.className = isOpen ? 'hero-closed-badge' : 'hero-closed-badge show';
+  // También actualizar el init() si ya corrió
+  if (typeof init === 'function' && document.getElementById('hero-name')) {
+    var hn = document.getElementById('hero-name');
+    // Solo actualizar el badge, no re-renderizar todo
+    if (badge) badge.className = isOpen ? 'hero-closed-badge' : 'hero-closed-badge show';
+  }
+  console.log('[Horario] isOpen actualizado:', isOpen, '—', new Date().toLocaleTimeString('es-CO'));
+  return isOpen;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2344,13 +2467,25 @@ async function sbInsertPedido(orderData) {
       if(typeof saveClientData==='function') saveClientData(name, rawPh, address, ref);
     }
 
-    // 3. INSERT en Supabase PRIMERO (async, no bloqueante para WA)
+    // 3. INSERT en Supabase — ESPERAR el resultado antes de continuar.
+    // Necesitamos el id real de Supabase para que el tracking funcione.
     const orderData = {
       client: name, phone: '+57' + rawPh, address: address, ref: ref,
       payment: payment, cambio: cambio, notes: '',
       items: cart.slice(), total: total
     };
-    sbInsertPedido(orderData); // fire-and-forget — WA no espera
+
+    // Mostrar feedback inmediato mientras Supabase procesa
+    if(typeof showToast === 'function') showToast('Procesando pedido...');
+
+    // Await: el ID real de Supabase debe existir antes de abrir el tracking
+    const sbId = await sbInsertPedido(orderData);
+
+    // Si el INSERT falló, sbId es null — el pedido igual se envía por WA
+    // pero el tracking mostrará "sin pedido activo" hasta que se restaure
+    if (!sbId) {
+      console.warn('[Send] INSERT falló — abriendo WA sin id de SB');
+    }
 
     // 4. Construir y abrir WhatsApp
     const num = '#' + (Date.now()); // ID temporal hasta que SB responda
@@ -2376,15 +2511,20 @@ async function sbInsertPedido(orderData) {
     const wa    = waRaw.startsWith('57') ? waRaw : '57' + waRaw;
     window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank');
 
-    // 5. Limpiar y mostrar tracking
+    // 5. Limpiar carrito y mostrar tracking
     cart = [];
     orderNum++;
     if(typeof updateCartUI   === 'function') updateCartUI();
     if(typeof closeCartSheet === 'function') closeCartSheet();
     if(typeof showTrackFab   === 'function') showTrackFab();
+
+    // Esperar 500ms antes de abrir el tracking.
+    // Garantiza que _lastSbPedidoId y _STORE.orders estén poblados
+    // (el await de sbInsertPedido ya terminó, pero renderTracking necesita
+    // que el DOM del carrito haya cerrado antes de abrirse).
     setTimeout(function() {
       if(typeof openTracking === 'function') openTracking();
-    }, 400);
+    }, 500);
   };
 })();
 
@@ -2404,14 +2544,9 @@ async function sbTrackingPoll() {
     });
     if (!rows || !rows[0]) return;
     const nuevoEstado = SB_TO_LOCAL[rows[0].estado] || 'nuevo';
+    const esFinal = rows[0].estado === 'Entregado' || rows[0].estado === 'Cancelado';
 
-    // Si el pedido fue entregado o cancelado → limpiar localStorage
-    if (rows[0].estado === 'Entregado' || rows[0].estado === 'Cancelado') {
-      limpiarIdPedido();
-      console.log('[Track] Pedido finalizado, localStorage limpiado');
-    }
-
-    // Actualizar en memoria
+    // Actualizar estado en memoria
     const orders = _STORE.orders || [];
     let changed = false;
     for (let i = 0; i < orders.length; i++) {
@@ -2423,7 +2558,17 @@ async function sbTrackingPoll() {
         break;
       }
     }
+
+    // Renderizar si cambió el estado
     if (changed && typeof renderTracking === 'function') renderTracking();
+
+    // Si finalizado: limpiar localStorage Y memoria, detener polling
+    if (esFinal) {
+      limpiarIdPedido();
+      _lastSbPedidoId = 0;
+      if (_trackingInterval) { clearInterval(_trackingInterval); _trackingInterval = null; }
+      console.log('[Track] Pedido', rows[0].estado, '— tracking detenido');
+    }
   } catch(e) {
     console.warn('[SB] Tracking poll error:', e.message);
   }
@@ -2510,27 +2655,41 @@ async function restaurarSeguimientoSiExiste() {
       items = Array.isArray(p.detalles_pedido) ? p.detalles_pedido : JSON.parse(p.detalles_pedido || '[]');
     } catch(e) {}
 
+    // Setear _lastSbPedidoId ANTES de push para que getLastOrder lo encuentre inmediatamente
     _lastSbPedidoId = p.id;
+
     _STORE.orders = _STORE.orders || [];
-    _STORE.orders.unshift({
-      id:      p.id,
-      sb_id:   p.id,
-      num:     '#' + p.id,
-      client:  p.cliente   || '',
-      phone:   p.telefono  || '',
-      address: p.direccion || '',
-      items:   items,
-      total:   parseFloat(p.total) || 0,
-      status:  estadoLocal,
-      time:    p.created_at || new Date().toISOString()
-    });
+    // Evitar duplicado si el pedido ya está en memoria
+    var yaExiste = _STORE.orders.some(function(o) { return String(o.id) === String(p.id); });
+    if (!yaExiste) {
+      _STORE.orders.unshift({
+        id:      p.id,
+        sb_id:   p.id,
+        num:     '#' + p.id,
+        client:  p.cliente   || '',
+        phone:   p.telefono  || '',
+        address: p.direccion || '',
+        items:   items,
+        total:   parseFloat(p.total) || 0,
+        status:  estadoLocal,
+        time:    p.created_at || new Date().toISOString()
+      });
+    } else {
+      // Actualizar el estado si el pedido ya existía
+      for (var oi = 0; oi < _STORE.orders.length; oi++) {
+        if (String(_STORE.orders[oi].id) === String(p.id)) {
+          _STORE.orders[oi].status = estadoLocal;
+          break;
+        }
+      }
+    }
 
-    console.log('[Track] Pedido restaurado — estado:', p.estado);
+    console.log('[Track] Pedido restaurado — id:', p.id, '| estado:', p.estado);
 
-    // Mostrar FAB y abrir tracking automáticamente
-    if (typeof showTrackFab  === 'function') showTrackFab();
+    // Mostrar FAB, renderizar y abrir tracking
+    if (typeof showTrackFab   === 'function') showTrackFab();
     if (typeof renderTracking === 'function') renderTracking();
-    if (typeof openTracking  === 'function') openTracking();
+    if (typeof openTracking   === 'function') openTracking();
 
   } catch(e) {
     console.error('[Track] Error restaurando pedido:', e.message);
@@ -2607,8 +2766,23 @@ async function sbCargarCategorias() {
     if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
 
     // 3. Restaurar seguimiento si el cliente tiene un pedido activo guardado
-    //    (sobrevive recargas de página via localStorage)
     await restaurarSeguimientoSiExiste();
+
+    // 4. Auto-verificación de horario cada 60 segundos
+    // Recalcula si el negocio está abierto sin recargar la página
+    setInterval(function() {
+      if (_STORE.config.schedule) {
+        var eraAbierto = _STORE.config.isOpen;
+        var ahoraAbierto = aplicarEstadoAbierto();
+        if (eraAbierto !== ahoraAbierto) {
+          // El estado cambió — actualizar el badge y re-evaluar la UI
+          console.log('[Horario] Estado cambió automáticamente →', ahoraAbierto ? 'Abierto' : 'Cerrado');
+        }
+      }
+    }, 60000); // cada 60 segundos
+
+    // Aplicar estado inicial inmediatamente después de cargar
+    aplicarEstadoAbierto();
 
     console.log('[SB] ✅ Menú listo.');
   } catch(e) {
