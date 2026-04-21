@@ -2970,7 +2970,7 @@ async function sbPosInit() {
 async function sbPosLoadVentas(fechaDesde, fechaHasta) {
   try {
     // Construir rango de fechas — por defecto el día actual
-    var hoy = new Date();
+    var hoy   = new Date();
     var inicio = fechaDesde
       ? new Date(fechaDesde).toISOString()
       : new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
@@ -2978,13 +2978,14 @@ async function sbPosLoadVentas(fechaDesde, fechaHasta) {
       ? new Date(fechaHasta + 'T23:59:59').toISOString()
       : new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1).toISOString();
 
+    // PostgREST no admite el mismo param dos veces con Object.entries/set.
+    // Usamos el filtro 'and' en un solo parámetro para el rango de fechas.
     var rows = await SB.get('pedidos', {
-      select: 'id,cliente,detalles_pedido,total,metodo_pago,created_at,estado',
-      'origen':     'eq.pos',          // solo ventas de caja
-      'created_at': 'gte.' + inicio,
-      'created_at2':'lte.' + fin,       // alias — PostgREST acepta mismo param repetido
-      order: 'created_at.desc',
-      limit: 500
+      select: '*',
+      'origen': 'eq.pos',
+      'and':    '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
+      order:    'created_at.desc',
+      limit:    500
     });
 
     // Normalizar al formato que usa renderPosSales
