@@ -1418,16 +1418,19 @@ function sendOrder() {
 
   var waRaw = (cfg.whatsapp || '').replace(/\D/g, '');
   var wa = (waRaw.indexOf('57') === 0) ? waRaw : '57' + waRaw;
-  window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank');
+
+  // En móviles window.open es bloqueado como popup — location.href lanza WA directamente
+  window.location.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent(msg);
+
+  // Dar 500ms al móvil para lanzar WhatsApp antes de cambiar la UI
   cart = [];
   orderNum++;
   updateCartUI();
-  closeCartSheet();
-  showTrackFab();
-  // Open tracking screen automatically after sending order
   setTimeout(function() {
+    closeCartSheet();
+    showTrackFab();
     openTracking();
-  }, 400);
+  }, 500);
 }
 
 // ---- TRACKING ----
@@ -2509,21 +2512,22 @@ async function sbInsertPedido(orderData) {
 
     const waRaw = (cfg.whatsapp || '').replace(/\D/g,'');
     const wa    = waRaw.startsWith('57') ? waRaw : '57' + waRaw;
-    window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank');
 
-    // 5. Limpiar carrito y mostrar tracking
+    // En móviles window.open es bloqueado como popup — location.href lanza WA directamente.
+    // Se abre ANTES de cualquier cambio de UI para que el navegador no lo bloquee.
+    window.location.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent(msg);
+
+    // 5. Limpiar carrito y mostrar tracking después de 500ms
+    // El timeout le da tiempo al móvil de lanzar WhatsApp antes de que
+    // la app cambie de pantalla al estado del pedido.
     cart = [];
     orderNum++;
-    if(typeof updateCartUI   === 'function') updateCartUI();
-    if(typeof closeCartSheet === 'function') closeCartSheet();
-    if(typeof showTrackFab   === 'function') showTrackFab();
+    if(typeof updateCartUI === 'function') updateCartUI();
 
-    // Esperar 500ms antes de abrir el tracking.
-    // Garantiza que _lastSbPedidoId y _STORE.orders estén poblados
-    // (el await de sbInsertPedido ya terminó, pero renderTracking necesita
-    // que el DOM del carrito haya cerrado antes de abrirse).
     setTimeout(function() {
-      if(typeof openTracking === 'function') openTracking();
+      if(typeof closeCartSheet === 'function') closeCartSheet();
+      if(typeof showTrackFab   === 'function') showTrackFab();
+      if(typeof openTracking   === 'function') openTracking();
     }, 500);
   };
 })();
