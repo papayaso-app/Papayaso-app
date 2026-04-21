@@ -1913,11 +1913,15 @@ function openProdModal(id) {
   editPhoto = (p && p.photo) ? p.photo : '';
   var catSel = document.getElementById('ped-cat');
   if (catSel) {
+    // Garantizar que el select tiene TODAS las categorías de la tabla (sin filtrar por productos)
+    var cats = s.categories || [];
     var catHtml = '';
-    for (var ci = 0; ci < s.categories.length; ci++) {
-      catHtml += '<option value="' + s.categories[ci] + '"' + (p && p.cat === s.categories[ci] ? ' selected' : '') + '>' + s.categories[ci] + '</option>';
+    for (var ci = 0; ci < cats.length; ci++) {
+      catHtml += '<option value="' + cats[ci] + '"' + (p && p.cat === cats[ci] ? ' selected' : '') + '>' + cats[ci] + '</option>';
     }
     catSel.innerHTML = catHtml;
+    // Si es producto existente, forzar la selección correcta
+    if (p && p.cat) catSel.value = p.cat;
   }
   // Inicializar extras: si vienen de Supabase como JSONB [{name,price}] o null → siempre array
   var rawExtras = (p && p.extras) ? p.extras : [];
@@ -5091,9 +5095,17 @@ async function sbLoadProductos() {
           sabores:   sabores
         };
       });
-      // Categorías únicas ordenadas
-      const cats = [...new Set((prods||[]).map(p => p.categoria).filter(Boolean))];
-      s.categories = cats;
+      // NO sobreescribir s.categories aquí.
+      // La lista autoritativa de categorías viene de sbLoadCategorias()
+      // (que lee la tabla categorias completa, incluyendo las que aún no tienen productos).
+      // Sobreescribirla aquí causaría que categorías sin productos desaparezcan del select.
+      // Solo añadimos categorías de productos que no estén ya en la lista (datos huérfanos).
+      const catsDeProductos = [...new Set((prods||[]).map(p => p.categoria).filter(Boolean))];
+      const catsActuales = s.categories || [];
+      catsDeProductos.forEach(function(c) {
+        if (catsActuales.indexOf(c) < 0) catsActuales.push(c);
+      });
+      s.categories = catsActuales;
     });
     if (typeof renderEditor === 'function') renderEditor();
     if (typeof renderCats   === 'function') renderCats();
@@ -5193,6 +5205,64 @@ async function sbDelProd(sbId, name) {
 // ══════════════════════════════════════════════════════════════════════
 // CATEGORÍAS
 // ══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// fillAllCatSelects — rellena TODOS los <select> de categorías con la
+// lista completa de s.categories (viene de la tabla categorias, sin filtrar).
+// Se llama tras sbLoadCategorias() y tras sbAddCat() exitoso.
+// No depende de que las categorías tengan productos asignados.
+// ══════════════════════════════════════════════════════════════════════
+function fillAllCatSelects() {
+  var cats = getStore().categories || [];
+
+  // 1. Modal "Nuevo/Editar Producto" del menú (ped-cat)
+  var pedCat = document.getElementById('ped-cat');
+  if (pedCat) {
+    var current = pedCat.value; // preservar selección actual
+    pedCat.innerHTML = cats.map(function(c) {
+      return '<option value="' + c + '"' + (c === current ? ' selected' : '') + '>' + c + '</option>';
+    }).join('');
+    // Si solo hay una opción y el select está vacío, seleccionarla
+    if (cats.length === 1) pedCat.value = cats[0];
+  }
+
+  // 2. Filtro de categoría en el editor de productos (ed-cat)
+  var edCat = document.getElementById('ed-cat');
+  if (edCat) {
+    var edCurrent = edCat.value;
+    var edHtml = '<option value="all">Todas las categorias</option>';
+    cats.forEach(function(c) {
+      edHtml += '<option value="' + c + '"' + (c === edCurrent ? ' selected' : '') + '>' + c + '</option>';
+    });
+    edCat.innerHTML = edHtml;
+    if (edCurrent && edCurrent !== 'all' && cats.indexOf(edCurrent) >= 0) edCat.value = edCurrent;
+  }
+
+  // 3. Modal de adiciones — selector de categoría (addon-cat)
+  var addonCat = document.getElementById('addon-cat');
+  if (addonCat) {
+    var adCurrent = addonCat.value;
+    addonCat.innerHTML = cats.map(function(c) {
+      return '<option value="' + c + '"' + (c === adCurrent ? ' selected' : '') + '>' + c + '</option>';
+    }).join('');
+  }
+
+  // 4. Modal "Nuevo/Editar Producto POS" (pos-ped-cat)
+  var posPedCat = document.getElementById('pos-ped-cat');
+  if (posPedCat) {
+    var posCats = getPosStore().categories || [];
+    // El POS tiene sus propias categorías — solo rellenar si está vacío
+    if (posCats.length === 0) {
+      // Fallback: usar las categorías del menú si el POS no tiene las suyas
+      var posCurrent = posPedCat.value;
+      posPedCat.innerHTML = cats.map(function(c) {
+        return '<option value="' + c + '"' + (c === posCurrent ? ' selected' : '') + '>' + c + '</option>';
+      }).join('');
+    }
+  }
+
+  console.log('[UI] fillAllCatSelects — categorías disponibles:', cats.length, cats);
+}
+
 async function sbLoadCategorias() {
   try {
     // Pedir las dos columnas correctas: extras_categoria y adiciones_categoria
@@ -5243,6 +5313,7 @@ async function sbLoadCategorias() {
     if (typeof renderCats         === 'function') renderCats();
     if (typeof renderAddons       === 'function') renderAddons();
     if (typeof renderGlobalExtras === 'function') renderGlobalExtras();
+    fillAllCatSelects();   // actualizar todos los <select> de categoría sin recargar
 
     const st = getStore();
     console.log('[SB] Categorías:', (cats||[]).length,
