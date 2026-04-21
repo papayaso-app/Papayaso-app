@@ -943,15 +943,18 @@ function openProd(id) {
   var pq = document.getElementById('pm-qty'); if (pq) pq.textContent = 1;
   var pnote = document.getElementById('pm-note'); if (pnote) pnote.value = '';
 
-  // ---- EXTRAS OPCIONALES DEL PRODUCTO ----
+  // ── EXTRAS Y ADICIONES DEL PRODUCTO ──────────────────────────────────
   var ex = document.getElementById('pm-extras');
   if (ex) {
     var xh = '';
-    // Extras opcionales del producto
-    if (p.extras && p.extras.length) {
-      xh += '<div class="xtl">Extras opcionales</div>';
-      for (var xi = 0; xi < p.extras.length; xi++) {
-        var e = p.extras[xi];
+
+    // 1. Extras propios del producto (productos.extras — JSONB [{name,price}])
+    //    Estos son extras específicos de ESTE producto
+    var prodExtras = Array.isArray(p.extras) ? p.extras.filter(function(e) { return e && e.name; }) : [];
+    if (prodExtras.length) {
+      xh += '<div class="xtl">Extras</div>';
+      for (var xi = 0; xi < prodExtras.length; xi++) {
+        var e = prodExtras[xi];
         xh += '<div class="xrow" id="xr' + xi + '" onclick="togX(' + xi + ')">'
           + '<div class="xchk" id="xc' + xi + '"></div>'
           + '<span class="xname">' + e.name + '</span>'
@@ -959,34 +962,59 @@ function openProd(id) {
           + '</div>';
       }
     }
-    // Adiciones por categoría del producto
-    // Adiciones por categoría vienen del store en memoria (_STORE._catAddons)
-    var catAddons = _STORE._catAddons || [];
-    var relevantAddons = catAddons.filter(function(ad){ return ad.cat === p.cat; });
-    for (var ai = 0; ai < relevantAddons.length; ai++) {
-      var ad = relevantAddons[ai];
-      var availOpts = (ad.options||[]).filter(function(o){return o.available!==false;});
-      if (!availOpts.length) continue;
-      var isReq = ad.type === 'required';
-      xh += '<div class="xtl" style="margin-top:10px">'
-        + ad.name
-        + (isReq ? ' <span style="background:#fff3e8;color:#e05a00;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Obligatorio</span>'
-                 : ' <span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>')
-        + '</div>';
-      for (var oi = 0; oi < availOpts.length; oi++) {
-        var opt = availOpts[oi];
-        var globalIdx = 'addon_' + ai + '_' + oi;
-        xh += '<div class="xrow" id="xr_' + globalIdx + '" onclick="togAddon(this,' + ai + ',' + oi + ',\'' + (isReq?'radio':'check') + '\')" '
-          + 'data-addon-idx="' + ai + '" data-opt-idx="' + oi + '" data-addon-id="' + ad.id + '" data-opt-id="' + opt.id + '">'
-          + '<div class="xchk" id="xc_' + globalIdx + '" style="' + (isReq?'border-radius:50%':'') + '"></div>'
-          + '<span class="xname">' + opt.name + '</span>'
-          + '<span class="xprice-lbl">' + (opt.price > 0 ? '+' + fp(opt.price) : 'Incluido') + '</span>'
+
+    // 2. Extras de categoría (categorias.extras_categoria — [{nombre, precio}])
+    //    Aplican a TODOS los productos de esa categoría
+    var catMapa   = (_STORE._categoriasMapa || {})[p.cat] || {};
+    var catExtras = catMapa.extras || [];   // [{name, price}] ya normalizados
+    var catAdicOffset = prodExtras.length;  // índice base para no colisionar con prodExtras
+
+    if (catExtras.length) {
+      xh += '<div class="xtl"' + (prodExtras.length ? ' style="margin-top:10px"' : '') + '>Extras de la categoría</div>';
+      for (var cxi = 0; cxi < catExtras.length; cxi++) {
+        var ce = catExtras[cxi];
+        var realIdx = catAdicOffset + cxi;  // índice global para togX
+        xh += '<div class="xrow" id="xr' + realIdx + '" onclick="togX(' + realIdx + ')">'
+          + '<div class="xchk" id="xc' + realIdx + '"></div>'
+          + '<span class="xname">' + ce.name + '</span>'
+          + '<span class="xprice-lbl">' + (ce.price > 0 ? '+' + fp(ce.price) : 'Incluido') + '</span>'
           + '</div>';
       }
     }
-    ex.innerHTML = xh;
-    // Guardar referencia a adiciones requeridas para validar
-    curProd._catAddons = relevantAddons;
+
+    // curProd.extras ahora incluye TANTO los del producto COMO los de la categoría,
+    // para que togX() y updT() puedan acceder por índice sin cambios adicionales
+    curProd._allExtras = prodExtras.concat(catExtras);
+
+    // 3. Adiciones de categoría (categorias.adiciones_categoria — ["string"...])
+    //    Se muestran como grupo de opciones tipo check (selección múltiple, precio 0)
+    var catAdiciones = catMapa.adiciones || [];  // [{name, price:0}] ya normalizados
+
+    if (catAdiciones.length) {
+      xh += '<div class="xtl" style="margin-top:10px">Adiciones'
+        + ' <span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>'
+        + '</div>';
+      for (var dai = 0; dai < catAdiciones.length; dai++) {
+        var da = catAdiciones[dai];
+        xh += '<div class="xrow" id="xr_adc_' + dai + '" onclick="togAdicCat(this,' + dai + ')"'
+          + ' data-adic-idx="' + dai + '">'
+          + '<div class="xchk" id="xc_adc_' + dai + '"></div>'
+          + '<span class="xname">' + da.name + '</span>'
+          + '<span class="xprice-lbl">Incluido</span>'
+          + '</div>';
+      }
+    }
+
+    // Guardar referencia de adiciones de categoría para addToCart()
+    curProd._catAdiciones = catAdiciones;
+
+    // NOTA: _catAddons sigue siendo compatible para adiciones complejas del admin
+    var legacyAddons = (_STORE._catAddons || []).filter(function(ad) { return ad.cat === p.cat; });
+    curProd._catAddons = legacyAddons;
+
+    // Si no hay nada que mostrar, ocultar el contenedor
+    ex.innerHTML = xh || '';
+    ex.style.display = xh ? '' : 'none';
   }
   updT();
   var bd = document.getElementById('sheet-bd');
@@ -1028,7 +1056,7 @@ function togX(i) {
   var chk = document.getElementById('xc' + i);
   var active = selX.indexOf(i) >= 0;
   if (row) { if (active) row.classList.add('sel'); else row.classList.remove('sel'); }
-  if (chk) chk.textContent = active ? 'v' : '';
+  if (chk) chk.textContent = active ? '✓' : '';
   updT();
 }
 
@@ -1042,19 +1070,39 @@ function chQty(d) {
 function updT() {
   if (!curProd) return;
   var t = curProd.price;
-  for (var i = 0; i < selX.length; i++) t += curProd.extras[selX[i]].price;
-  // Agregar precio de adiciones seleccionadas
+
+  // Extras del producto + extras de categoría (en _allExtras unificado)
+  var allExtras = curProd._allExtras || curProd.extras || [];
+  for (var i = 0; i < selX.length; i++) {
+    if (allExtras[selX[i]]) t += (allExtras[selX[i]].price || 0);
+  }
+
+  // Adiciones de categoría (strings con precio 0 — no suman, pero se registran)
+  // Las adiciones complejas del admin (con precio) sí suman
   var addonRows = document.querySelectorAll('#pm-extras .xrow.sel[data-opt-id]');
-  for (var ai=0;ai<addonRows.length;ai++) {
-    var adIdx=parseInt(addonRows[ai].getAttribute('data-addon-idx'));
-    var oIdx=parseInt(addonRows[ai].getAttribute('data-opt-idx'));
+  for (var ai = 0; ai < addonRows.length; ai++) {
+    var adIdx  = parseInt(addonRows[ai].getAttribute('data-addon-idx'));
+    var oIdx   = parseInt(addonRows[ai].getAttribute('data-opt-idx'));
     if (curProd._catAddons && curProd._catAddons[adIdx]) {
-      var availOpts=(curProd._catAddons[adIdx].options||[]).filter(function(o){return o.available!==false;});
-      if (availOpts[oIdx]) t += (availOpts[oIdx].price||0);
+      var availOpts = (curProd._catAddons[adIdx].options || []).filter(function(o) { return o.available !== false; });
+      if (availOpts[oIdx]) t += (availOpts[oIdx].price || 0);
     }
   }
+
   var el = document.getElementById('pm-total');
   if (el) el.textContent = fp(t * curQty);
+}
+
+// Toggle adición simple de categoría (strings planos, precio 0)
+function togAdicCat(row, idx) {
+  if (row.classList.contains('sel')) {
+    row.classList.remove('sel');
+    var uc = row.querySelector('.xchk'); if (uc) uc.textContent = '';
+  } else {
+    row.classList.add('sel');
+    var sc = row.querySelector('.xchk'); if (sc) sc.textContent = '✓';
+  }
+  updT();
 }
 
 function closeProd() {
@@ -1068,40 +1116,57 @@ function closeProdBg(e) {
 function addToCart() {
   if (!curProd) return;
   var extras = [];
-  for (var i = 0; i < selX.length; i++) extras.push(curProd.extras[selX[i]]);
 
-  // Validar adiciones obligatorias
-  if (curProd._catAddons) {
-    for (var vi=0;vi<curProd._catAddons.length;vi++) {
-      var vad = curProd._catAddons[vi];
-      if (vad.type !== 'required') continue;
-      var vRows = document.querySelectorAll('[data-addon-idx="'+vi+'"].sel');
-      if (!vRows.length) { showToast('Elige una opción en: '+vad.name); return; }
+  // 1. Extras seleccionados (productos.extras + categorias.extras_categoria unificados)
+  var allExtras = curProd._allExtras || curProd.extras || [];
+  for (var i = 0; i < selX.length; i++) {
+    if (allExtras[selX[i]]) extras.push(allExtras[selX[i]]);
+  }
+
+  // 2. Adiciones simples de categoría seleccionadas (strings, precio 0)
+  var adicRows = document.querySelectorAll('#pm-extras .xrow.sel[data-adic-idx]');
+  var catAdiciones = curProd._catAdiciones || [];
+  for (var di = 0; di < adicRows.length; di++) {
+    var dIdx = parseInt(adicRows[di].getAttribute('data-adic-idx'));
+    if (catAdiciones[dIdx]) {
+      extras.push({ name: catAdiciones[dIdx].name, price: 0 });
     }
   }
 
-  // Recoger adiciones seleccionadas (obligatorias y opcionales)
+  // 3. Adiciones complejas del admin (legacy con _catAddons, precio variable)
+  if (curProd._catAddons) {
+    for (var vi = 0; vi < curProd._catAddons.length; vi++) {
+      var vad = curProd._catAddons[vi];
+      if (vad.type !== 'required') continue;
+      var vRows = document.querySelectorAll('[data-addon-idx="' + vi + '"].sel');
+      if (!vRows.length) { showToast('Elige una opción en: ' + vad.name); return; }
+    }
+  }
   var addonRows2 = document.querySelectorAll('#pm-extras .xrow.sel[data-opt-id]');
-  for (var ai2=0;ai2<addonRows2.length;ai2++) {
-    var aIdx=parseInt(addonRows2[ai2].getAttribute('data-addon-idx'));
-    var oIdx2=parseInt(addonRows2[ai2].getAttribute('data-opt-idx'));
+  for (var ai2 = 0; ai2 < addonRows2.length; ai2++) {
+    var aIdx  = parseInt(addonRows2[ai2].getAttribute('data-addon-idx'));
+    var oIdx2 = parseInt(addonRows2[ai2].getAttribute('data-opt-idx'));
     if (curProd._catAddons && curProd._catAddons[aIdx]) {
-      var availOpts2=(curProd._catAddons[aIdx].options||[]).filter(function(o){return o.available!==false;});
+      var availOpts2 = (curProd._catAddons[aIdx].options || []).filter(function(o) { return o.available !== false; });
       if (availOpts2[oIdx2]) {
         var adOpt = availOpts2[oIdx2];
-        extras.push({name:curProd._catAddons[aIdx].name+': '+adOpt.name, price:adOpt.price||0});
+        extras.push({ name: curProd._catAddons[aIdx].name + ': ' + adOpt.name, price: adOpt.price || 0 });
       }
     }
   }
 
+  // Calcular precio unitario sumando todos los extras con precio
   var unit = curProd.price;
-  for (var j = 0; j < extras.length; j++) unit += extras[j].price;
-  var noteEl = document.getElementById('pm-note');
+  for (var j = 0; j < extras.length; j++) unit += (extras[j].price || 0);
+
+  var noteEl   = document.getElementById('pm-note');
   var prodNote = noteEl ? noteEl.value.trim() : '';
   cart.push({
-    pid: curProd.id, name: curProd.name, emoji: curProd.emoji,
-    photo: curProd.photo, qty: curQty, unit: unit,
-    extras: extras, note: prodNote, total: unit * curQty
+    pid:    curProd.id,   name:  curProd.name,
+    emoji:  curProd.emoji, photo: curProd.photo,
+    qty:    curQty,       unit:  unit,
+    extras: extras,       note:  prodNote,
+    total:  unit * curQty
   });
   updateCartUI();
   closeProd();
@@ -2475,11 +2540,66 @@ async function restaurarSeguimientoSiExiste() {
 // ══════════════════════════════════════════════════════════════
 // 6. ARRANQUE — carga config + productos, luego renderiza
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// CATEGORÍAS — extras_categoria y adiciones_categoria
+// Se carga UNA VEZ al arrancar y se indexa por nombre de categoría.
+// openProd() lo consulta en memoria sin hacer GETs adicionales por clic.
+// ══════════════════════════════════════════════════════════════
+async function sbCargarCategorias() {
+  try {
+    const cats = await SB.get('categorias', {
+      select: 'nombre,extras_categoria,adiciones_categoria',
+      order:  'orden.asc,nombre.asc'
+    });
+
+    // Construir mapa indexado por nombre: { "Hamburguesas": { extras: [], adiciones: [] }, ... }
+    const mapa = {};
+    (cats || []).forEach(function(cat) {
+      if (!cat.nombre || cat.nombre === '__extras_globales__') return;
+
+      // extras_categoria: [{nombre, precio}] — con precio sumable
+      var extras = [];
+      if (Array.isArray(cat.extras_categoria)) {
+        extras = cat.extras_categoria.filter(function(e) {
+          return e && (e.nombre || e.name);
+        }).map(function(e) {
+          return {
+            name:  e.nombre || e.name || '',
+            price: parseInt(e.precio !== undefined ? e.precio : (e.price || 0)) || 0
+          };
+        });
+      }
+
+      // adiciones_categoria: ["Salsa especial", "Mayonesa"] — strings simples, precio 0
+      var adiciones = [];
+      if (Array.isArray(cat.adiciones_categoria)) {
+        adiciones = cat.adiciones_categoria.filter(function(a) {
+          return a && String(a).trim();
+        }).map(function(a) {
+          return { name: String(a).trim(), price: 0 };
+        });
+      }
+
+      mapa[cat.nombre] = { extras: extras, adiciones: adiciones };
+    });
+
+    _STORE._categoriasMapa = mapa;
+    console.log('[SB] Categorías cargadas para menú:', Object.keys(mapa).length,
+      '— con extras/adiciones:', Object.values(mapa).filter(function(c) {
+        return c.extras.length || c.adiciones.length;
+      }).length);
+  } catch(e) {
+    // Sin datos de categorías el menú sigue funcionando — simplemente no habrá extras de categoría
+    _STORE._categoriasMapa = {};
+    console.warn('[SB] No se pudieron cargar categorías:', e.message);
+  }
+}
+
 (async function sbMenuInit() {
   console.log('[SB] 🚀 Cargando menú de Papayaso...');
   try {
-    // 1. Cargar config y productos en paralelo
-    await Promise.all([sbCargarConfig(), sbCargarProductos()]);
+    // 1. Cargar config, productos y categorías en paralelo
+    await Promise.all([sbCargarConfig(), sbCargarProductos(), sbCargarCategorias()]);
 
     // 2. Renderizar UI con datos de Supabase
     if (typeof init          === 'function') init();
