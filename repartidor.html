@@ -20,213 +20,122 @@
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 
 /* ── Pantalla PIN ── */
-.pin-screen{
-  position:fixed;inset:0;background:var(--dark);
-  display:flex;align-items:center;justify-content:center;
-  z-index:500;padding:24px;
-}
-.pin-box{
-  background:#1a1a1a;border-radius:20px;
-  padding:36px 28px;max-width:340px;width:100%;text-align:center;
-}
+.pin-screen{position:fixed;inset:0;background:var(--dark);display:flex;align-items:center;justify-content:center;z-index:500;padding:24px;}
+.pin-box{background:#1a1a1a;border-radius:20px;padding:36px 28px;max-width:340px;width:100%;text-align:center;}
 .pin-icon{font-size:48px;margin-bottom:12px;display:block;}
-.pin-title{
-  font-family:'Montserrat',sans-serif;font-size:22px;
-  font-weight:900;color:#fff;margin-bottom:4px;
-}
+.pin-title{font-family:'Montserrat',sans-serif;font-size:22px;font-weight:900;color:#fff;margin-bottom:4px;}
 .pin-sub{font-size:13px;color:rgba(255,255,255,.45);margin-bottom:24px;}
-.pin-input{
-  width:100%;padding:16px;font-size:24px;font-weight:700;
-  text-align:center;border-radius:12px;
-  border:2px solid rgba(255,255,255,.15);
-  background:rgba(255,255,255,.07);color:#fff;
-  font-family:inherit;letter-spacing:10px;margin-bottom:14px;
-  transition:border-color .2s;
-}
+.pin-input{width:100%;padding:16px;font-size:24px;font-weight:700;text-align:center;border-radius:12px;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#fff;font-family:inherit;letter-spacing:10px;margin-bottom:14px;transition:border-color .2s;}
 .pin-input:focus{outline:none;border-color:var(--green);}
 .pin-input.shake{animation:shake .35s ease;}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
-.pin-btn{
-  width:100%;padding:15px;background:var(--green);color:#fff;
-  border:none;border-radius:12px;font-family:inherit;
-  font-size:16px;font-weight:800;cursor:pointer;
-  transition:opacity .15s;
-}
+.pin-btn{width:100%;padding:15px;background:var(--green);color:#fff;border:none;border-radius:12px;font-family:inherit;font-size:16px;font-weight:800;cursor:pointer;transition:opacity .15s;}
 .pin-btn:active{opacity:.85;}
 .pin-btn:disabled{opacity:.5;cursor:not-allowed;}
-.pin-err{
-  color:#ef5350;font-size:13px;font-weight:600;
-  margin-bottom:12px;display:none;
-}
+.pin-err{color:#ef5350;font-size:13px;font-weight:600;margin-bottom:12px;display:none;}
 .pin-err.show{display:block;}
-.pin-loader{
-  color:rgba(255,255,255,.4);font-size:13px;
-  margin-bottom:12px;display:none;
-}
+.pin-loader{color:rgba(255,255,255,.4);font-size:13px;margin-bottom:12px;display:none;}
 .pin-loader.show{display:block;}
 
 /* ── Topbar ── */
-.topbar{
-  background:var(--dark);display:flex;align-items:center;
-  gap:10px;padding:0 16px;height:54px;
-  position:sticky;top:0;z-index:100;
-}
+.topbar{background:var(--dark);display:flex;align-items:center;gap:10px;padding:0 16px;height:54px;position:sticky;top:0;z-index:100;}
 .t-logo{font-family:'Montserrat',sans-serif;font-size:17px;font-weight:900;color:var(--green);}
 .t-spacer{flex:1;}
-.t-badge{
-  font-size:11px;font-weight:700;background:var(--green);
-  color:#fff;padding:4px 12px;border-radius:100px;
-  min-width:80px;text-align:center;
-}
+.t-badge{font-size:11px;font-weight:700;background:var(--green);color:#fff;padding:4px 12px;border-radius:100px;min-width:80px;text-align:center;}
 .t-badge.zero{background:#444;}
-.logout-btn{
-  background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.6);
-  font-family:inherit;font-size:11px;font-weight:600;
-  padding:5px 10px;border-radius:var(--rs);cursor:pointer;
-}
+.logout-btn{background:rgba(255,255,255,.1);border:none;color:rgba(255,255,255,.6);font-family:inherit;font-size:11px;font-weight:600;padding:5px 10px;border-radius:var(--rs);cursor:pointer;}
 .logout-btn:hover{background:rgba(255,255,255,.18);color:#fff;}
+
+/* ── Tabs de sección ── */
+.tabs{display:flex;background:var(--white);border-bottom:2px solid var(--border);position:sticky;top:54px;z-index:90;}
+.tab-btn{flex:1;padding:12px 8px;border:none;background:transparent;font-family:inherit;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;}
+.tab-btn.active{color:var(--green);border-bottom-color:var(--green);}
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
 
 /* ── Contenido principal ── */
 .content{padding:14px;max-width:620px;margin:0 auto;}
 
 /* ── Barra de estado ── */
-.status-bar{
-  display:flex;align-items:center;justify-content:space-between;
-  background:var(--white);border-radius:var(--rs);
-  padding:10px 14px;margin-bottom:14px;
-  border:1.5px solid var(--border);gap:10px;
-}
+.status-bar{display:flex;align-items:center;justify-content:space-between;background:var(--white);border-radius:var(--rs);padding:10px 14px;margin-bottom:14px;border:1.5px solid var(--border);gap:10px;}
 .status-left{display:flex;align-items:center;gap:8px;}
-.live-dot{
-  width:8px;height:8px;border-radius:50%;
-  background:#4caf50;flex-shrink:0;
-  animation:pulse 2s infinite;
-}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;animation:pulse 2s infinite;}
 .live-dot.error{background:#ef5350;animation:none;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .status-txt{font-size:12px;color:var(--muted);}
-.refresh-btn{
-  background:var(--bg);border:1.5px solid var(--border);
-  color:var(--text);font-family:inherit;font-size:12px;
-  font-weight:600;padding:5px 12px;border-radius:var(--rs);
-  cursor:pointer;white-space:nowrap;flex-shrink:0;
-}
+.refresh-btn{background:var(--bg);border:1.5px solid var(--border);color:var(--text);font-family:inherit;font-size:12px;font-weight:600;padding:5px 12px;border-radius:var(--rs);cursor:pointer;white-space:nowrap;flex-shrink:0;}
 .refresh-btn:active{opacity:.75;}
 
 /* ── Sección ── */
-.sec-title{
-  font-family:'Montserrat',sans-serif;font-size:16px;
-  font-weight:900;margin-bottom:12px;
-  display:flex;align-items:center;gap:8px;
-}
-.sec-count{
-  font-size:12px;font-weight:700;
-  background:var(--green);color:#fff;
-  padding:2px 9px;border-radius:100px;
-}
+.sec-title{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:900;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.sec-count{font-size:12px;font-weight:700;background:var(--green);color:#fff;padding:2px 9px;border-radius:100px;}
 .sec-count.zero{background:#ddd;color:#999;}
 
-/* ── Tarjeta de pedido ── */
-.ocard{
-  background:var(--white);border-radius:var(--r);
-  border:1.5px solid var(--border);
-  border-left:5px solid var(--border);
-  margin-bottom:12px;overflow:hidden;
-  transition:box-shadow .2s;
-}
+/* ── Tarjeta de pedido activo ── */
+.ocard{background:var(--white);border-radius:var(--r);border:1.5px solid var(--border);border-left:5px solid var(--border);margin-bottom:12px;overflow:hidden;transition:box-shadow .2s;}
 .ocard:hover{box-shadow:0 4px 16px rgba(0,0,0,.08);}
 .ocard.listo  {border-left-color:var(--ok);}
 .ocard.camino {border-left-color:var(--purple);}
-
-/* Cabecera del pedido */
-.ohead{
-  padding:12px 14px;
-  border-bottom:1px solid var(--border);
-  display:flex;align-items:flex-start;gap:10px;
-}
+.ohead{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:10px;}
 .ohead-left{flex:1;min-width:0;}
 .ohead-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;}
 .onum{font-family:'Montserrat',sans-serif;font-size:15px;font-weight:900;}
-.ostate{
-  font-size:10px;font-weight:700;padding:2px 9px;
-  border-radius:100px;text-transform:uppercase;letter-spacing:.4px;
-}
+.ostate{font-size:10px;font-weight:700;padding:2px 9px;border-radius:100px;text-transform:uppercase;letter-spacing:.4px;}
 .s-listo {background:var(--ok-bg);  color:var(--ok);   border:1px solid var(--ok-bd);}
 .s-camino{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-bd);}
 .oclient{font-size:14px;font-weight:700;color:var(--text);}
-.oprice{
-  font-family:'Montserrat',sans-serif;font-size:16px;
-  font-weight:900;color:var(--green);white-space:nowrap;flex-shrink:0;
-}
-
-/* Cuerpo del pedido */
+.oprice{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:900;color:var(--green);white-space:nowrap;flex-shrink:0;}
 .obody{padding:10px 14px;}
-.orow-info{
-  display:flex;align-items:flex-start;gap:6px;
-  font-size:12px;color:var(--muted);margin-bottom:5px;
-  line-height:1.4;
-}
+.orow-info{display:flex;align-items:flex-start;gap:6px;font-size:12px;color:var(--muted);margin-bottom:5px;line-height:1.4;}
 .orow-info:last-child{margin-bottom:0;}
 .orow-icon{flex-shrink:0;margin-top:1px;}
-
-/* Chips de pago */
 .pay-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px;}
-.opay{
-  font-size:11px;font-weight:600;
-  background:var(--bg);padding:3px 9px;
-  border-radius:100px;border:1px solid var(--border);
-  display:inline-flex;align-items:center;gap:4px;
-}
+.opay{font-size:11px;font-weight:600;background:var(--bg);padding:3px 9px;border-radius:100px;border:1px solid var(--border);display:inline-flex;align-items:center;gap:4px;}
 .opay.cambio{background:#e8f5e9;border-color:#a5d6a7;color:var(--ok);}
-
-/* Lista de productos */
 .items-list{margin-top:6px;}
-.item-row{
-  display:flex;align-items:baseline;gap:6px;
-  font-size:12px;padding:3px 0;
-  border-bottom:1px dashed var(--border);
-}
+.item-row{display:flex;align-items:baseline;gap:6px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);}
 .item-row:last-child{border-bottom:none;}
-.item-qty{
-  font-weight:800;color:var(--green);
-  min-width:22px;flex-shrink:0;
-}
+.item-qty{font-weight:800;color:var(--green);min-width:22px;flex-shrink:0;}
 .item-name{flex:1;font-weight:600;color:var(--text);}
 .item-price{font-size:11px;color:var(--muted);white-space:nowrap;}
-.item-extras{
-  font-size:11px;color:var(--muted);
-  padding-left:28px;padding-bottom:2px;
-}
-.item-note{
-  font-size:11px;color:var(--warn);font-style:italic;
-  padding-left:28px;padding-bottom:4px;
-}
-.notas-box{
-  margin-top:6px;padding:7px 10px;
-  background:var(--warn-bg);border-radius:var(--rs);
-  font-size:12px;color:var(--warn);font-weight:600;
-  display:flex;gap:6px;align-items:flex-start;
-}
-
-/* Acciones */
-.oactions{
-  padding:10px 14px;
-  display:flex;gap:8px;flex-wrap:wrap;
-  border-top:1px solid var(--border);
-  background:#fafafa;
-}
-.btn{
-  padding:9px 15px;border-radius:var(--rs);border:none;
-  font-family:inherit;font-size:12px;font-weight:700;
-  cursor:pointer;transition:all .15s;
-  display:inline-flex;align-items:center;gap:5px;
-}
+.item-extras{font-size:11px;color:var(--muted);padding-left:28px;padding-bottom:2px;}
+.item-note{font-size:11px;color:var(--warn);font-style:italic;padding-left:28px;padding-bottom:4px;}
+.notas-box{margin-top:6px;padding:7px 10px;background:var(--warn-bg);border-radius:var(--rs);font-size:12px;color:var(--warn);font-weight:600;display:flex;gap:6px;align-items:flex-start;}
+.oactions{padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border);background:#fafafa;}
+.btn{padding:9px 15px;border-radius:var(--rs);border:none;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px;}
 .btn:active{transform:scale(.96);}
 .btn-green {background:var(--ok);    color:#fff;}
 .btn-purple{background:var(--purple);color:#fff;}
 .btn-maps  {background:#4285F4;      color:#fff;}
 .btn-wa    {background:#25D366;      color:#fff;}
-.btn-gray  {background:#e0e0e0;      color:#444;}
+
+/* ── Resumen del día (tarjetas) ── */
+.resumen-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+.res-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:14px 16px;}
+.res-card.highlight{border-color:var(--green);background:var(--ok-bg);}
+.res-val{font-family:'Montserrat',sans-serif;font-size:22px;font-weight:900;color:var(--text);margin-bottom:2px;}
+.res-val.green{color:var(--green);}
+.res-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+
+/* ── Desglose por método de pago ── */
+.pago-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;}
+.pago-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--rs);padding:12px 14px;text-align:center;}
+.pago-val{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:900;margin-bottom:2px;}
+.pago-lbl{font-size:10px;color:var(--muted);font-weight:600;}
+.pago-cnt{font-size:10px;color:var(--muted);margin-top:1px;}
+
+/* ── Tabla de historial ── */
+.hist-table{width:100%;border-collapse:collapse;background:var(--white);border-radius:var(--r);overflow:hidden;border:1.5px solid var(--border);}
+.hist-table thead tr{background:var(--bg);}
+.hist-table th{padding:9px 12px;font-size:11px;font-weight:700;color:var(--muted);text-align:left;text-transform:uppercase;letter-spacing:.4px;border-bottom:1.5px solid var(--border);}
+.hist-table td{padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border);}
+.hist-table tr:last-child td{border-bottom:none;}
+.hist-table tr:hover td{background:#fafafa;}
+.badge-pago{display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;}
+.bp-efectivo{background:#e8f5e9;color:#2d8a3e;}
+.bp-nequi   {background:#f3e5f5;color:#6a1b9a;}
+.bp-tarjeta {background:#e3f2fd;color:#1565c0;}
+.bp-otro    {background:#f5f5f5;color:#666;}
 
 /* ── Pantalla vacía ── */
 .empty{text-align:center;padding:60px 20px;color:var(--muted);}
@@ -236,23 +145,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 /* ── Toast ── */
 #toast-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;pointer-events:none;}
-#toast{
-  background:#222;color:#fff;padding:11px 22px;
-  border-radius:12px;font-size:13px;font-weight:600;
-  display:none;white-space:nowrap;
-  box-shadow:0 4px 20px rgba(0,0,0,.3);
-}
+#toast{background:#222;color:#fff;padding:11px 22px;border-radius:12px;font-size:13px;font-weight:600;display:none;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.3);}
 #toast.show{display:block;animation:slideUp .3s ease;}
 @keyframes slideUp{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
-
-/* ── Spinner de carga ── */
-.spinner{
-  width:32px;height:32px;border-radius:50%;
-  border:3px solid var(--border);
-  border-top-color:var(--green);
-  animation:spin .7s linear infinite;
-  margin:40px auto;
-}
+.spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--green);animation:spin .7s linear infinite;margin:40px auto;}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
@@ -266,12 +162,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="pin-sub" id="pin-sub">Ingresa tu PIN de acceso</div>
     <div class="pin-loader" id="pin-loader">Verificando...</div>
     <div class="pin-err"  id="pin-err">PIN incorrecto. Inténtalo de nuevo.</div>
-    <input
-      class="pin-input" id="pin-input"
-      type="password" inputmode="numeric"
-      maxlength="8" placeholder="••••"
-      autocomplete="off"
-    >
+    <input class="pin-input" id="pin-input" type="password" inputmode="numeric" maxlength="8" placeholder="••••" autocomplete="off">
     <button class="pin-btn" id="pin-btn" onclick="checkPin()">Entrar →</button>
   </div>
 </div>
@@ -281,31 +172,84 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
   <div class="t-logo">🛵 Repartidor</div>
   <div class="t-spacer"></div>
   <span class="t-badge zero" id="pedidos-count">—</span>
-  <button class="logout-btn" onclick="cerrarSesion()" title="Cerrar sesión">⬅ Salir</button>
+  <button class="logout-btn" onclick="cerrarSesion()">⬅ Salir</button>
 </div>
 
 <!-- ══════════ CONTENIDO PRINCIPAL ══════════ -->
-<div class="content" style="display:none" id="main-content">
+<div style="display:none" id="main-content">
 
-  <!-- Barra de estado / última actualización -->
-  <div class="status-bar">
-    <div class="status-left">
-      <span class="live-dot" id="live-dot"></span>
-      <span class="status-txt" id="last-update">Conectando...</span>
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-activos"   onclick="showTab('activos')">🔴 Activos</button>
+    <button class="tab-btn"        id="tab-historial" onclick="showTab('historial')">📋 Historial del día</button>
+  </div>
+
+  <div class="content">
+
+    <!-- ══ PANEL: PEDIDOS ACTIVOS ══ -->
+    <div class="tab-panel active" id="panel-activos">
+      <div class="status-bar">
+        <div class="status-left">
+          <span class="live-dot" id="live-dot"></span>
+          <span class="status-txt" id="last-update">Conectando...</span>
+        </div>
+        <button class="refresh-btn" onclick="cargarPedidos(true)">↻ Actualizar</button>
+      </div>
+      <div class="sec-title">
+        Pedidos activos
+        <span class="sec-count zero" id="sec-count">0</span>
+      </div>
+      <div id="pedidos-list"><div class="spinner"></div></div>
     </div>
-    <button class="refresh-btn" onclick="cargarPedidos(true)">↻ Actualizar</button>
-  </div>
 
-  <!-- Lista de pedidos -->
-  <div class="sec-title">
-    Pedidos activos
-    <span class="sec-count zero" id="sec-count">0</span>
-  </div>
-  <div id="pedidos-list">
-    <div class="spinner"></div>
-  </div>
+    <!-- ══ PANEL: HISTORIAL DEL DÍA ══ -->
+    <div class="tab-panel" id="panel-historial">
+      <div class="status-bar">
+        <div class="status-left">
+          <span class="status-txt" id="hist-fecha">Hoy</span>
+        </div>
+        <button class="refresh-btn" onclick="cargarHistorial()">↻ Actualizar</button>
+      </div>
 
-</div>
+      <!-- Resumen del día -->
+      <div class="resumen-grid">
+        <div class="res-card highlight">
+          <div class="res-val green" id="hist-total-dinero">$0</div>
+          <div class="res-lbl">💰 Total recaudado</div>
+        </div>
+        <div class="res-card">
+          <div class="res-val" id="hist-total-pedidos">0</div>
+          <div class="res-lbl">📦 Pedidos entregados</div>
+        </div>
+      </div>
+
+      <!-- Desglose por método de pago -->
+      <div class="sec-title" style="margin-bottom:10px">Por método de pago</div>
+      <div class="pago-grid" id="hist-pago-grid">
+        <div class="pago-card">
+          <div class="pago-val" id="pago-efectivo-val">$0</div>
+          <div class="pago-lbl">💵 Efectivo</div>
+          <div class="pago-cnt" id="pago-efectivo-cnt">0 pedidos</div>
+        </div>
+        <div class="pago-card">
+          <div class="pago-val" id="pago-nequi-val">$0</div>
+          <div class="pago-lbl">📱 Nequi</div>
+          <div class="pago-cnt" id="pago-nequi-cnt">0 pedidos</div>
+        </div>
+        <div class="pago-card">
+          <div class="pago-val" id="pago-tarjeta-val">$0</div>
+          <div class="pago-lbl">💳 Tarjeta</div>
+          <div class="pago-cnt" id="pago-tarjeta-cnt">0 pedidos</div>
+        </div>
+      </div>
+
+      <!-- Tabla de pedidos entregados -->
+      <div class="sec-title" style="margin-bottom:10px">Pedidos entregados</div>
+      <div id="hist-lista"><div class="spinner"></div></div>
+    </div>
+
+  </div><!-- .content -->
+</div><!-- #main-content -->
 
 <!-- ══════════ TOAST ══════════ -->
 <div id="toast-bar"><span id="toast"></span></div>
@@ -313,9 +257,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <script>
 'use strict';
 
-/* ═══════════════════════════════════════════════════════════
-   SUPABASE — cliente fetch directo (0 localStorage)
-   ═══════════════════════════════════════════════════════════ */
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
@@ -326,69 +267,44 @@ const SB = {
     'Authorization': 'Bearer ' + SUPABASE_KEY,
     'Prefer':        'return=representation'
   },
-
   async get(table, params) {
     const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
-    if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+    if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
     const r = await fetch(url, { headers: this.h });
-    if (!r.ok) {
-      const txt = await r.text();
-      console.error(`[SB] GET ${table} ${r.status}:`, txt);
-      throw new Error(`${r.status}: ${txt}`);
-    }
+    if (!r.ok) { const t = await r.text(); throw new Error(`${r.status}: ${t}`); }
     return r.json();
   },
-
   async patch(table, filtro, body) {
-    // filtro: string "id=eq.5" — así evitamos ambigüedades
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filtro}`, {
       method: 'PATCH', headers: this.h, body: JSON.stringify(body)
     });
-    if (!r.ok) {
-      const txt = await r.text();
-      console.error(`[SB] PATCH ${table} ${r.status}:`, txt);
-      throw new Error(`${r.status}: ${txt}`);
-    }
+    if (!r.ok) { const t = await r.text(); throw new Error(`${r.status}: ${t}`); }
     return r.json();
   }
 };
 
-/* ═══════════════════════════════════════════════════════════
-   ESTADO EN MEMORIA (0 localStorage)
-   ═══════════════════════════════════════════════════════════ */
-let _pinReal       = null;   // cargado desde Supabase al escribir el primer carácter
-let _pinCargado    = false;
-let _autenticado   = false;
-let _pollingTimer  = null;
-let _pedidosActivos = [];
+/* ══ ESTADO ══════════════════════════════════════════════ */
+let _pinReal = null, _pinCargado = false, _autenticado = false;
+let _pollingTimer = null, _pedidosActivos = [];
+let _tabActual = 'activos';
 
-/* ═══════════════════════════════════════════════════════════
-   1. VALIDACIÓN DEL PIN DESDE SUPABASE
-   Consulta pin_repartidor en configuracion (id=1)
-   ═══════════════════════════════════════════════════════════ */
+/* ══ TABS ════════════════════════════════════════════════ */
+function showTab(tab) {
+  _tabActual = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'historial') cargarHistorial();
+}
+
+/* ══ PIN ═════════════════════════════════════════════════ */
 async function cargarPinDesdeSupabase() {
   try {
-    const rows = await SB.get('configuracion', {
-      select: 'pin_repartidor',
-      'id': 'eq.1',
-      limit: 1
-    });
-    if (rows && rows[0] && rows[0].pin_repartidor) {
-      _pinReal    = String(rows[0].pin_repartidor).trim();
-      _pinCargado = true;
-      console.log('[Rep] PIN cargado desde Supabase ✓');
-    } else {
-      // Sin fila en configuracion → usar PIN de respaldo
-      _pinReal    = '1234';
-      _pinCargado = true;
-      console.warn('[Rep] Fila configuracion vacía, usando PIN por defecto');
-    }
-  } catch(e) {
-    // Si Supabase falla (sin conexión) → bloquear
-    _pinReal    = null;
-    _pinCargado = false;
-    console.error('[Rep] No se pudo cargar el PIN:', e.message);
-  }
+    const rows = await SB.get('configuracion', { select: 'pin_repartidor', 'id': 'eq.1', limit: 1 });
+    _pinReal    = (rows && rows[0] && rows[0].pin_repartidor) ? String(rows[0].pin_repartidor).trim() : '1234';
+    _pinCargado = true;
+  } catch(e) { _pinReal = null; _pinCargado = false; }
 }
 
 async function checkPin() {
@@ -397,129 +313,170 @@ async function checkPin() {
   const loader = document.getElementById('pin-loader');
   const btn    = document.getElementById('pin-btn');
   const pin    = inp ? inp.value.trim() : '';
-
   if (!pin) return;
-
-  // Ocultar errores previos
-  if (errEl)  { errEl.classList.remove('show'); }
-  if (loader) { loader.classList.add('show'); }
-  if (btn)    { btn.disabled = true; }
-
-  // Cargar el PIN real si todavía no lo tenemos
-  if (!_pinCargado) {
-    await cargarPinDesdeSupabase();
-  }
-
+  if (errEl) errEl.classList.remove('show');
+  if (loader) loader.classList.add('show');
+  if (btn) btn.disabled = true;
+  if (!_pinCargado) await cargarPinDesdeSupabase();
   if (loader) loader.classList.remove('show');
-  if (btn)    btn.disabled = false;
-
-  if (!_pinCargado || _pinReal === null) {
-    if (errEl) {
-      errEl.textContent = 'Sin conexión a Supabase. Verifica tu internet.';
-      errEl.classList.add('show');
-    }
+  if (btn) btn.disabled = false;
+  if (!_pinCargado || !_pinReal) {
+    if (errEl) { errEl.textContent = 'Sin conexión. Verifica tu internet.'; errEl.classList.add('show'); }
     return;
   }
-
   if (pin === _pinReal) {
-    // ── Acceso concedido ──
     _autenticado = true;
-    const ps = document.getElementById('pin-screen');
-    const mc = document.getElementById('main-content');
-    if (ps) ps.style.display = 'none';
-    if (mc) mc.style.display = 'block';
+    document.getElementById('pin-screen').style.display = 'none';
+    document.getElementById('main-content').style.display = 'block';
     await cargarPedidos(false);
-    // Polling automático cada 10s
     _pollingTimer = setInterval(() => cargarPedidos(false), 10000);
   } else {
-    // ── PIN incorrecto ──
-    if (errEl) {
-      errEl.textContent = 'PIN incorrecto. Inténtalo de nuevo.';
-      errEl.classList.add('show');
-    }
-    if (inp) {
-      inp.value = '';
-      inp.classList.add('shake');
-      setTimeout(() => inp && inp.classList.remove('shake'), 400);
-      inp.focus();
-    }
+    if (errEl) { errEl.textContent = 'PIN incorrecto. Inténtalo de nuevo.'; errEl.classList.add('show'); }
+    if (inp)  { inp.value = ''; inp.classList.add('shake'); setTimeout(() => inp.classList.remove('shake'), 400); inp.focus(); }
   }
 }
 
-// Enter en el input
-document.getElementById('pin-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') checkPin();
-});
+document.getElementById('pin-input').addEventListener('keydown', e => { if (e.key === 'Enter') checkPin(); });
+document.getElementById('pin-input').addEventListener('input', () => { if (!_pinCargado) cargarPinDesdeSupabase(); });
 
-// Pre-cargar el PIN cuando el usuario empieza a escribir (sin esperar al botón)
-document.getElementById('pin-input').addEventListener('input', function() {
-  if (!_pinCargado) cargarPinDesdeSupabase();
-});
-
-/* ═══════════════════════════════════════════════════════════
-   2. CARGAR PEDIDOS — estado 'Listo' o 'En camino' con filtro
-   ═══════════════════════════════════════════════════════════ */
+/* ══ PEDIDOS ACTIVOS ════════════════════════════════════ */
 async function cargarPedidos(showFeedback) {
   const dotEl    = document.getElementById('live-dot');
   const updateEl = document.getElementById('last-update');
   const listEl   = document.getElementById('pedidos-list');
   const countEl  = document.getElementById('pedidos-count');
   const secCount = document.getElementById('sec-count');
-
-  // Mostrar spinner solo en carga manual explícita
-  if (showFeedback && listEl) {
-    listEl.innerHTML = '<div class="spinner"></div>';
-  }
-
+  if (showFeedback && listEl) listEl.innerHTML = '<div class="spinner"></div>';
   try {
-    // Traer pedidos Listo + En camino usando el operador in de PostgREST
     const pedidos = await SB.get('pedidos', {
       select: 'id,cliente,telefono,direccion,referencia,detalles_pedido,total,estado,metodo_pago,cambio,notas,created_at',
       'estado': 'in.(Listo,En camino)',
-      order: 'created_at.asc'   // los más antiguos primero — prioridad de entrega
+      'origen': 'neq.pos',
+      order: 'created_at.asc'
     });
-
     _pedidosActivos = pedidos || [];
-
-    // Actualizar badge y contador
     const n = _pedidosActivos.length;
-    if (countEl) {
-      countEl.textContent = n + ' pendiente' + (n !== 1 ? 's' : '');
-      countEl.className   = 't-badge' + (n === 0 ? ' zero' : '');
-    }
-    if (secCount) {
-      secCount.textContent = String(n);
-      secCount.className   = 'sec-count' + (n === 0 ? ' zero' : '');
-    }
-
-    // Actualizar indicador de conexión
-    if (dotEl)    dotEl.className = 'live-dot';
-    if (updateEl) {
-      const ahora = new Date();
-      updateEl.textContent = 'Act. ' + ahora.toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'});
-    }
-
+    if (countEl) { countEl.textContent = n + ' pendiente' + (n !== 1 ? 's' : ''); countEl.className = 't-badge' + (n === 0 ? ' zero' : ''); }
+    if (secCount) { secCount.textContent = String(n); secCount.className = 'sec-count' + (n === 0 ? ' zero' : ''); }
+    if (dotEl) dotEl.className = 'live-dot';
+    if (updateEl) { const a = new Date(); updateEl.textContent = 'Act. ' + a.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
     renderPedidos(_pedidosActivos);
-    console.log('[Rep] Pedidos activos:', n);
   } catch(e) {
-    console.error('[Rep] Error cargando pedidos:', e.message);
     if (dotEl) dotEl.className = 'live-dot error';
     if (updateEl) updateEl.textContent = 'Error de conexión';
     showToast('⚠️ Error al cargar pedidos');
-    // Mantener la lista anterior para no dejar al repartidor en blanco
   }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   3. RENDERIZAR PEDIDOS — JSONB parseado sin errores
-   ═══════════════════════════════════════════════════════════ */
+/* ══ HISTORIAL DEL DÍA ══════════════════════════════════ */
+async function cargarHistorial() {
+  const hoy    = new Date();
+  const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
+  const fin    = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1).toISOString();
+  const listEl = document.getElementById('hist-lista');
+  if (listEl) listEl.innerHTML = '<div class="spinner"></div>';
+
+  // Fecha legible en el header
+  const fechaEl = document.getElementById('hist-fecha');
+  if (fechaEl) fechaEl.textContent = hoy.toLocaleDateString('es-CO', {weekday:'long', day:'numeric', month:'long'});
+
+  try {
+    const pedidos = await SB.get('pedidos', {
+      select: 'id,cliente,telefono,direccion,total,metodo_pago,created_at,estado',
+      'estado':     'eq.Entregado',
+      'origen':     'neq.pos',
+      'and':        '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
+      order: 'created_at.desc',
+      limit: 200
+    });
+
+    renderHistorial(pedidos || []);
+  } catch(e) {
+    console.error('[Rep] Error historial:', e.message);
+    if (listEl) listEl.innerHTML = '<div class="empty"><span class="empty-icon">⚠️</span><div class="empty-title">Error al cargar</div><div class="empty-sub">' + esc(e.message) + '</div></div>';
+  }
+}
+
+function renderHistorial(pedidos) {
+  // ── Calcular resumen ──────────────────────────────────
+  let totalDinero = 0;
+  const metodos = { Efectivo: {total:0, cnt:0}, Nequi: {total:0, cnt:0}, Tarjeta: {total:0, cnt:0}, Otro: {total:0, cnt:0} };
+
+  pedidos.forEach(p => {
+    const t = parseFloat(p.total) || 0;
+    totalDinero += t;
+    const m = p.metodo_pago || 'Efectivo';
+    const key = ['Efectivo','Nequi','Tarjeta'].includes(m) ? m : 'Otro';
+    metodos[key].total += t;
+    metodos[key].cnt++;
+  });
+
+  // ── Tarjetas de resumen ───────────────────────────────
+  const fmt = n => '$' + parseFloat(n).toLocaleString('es-CO');
+  const setEl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  setEl('hist-total-dinero',   fmt(totalDinero));
+  setEl('hist-total-pedidos',  pedidos.length);
+  setEl('pago-efectivo-val',   fmt(metodos.Efectivo.total));
+  setEl('pago-efectivo-cnt',   metodos.Efectivo.cnt + ' pedido' + (metodos.Efectivo.cnt !== 1 ? 's' : ''));
+  setEl('pago-nequi-val',      fmt(metodos.Nequi.total));
+  setEl('pago-nequi-cnt',      metodos.Nequi.cnt + ' pedido' + (metodos.Nequi.cnt !== 1 ? 's' : ''));
+  setEl('pago-tarjeta-val',    fmt(metodos.Tarjeta.total));
+  setEl('pago-tarjeta-cnt',    metodos.Tarjeta.cnt + ' pedido' + (metodos.Tarjeta.cnt !== 1 ? 's' : ''));
+
+  // ── Tabla de pedidos ─────────────────────────────────
+  const listEl = document.getElementById('hist-lista');
+  if (!listEl) return;
+
+  if (!pedidos.length) {
+    listEl.innerHTML = '<div class="empty"><span class="empty-icon">📋</span><div class="empty-title">Sin entregas hoy</div><div class="empty-sub">Los pedidos entregados aparecerán aquí.</div></div>';
+    return;
+  }
+
+  const badgeClass = m => {
+    if (m === 'Efectivo') return 'bp-efectivo';
+    if (m === 'Nequi')    return 'bp-nequi';
+    if (m === 'Tarjeta')  return 'bp-tarjeta';
+    return 'bp-otro';
+  };
+
+  let rows = '';
+  pedidos.forEach(p => {
+    const hora  = new Date(p.created_at).toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'});
+    const mPago = p.metodo_pago || 'Efectivo';
+    rows += `<tr>
+      <td style="font-weight:700;color:var(--green)">#${p.id}</td>
+      <td style="font-weight:600">${esc(p.cliente || 'Cliente')}</td>
+      <td style="color:var(--muted);font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.direccion || '—')}</td>
+      <td><span class="badge-pago ${badgeClass(mPago)}">${esc(mPago)}</span></td>
+      <td style="font-family:'Montserrat',sans-serif;font-weight:900;text-align:right;white-space:nowrap">${fmt(p.total)}</td>
+      <td style="color:var(--muted);font-size:11px">${hora}</td>
+    </tr>`;
+  });
+
+  listEl.innerHTML = `
+    <div style="overflow-x:auto">
+      <table class="hist-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Cliente</th>
+            <th>Dirección</th>
+            <th>Pago</th>
+            <th style="text-align:right">Total</th>
+            <th>Hora</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+/* ══ PEDIDOS ACTIVOS — RENDER ════════════════════════════ */
 function parsearItems(detalles) {
-  // detalles puede ser: array JSONB, string JSON, null
   if (!detalles) return [];
   if (Array.isArray(detalles)) return detalles;
-  if (typeof detalles === 'string') {
-    try { return JSON.parse(detalles); } catch(e) { return []; }
-  }
+  if (typeof detalles === 'string') { try { return JSON.parse(detalles); } catch(e) { return []; } }
   return [];
 }
 
@@ -527,52 +484,29 @@ function renderItems(items) {
   if (!items || !items.length) return '';
   let html = '<div class="items-list">';
   for (const it of items) {
-    // Compatibilidad con ambos formatos de campo (JSONB desde admin-sb o menu-sb)
-    const nombre   = it.nombre   || it.name  || '—';
-    const cantidad = it.cantidad || it.qty   || 1;
+    const nombre   = it.nombre || it.name || '—';
+    const cantidad = it.cantidad || it.qty || 1;
     const precio   = it.precio_unitario || it.unit || it.price || 0;
     const total    = it.total || (precio * cantidad);
-
-    html += `<div class="item-row">
-      <span class="item-qty">${cantidad}x</span>
-      <span class="item-name">${esc(nombre)}</span>
-      <span class="item-price">$${parseFloat(total||0).toLocaleString('es-CO')}</span>
-    </div>`;
-
-    // Extras del ítem (JSONB: [{nombre,precio}] o [{name,price}] o ["Queso extra"])
+    html += `<div class="item-row"><span class="item-qty">${cantidad}x</span><span class="item-name">${esc(nombre)}</span><span class="item-price">$${parseFloat(total||0).toLocaleString('es-CO')}</span></div>`;
     const extras = it.extras || [];
     if (extras.length) {
-      const extrasTxt = extras.map(function(e) {
-        if (typeof e === 'string') return e;
-        const n = e.nombre || e.name || '';
-        const p = e.precio || e.price || 0;
-        return n + (p > 0 ? ' (+$' + parseFloat(p).toLocaleString('es-CO') + ')' : '');
-      }).filter(Boolean).join(' · ');
+      const extrasTxt = extras.map(e => typeof e === 'string' ? e : ((e.nombre||e.name||'') + (e.precio||e.price > 0 ? ' (+$'+parseFloat(e.precio||e.price).toLocaleString('es-CO')+')' : ''))).filter(Boolean).join(' · ');
       if (extrasTxt) html += `<div class="item-extras">↳ ${esc(extrasTxt)}</div>`;
     }
-
-    // Nota del ítem
     const nota = it.nota || it.note || '';
     if (nota) html += `<div class="item-note">✎ ${esc(nota)}</div>`;
   }
-  html += '</div>';
-  return html;
+  return html + '</div>';
 }
 
 function renderPedidos(pedidos) {
   const el = document.getElementById('pedidos-list');
   if (!el) return;
-
   if (!pedidos || !pedidos.length) {
-    el.innerHTML = `
-      <div class="empty">
-        <span class="empty-icon">✅</span>
-        <div class="empty-title">Sin pedidos pendientes</div>
-        <div class="empty-sub">Todos los pedidos han sido entregados.<br>¡Buen trabajo!</div>
-      </div>`;
+    el.innerHTML = `<div class="empty"><span class="empty-icon">✅</span><div class="empty-title">Sin pedidos pendientes</div><div class="empty-sub">Todos los pedidos han sido entregados.<br>¡Buen trabajo!</div></div>`;
     return;
   }
-
   let html = '';
   for (const p of pedidos) {
     const esListo  = p.estado === 'Listo';
@@ -580,162 +514,86 @@ function renderPedidos(pedidos) {
     const cls      = esListo ? 'listo' : 'camino';
     const stateLbl = esListo ? 'Listo' : 'En camino';
     const stateCss = esListo ? 's-listo' : 's-camino';
-
     const items    = parsearItems(p.detalles_pedido);
     const total    = parseFloat(p.total || 0);
     const waPhone  = (p.telefono || '').replace(/\D/g, '');
     const waNum    = waPhone.startsWith('57') ? waPhone : '57' + waPhone;
-    const mapsUrl  = 'https://www.google.com/maps/dir/?api=1&destination='
-                   + encodeURIComponent((p.direccion || '') + ', Colombia')
-                   + '&travelmode=driving';
-
+    const mapsUrl  = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent((p.direccion || '') + ', Colombia') + '&travelmode=driving';
     html += `<div class="ocard ${cls}">
-
-      <!-- Cabecera -->
       <div class="ohead">
         <div class="ohead-left">
-          <div class="ohead-top">
-            <span class="onum">#${p.id}</span>
-            <span class="ostate ${stateCss}">${stateLbl}</span>
-          </div>
+          <div class="ohead-top"><span class="onum">#${p.id}</span><span class="ostate ${stateCss}">${stateLbl}</span></div>
           <div class="oclient">${esc(p.cliente || 'Cliente')}</div>
         </div>
         <div class="oprice">$${total.toLocaleString('es-CO')}</div>
       </div>
-
-      <!-- Cuerpo: dirección, teléfono, pago, ítems, notas -->
       <div class="obody">
         ${p.direccion ? `<div class="orow-info"><span class="orow-icon">📍</span><span>${esc(p.direccion)}</span></div>` : ''}
         ${p.referencia ? `<div class="orow-info"><span class="orow-icon">📌</span><span>Ref: ${esc(p.referencia)}</span></div>` : ''}
         ${p.telefono ? `<div class="orow-info"><span class="orow-icon">📱</span><span>${esc(p.telefono)}</span></div>` : ''}
-
         <div class="pay-row">
           <span class="opay">💳 ${esc(p.metodo_pago || 'Efectivo')}</span>
-          ${p.cambio && p.cambio !== 'Exacto'
-            ? `<span class="opay cambio">💵 Paga con: ${esc(p.cambio)}</span>`
-            : ''}
+          ${p.cambio && p.cambio !== 'Exacto' ? `<span class="opay cambio">💵 Paga con: ${esc(p.cambio)}</span>` : ''}
         </div>
-
         ${renderItems(items)}
-
         ${p.notas ? `<div class="notas-box"><span>📝</span><span>${esc(p.notas)}</span></div>` : ''}
       </div>
-
-      <!-- Acciones -->
       <div class="oactions">
-        <a href="${mapsUrl}" target="_blank" rel="noopener">
-          <button class="btn btn-maps">🗺 Abrir Maps</button>
-        </a>
-        ${waPhone
-          ? `<a href="https://wa.me/${waNum}" target="_blank" rel="noopener">
-               <button class="btn btn-wa">💬 WhatsApp</button>
-             </a>`
-          : ''}
-        ${esListo
-          ? `<button class="btn btn-purple" onclick="actualizarEstado(${p.id}, 'En camino')">🛵 Salir a entregar</button>`
-          : ''}
-        ${esCamino
-          ? `<button class="btn btn-green" onclick="actualizarEstado(${p.id}, 'Entregado')">✅ Marcar entregado</button>`
-          : ''}
-        ${esListo
-          ? `<button class="btn btn-green" onclick="actualizarEstado(${p.id}, 'Entregado')">✅ Entregado directo</button>`
-          : ''}
+        <a href="${mapsUrl}" target="_blank" rel="noopener"><button class="btn btn-maps">🗺 Maps</button></a>
+        ${waPhone ? `<a href="https://wa.me/${waNum}" target="_blank" rel="noopener"><button class="btn btn-wa">💬 WhatsApp</button></a>` : ''}
+        ${esListo  ? `<button class="btn btn-purple" onclick="actualizarEstado(${p.id},'En camino')">🛵 Salir a entregar</button>` : ''}
+        ${esCamino ? `<button class="btn btn-green"  onclick="actualizarEstado(${p.id},'Entregado')">✅ Marcar entregado</button>` : ''}
+        ${esListo  ? `<button class="btn btn-green"  onclick="actualizarEstado(${p.id},'Entregado')">✅ Entregado directo</button>` : ''}
       </div>
-
     </div>`;
   }
   el.innerHTML = html;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   4. ACTUALIZAR ESTADO — PATCH en Supabase
-   ═══════════════════════════════════════════════════════════ */
+/* ══ ACTUALIZAR ESTADO ══════════════════════════════════ */
 async function actualizarEstado(id, nuevoEstado) {
-  // Feedback inmediato en UI
   showToast('Actualizando...');
-
-  // Deshabilitar botones del card temporalmente
-  const card = document.querySelector(`.ocard [onclick*="actualizarEstado(${id}"]`);
-
   try {
     await SB.patch('pedidos', `id=eq.${id}`, { estado: nuevoEstado });
-
-    const msg = {
-      'En camino': '🛵 ¡En camino!',
-      'Entregado': '✅ Pedido entregado',
-      'Listo':     '🟢 Marcado como Listo'
-    }[nuevoEstado] || 'Estado actualizado';
-
+    const msg = {'En camino':'🛵 ¡En camino!','Entregado':'✅ Pedido entregado'}[nuevoEstado] || 'Estado actualizado';
     showToast(msg);
-    console.log(`[Rep] Pedido ${id} → ${nuevoEstado}`);
-
-    // Recargar lista
     await cargarPedidos(false);
+    // Si el historial está visible, actualizarlo también
+    if (_tabActual === 'historial') cargarHistorial();
   } catch(e) {
-    console.error('[Rep] Error actualizando estado:', e.message);
-    alert(
-      '❌ No se pudo actualizar el estado del pedido #' + id + '\n\n' +
-      'Error: ' + e.message + '\n\n' +
-      'Causas posibles:\n' +
-      '• Sin conexión a internet\n' +
-      '• RLS: falta política UPDATE en la tabla pedidos\n' +
-      '• El pedido fue modificado simultáneamente'
-    );
+    alert('❌ No se pudo actualizar el estado del pedido #' + id + '\n\nError: ' + e.message);
   }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   CERRAR SESIÓN — volver a la pantalla PIN
-   ═══════════════════════════════════════════════════════════ */
+/* ══ CERRAR SESIÓN ══════════════════════════════════════ */
 function cerrarSesion() {
   if (!confirm('¿Cerrar sesión del panel de repartidor?')) return;
   clearInterval(_pollingTimer);
-  _autenticado    = false;
-  _pinCargado     = false;
-  _pinReal        = null;
-  _pedidosActivos = [];
-  const ps = document.getElementById('pin-screen');
-  const mc = document.getElementById('main-content');
+  _autenticado = false; _pinCargado = false; _pinReal = null; _pedidosActivos = [];
+  document.getElementById('pin-screen').style.display = '';
+  document.getElementById('main-content').style.display = 'none';
   const inp = document.getElementById('pin-input');
-  if (ps)  ps.style.display  = '';
-  if (mc)  mc.style.display  = 'none';
   if (inp) { inp.value = ''; inp.focus(); }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   UTILIDADES
-   ═══════════════════════════════════════════════════════════ */
-// Escapar HTML para evitar XSS con datos de Supabase
+/* ══ UTILIDADES ═════════════════════════════════════════ */
 function esc(str) {
-  return String(str || '')
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;');
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-
 let _toastTimer;
 function showToast(msg) {
   const t = document.getElementById('toast');
   if (!t) return;
-  t.textContent = msg;
-  t.classList.add('show');
+  t.textContent = msg; t.classList.add('show');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => t && t.classList.remove('show'), 2800);
 }
 
-/* ═══════════════════════════════════════════════════════════
-   ARRANQUE — pre-cargar PIN en background
-   ═══════════════════════════════════════════════════════════ */
+/* ══ ARRANQUE ════════════════════════════════════════════ */
 (function init() {
-  // Cargar el PIN desde Supabase en background para que el primer
-  // intento de login sea instantáneo (sin esperar al botón)
   cargarPinDesdeSupabase();
-  // Focus automático en el input PIN
   const inp = document.getElementById('pin-input');
   if (inp) setTimeout(() => inp.focus(), 100);
-  console.log('[Rep] 🚀 Panel Repartidor iniciado — 0 localStorage');
 })();
 </script>
 </body>
