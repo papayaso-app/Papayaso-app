@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Papayaso - Menu</title>
+<title>Menú</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 
@@ -520,7 +520,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
   <!-- Contenido debajo de la portada -->
   <div class="hero-content">
     <!-- Nombre -->
-    <div class="hero-name" id="hero-name">Papayaso</div>
+    <div class="hero-name" id="hero-name"></div>
     <!-- Información -->
     <div class="hero-info-row">
       <span class="hero-info-chip">📍 <span id="hero-addr">Dirección</span></span>
@@ -708,7 +708,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
           Enviar pedido por WhatsApp
         </button>
-        <p class="wa-note">Tu pedido llegara directo a Papayaso por WhatsApp</p>
+        <p class="wa-note" id="wa-note">Tu pedido llegará directo por WhatsApp</p>
       </div>
     </div>
   </div>
@@ -720,7 +720,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
 // ── ESTADO EN MEMORIA (0 localStorage) ──────────────────────────────
 var _STORE = {
   config: {
-    name: 'Papayaso', whatsapp: '3001234567',
+    name: '', whatsapp: '',
     address: '', hours: '', desc: '', welcome: '',
     isOpen: true, logo: '', cover: '',
     deliveryMin: '30', deliveryMax: '60'
@@ -1661,7 +1661,7 @@ function renderTracking() {
   var wa = (waRaw.indexOf('57') === 0) ? waRaw : '57' + waRaw;
   var contactHtml = wa
     ? '<div class="tr-contact"><button class="tr-wa-btn" onclick="window.open(\'https://wa.me/' + wa + '\',\'_blank\')">'
-      + 'Contactar a ' + (cfg.name || 'Papayaso')
+      + 'Contactar a ' + (cfg.name || _STORE._comercioNombre || 'el restaurante')
       + '</button></div>' : '';
 
   // Route path
@@ -1680,7 +1680,7 @@ function renderTracking() {
     + '<div class="tr-pin-rest">'
     + '<div style="display:flex;align-items:center;gap:6px;background:white;border-radius:12px;padding:6px 12px;box-shadow:0 2px 12px rgba(0,0,0,.18);margin-bottom:4px;white-space:nowrap">'
     + '<span style="font-size:18px">&#128104;&#8205;&#127859;</span>'
-    + '<span style="font-size:12px;font-weight:800;color:#111">' + (cfg.name || 'Papayaso') + '</span>'
+    + '<span style="font-size:12px;font-weight:800;color:#111">' + (cfg.name || _STORE._comercioNombre || 'el restaurante') + '</span>'
     + '</div>'
     + '<div class="tr-pin-tail"></div><div class="tr-pin-dot"></div></div>'
     + '<div class="tr-rider" style="left:' + rpos[0] + '%;top:' + rpos[1] + '%;opacity:' + riderOpacity + '">'
@@ -2099,87 +2099,122 @@ init();
 <script>
 /* =============================================================
    MENÚ CLIENTE — Supabase 100% — SaaS Multitenant
-   Detección dinámica por ?rest=slug (fallback: 'papayaso')
+   Detección automática por ?rest=slug (fallback: 'papayaso')
    ============================================================= */
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-// ── MULTITENANT: ID del comercio activo (se rellena en getComercioConfig) ──
-let _COMERCIO_ID   = null;   // UUID del comercio activo
-let _COMERCIO_SLUG = null;   // slug leído de la URL o localStorage
-
-// ── CLAVE para persistir slug en localStorage ──────────────────────────
-const COMERCIO_SLUG_KEY = 'papayaso_comercio_slug';
+// ── Globales multitenant ─────────────────────────────────────────────
+let _COMERCIO_ID   = null;   // UUID del comercio (desde tabla 'comercios')
+let _COMERCIO_SLUG = null;   // slug leído de la URL
 
 // ══════════════════════════════════════════════════════════════
-// getComercioConfig() — detección dinámica del comercio
-// 1. Lee ?rest= de la URL
-// 2. Si no hay, usa localStorage, si tampoco → 'papayaso'
-// 3. Busca en Supabase y guarda comercio_id globalmente
+// getComercioConfig()
+// PASO 0 del arranque — se llama ANTES de cargar config/productos.
+//   1. Lee ?rest=slug de la URL (fallback localStorage, luego 'papayaso')
+//   2. Busca la fila en 'comercios'
+//   3. Inyecta nombre, logo, cover en el DOM INMEDIATAMENTE
+//   4. Guarda _COMERCIO_ID para que todas las queries lo filtren
+//   5. Si el slug no existe → muestra pantalla "Restaurante no encontrado"
 // ══════════════════════════════════════════════════════════════
 async function getComercioConfig() {
-  // 1. Leer slug desde URL o localStorage
+  // 1. Resolver slug
   const params  = new URLSearchParams(window.location.search);
-  const urlSlug = params.get('rest') || params.get('slug') || '';
-  const stored  = (() => { try { return localStorage.getItem(COMERCIO_SLUG_KEY) || ''; } catch(e) { return ''; } })();
-  const slug    = urlSlug.trim() || stored.trim() || 'papayaso';
-
-  // Persistir en localStorage para recargas sin parámetro
-  try { localStorage.setItem(COMERCIO_SLUG_KEY, slug); } catch(e) {}
+  const urlSlug = (params.get('rest') || params.get('slug') || '').trim();
+  const stored  = (() => { try { return localStorage.getItem('papayaso_comercio_slug') || ''; } catch(e) { return ''; } })();
+  const slug    = urlSlug || stored || 'papayaso';
   _COMERCIO_SLUG = slug;
+  // Persistir para recargas
+  try { localStorage.setItem('papayaso_comercio_slug', slug); } catch(e) {}
 
   console.log('[SaaS] Detectando comercio con slug:', slug);
 
   try {
-    // 2. Buscar comercio en Supabase
     const rows = await SB.get('comercios', {
-      select: 'id,nombre,slug,whatsapp,logo_url,cover_url,direccion,descripcion,activo',
-      'slug': `eq.${slug}`,
+      select: 'id,nombre,slug,whatsapp,logo_url,cover_url,direccion,activo',
+      'slug':   'eq.' + slug,
       'activo': 'eq.true',
       limit: 1
     });
 
     if (!rows || !rows.length) {
-      console.warn('[SaaS] Comercio no encontrado:', slug, '— usando Papayaso por defecto');
-      // Intento fallback con 'papayaso'
-      if (slug !== 'papayaso') {
-        _COMERCIO_SLUG = 'papayaso';
-        try { localStorage.setItem(COMERCIO_SLUG_KEY, 'papayaso'); } catch(e) {}
-        return getComercioConfig();
-      }
+      // ── Restaurante no encontrado ──────────────────────────────────
+      console.warn('[SaaS] Comercio no encontrado:', slug);
+      _mostrarComercioNoEncontrado(slug);
       return null;
     }
 
     const c = rows[0];
     _COMERCIO_ID = c.id;
 
-    // 3. Guardar comercio_id también en localStorage para otras páginas
-    try { localStorage.setItem('papayaso_comercio_id', c.id); } catch(e) {}
+    // Guardar en localStorage para admin.html y repartidor.html
+    try { localStorage.setItem('papayaso_comercio_id',   c.id);   } catch(e) {}
+    try { localStorage.setItem('papayaso_comercio_slug', c.slug); } catch(e) {}
 
-    // 4. Actualizar UI del hero con datos del comercio
-    if (c.nombre) {
-      const hn = document.getElementById('hero-name');
-      if (hn) hn.textContent = c.nombre;
-      document.title = c.nombre + ' - Menú';
-    }
+    // ── Inyectar nombre en el DOM DE INMEDIATO ──────────────────────
+    // (antes de que sbCargarConfig termine, el usuario ya ve el nombre correcto)
+    _STORE._comercioNombre = c.nombre;   // fuente de verdad para fallbacks
+    _STORE.config.name     = c.nombre;
+
+    const heroName = document.getElementById('hero-name');
+    if (heroName) heroName.textContent = c.nombre;
+    document.title = c.nombre + ' — Menú';
+
+    const waNoteEl = document.getElementById('wa-note');
+    if (waNoteEl) waNoteEl.textContent = 'Tu pedido llegará directo a ' + c.nombre + ' por WhatsApp';
+
+    // ── Logo desde comercios.logo_url ────────────────────────────────
     if (c.logo_url) {
       const logoEl = document.getElementById('hero-logo-img');
-      if (logoEl) { logoEl.src = c.logo_url; logoEl.style.display = 'block'; }
+      if (logoEl) {
+        logoEl.src = c.logo_url;
+        logoEl.style.display = 'block';
+        logoEl.onerror = function() { logoEl.style.display = 'none'; };
+      }
+      _STORE.config.logo = c.logo_url;
     }
+
+    // ── Cover desde comercios.cover_url ──────────────────────────────
     if (c.cover_url) {
       const coverEl = document.getElementById('hero-bg-el');
-      if (coverEl) coverEl.style.backgroundImage = `url(${JSON.stringify(c.cover_url)})`;
+      if (coverEl) coverEl.style.backgroundImage = 'url(' + JSON.stringify(c.cover_url) + ')';
+      _STORE.config.cover = c.cover_url;
     }
+
+    // ── WhatsApp de la tabla comercios (si config no lo sobreescribe) ─
     if (c.whatsapp) {
       _STORE.config.whatsapp = c.whatsapp;
     }
 
-    console.log('[SaaS] ✅ Comercio activo:', c.nombre, '| ID:', c.id);
+    console.log('[SaaS] ✅ Comercio:', c.nombre, '| ID:', c.id);
     return c;
+
   } catch(e) {
     console.error('[SaaS] Error detectando comercio:', e.message);
+    // No bloquear el menú por error de red — el nombre quedará vacío
+    _COMERCIO_ID = null;
     return null;
   }
+}
+
+// ── Pantalla de "Restaurante no encontrado" ────────────────────────
+function _mostrarComercioNoEncontrado(slug) {
+  // Ocultar todo el menú y mostrar mensaje amigable
+  document.body.innerHTML = \`
+    <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;font-family:'Inter',sans-serif;background:#f5f5f5;padding:32px;text-align:center;">
+      <div style="font-size:64px;margin-bottom:20px">🍽️</div>
+      <h1 style="font-family:'Montserrat',sans-serif;font-size:24px;font-weight:900;
+        color:#111;margin-bottom:10px">Restaurante no encontrado</h1>
+      <p style="font-size:15px;color:#666;max-width:340px;line-height:1.6;margin-bottom:24px">
+        No existe un restaurante con el identificador <strong style="color:#ff6b00">\${slug}</strong>
+        o ha sido desactivado temporalmente.
+      </p>
+      <p style="font-size:13px;color:#999">
+        ¿Tienes el enlace correcto? Contacta al restaurante para obtener su URL actualizada.
+      </p>
+    </div>
+  \`;
 }
 
 const SB = {
@@ -2215,23 +2250,21 @@ const SB_TO_LOCAL = {
 // ══════════════════════════════════════════════════════════════
 async function sbCargarConfig() {
   try {
-    // MULTITENANT: filtrar configuración por comercio_id
-    const _cfgParams = {
+    // MULTITENANT: filtrar config por comercio_id (el nombre ya lo puso getComercioConfig)
+    const _cfgP = {
       select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,mensaje_bienvenida,esta_abierto,url_logo,url_portada,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal',
       limit: 1
     };
-    if (_COMERCIO_ID) {
-      _cfgParams['comercio_id'] = 'eq.' + _COMERCIO_ID;
-    } else {
-      _cfgParams['id'] = 'eq.1'; // fallback legacy
-    }
-    const rows = await SB.get('configuracion', _cfgParams);
+    if (_COMERCIO_ID) { _cfgP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
+    else              { _cfgP['id'] = 'eq.1'; }
+    const rows = await SB.get('configuracion', _cfgP);
     if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
     const c = rows[0];
 
     const prev = _STORE.config;
     _STORE.config = {
-      name:        c.nombre_negocio        || prev.name        || 'Papayaso',
+      // PRIORIDAD: comercios.nombre (ya en _STORE._comercioNombre) > configuracion.nombre_negocio
+      name:        _STORE._comercioNombre  || c.nombre_negocio  || prev.name || '',
       whatsapp:    c.telefono_whatsapp      || prev.whatsapp    || '',
       address:     c.direccion             || prev.address     || '',
       desc:        c.descripcion           || prev.desc        || '',
@@ -2274,6 +2307,13 @@ async function sbCargarConfig() {
     if (coverEl && _STORE.config.cover) {
       coverEl.style.backgroundImage = 'url(' + JSON.stringify(_STORE.config.cover) + ')';
     }
+
+    // Re-inyectar nombre en DOM (por si init() ya corrió con nombre vacío)
+    const _hn2 = document.getElementById('hero-name');
+    if (_hn2 && _STORE.config.name) _hn2.textContent = _STORE.config.name;
+    document.title = (_STORE.config.name || 'Menú') + ' — Menú';
+    const _wn2 = document.getElementById('wa-note');
+    if (_wn2 && _STORE.config.name) _wn2.textContent = 'Tu pedido llegará directo a ' + _STORE.config.name + ' por WhatsApp';
 
     console.log('[SB] Config cargada — nombre:', _STORE.config.name,
       '| isOpen:', _STORE.config.isOpen,
@@ -2463,14 +2503,14 @@ async function sbInsertPedido(orderData) {
     telefono:        orderData.phone    || '',
     direccion:       orderData.address  || '',
     referencia:      orderData.ref      || '',
-    detalles_pedido: detalles,            // JSONB directo — NO JSON.stringify
+    detalles_pedido: detalles,
     total:           parseFloat(orderData.total) || 0,
     estado:          'Pendiente',
     metodo_pago:     orderData.payment  || 'Efectivo',
     cambio:          orderData.cambio   || '',
     notas:           orderData.notes    || '',
     origen:          'web',
-    // MULTITENANT: siempre incluir el comercio_id
+    // MULTITENANT — requerido por RLS y para filtrar por restaurante
     comercio_id:     _COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
   };
 
@@ -2720,7 +2760,7 @@ async function restaurarSeguimientoSiExiste() {
 
   console.log('[Track] ID guardado encontrado:', idGuardado, '— consultando Supabase...');
   try {
-    // MULTITENANT: filtrar tracking por comercio_id
+    // MULTITENANT: confirmar que el pedido pertenece a este comercio
     const _trackP = { select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at', 'id': 'eq.' + idGuardado, limit: 1 };
     if (_COMERCIO_ID) { _trackP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
     const rows = await SB.get('pedidos', _trackP);
@@ -2846,12 +2886,9 @@ async function sbCargarCategorias() {
 }
 
 (async function sbMenuInit() {
-  console.log('[SB] 🚀 Cargando menú SaaS Multitenant...');
+  console.log('[SB] 🚀 Cargando menú SaaS — slug:', _COMERCIO_SLUG || '?');
   try {
-    // 0. MULTITENANT: detectar comercio PRIMERO (obtiene _COMERCIO_ID)
-    await getComercioConfig();
-
-    // 1. Cargar config, productos y categorías en paralelo (ya con comercio_id filtrado)
+    // 1. Cargar config, productos y categorías en paralelo
     await Promise.all([sbCargarConfig(), sbCargarProductos(), sbCargarCategorias()]);
 
     // 2. Renderizar UI con datos de Supabase
