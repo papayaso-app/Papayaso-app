@@ -5258,6 +5258,48 @@ function dailyCleanup() {
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
+// ══════════════════════════════════════════════════════════════════════
+// MULTITENANT — Estado global del comercio activo
+// Se rellena en _resolverComercioDelUsuario() luego del login
+// ══════════════════════════════════════════════════════════════════════
+let _ADMIN_COMERCIO_ID   = null;   // UUID del comercio del usuario logueado
+let _ADMIN_COMERCIO_SLUG = null;   // slug (ej: 'papayaso')
+let _ADMIN_COMERCIO_ROW  = null;   // fila completa de la tabla comercios
+
+// Función que, post-login, busca el comercio asociado al user_id autenticado
+async function _resolverComercioDelUsuario(userId) {
+  try {
+    const rows = await SB.get('comercios', {
+      select: 'id,nombre,slug,whatsapp,logo_url,plan,activo',
+      'user_id': 'eq.' + userId,
+      'activo':  'eq.true',
+      limit: 1
+    });
+    if (rows && rows.length) {
+      _ADMIN_COMERCIO_ID   = rows[0].id;
+      _ADMIN_COMERCIO_SLUG = rows[0].slug;
+      _ADMIN_COMERCIO_ROW  = rows[0];
+      // Guardar en localStorage para que repartidor y menu puedan leerlo
+      try { localStorage.setItem('papayaso_comercio_id',   rows[0].id);   } catch(e) {}
+      try { localStorage.setItem('papayaso_comercio_slug', rows[0].slug); } catch(e) {}
+      console.log('[SaaS] Comercio resuelto:', rows[0].nombre, '| ID:', rows[0].id);
+      return rows[0];
+    } else {
+      console.warn('[SaaS] No se encontró comercio para user_id:', userId,
+        '— usando Papayaso (00000000-0000-0000-0000-000000000001) como fallback');
+      _ADMIN_COMERCIO_ID   = '00000000-0000-0000-0000-000000000001';
+      _ADMIN_COMERCIO_SLUG = 'papayaso';
+      try { localStorage.setItem('papayaso_comercio_id',   _ADMIN_COMERCIO_ID);   } catch(e) {}
+      try { localStorage.setItem('papayaso_comercio_slug', _ADMIN_COMERCIO_SLUG); } catch(e) {}
+      return null;
+    }
+  } catch(e) {
+    console.error('[SaaS] Error resolviendo comercio:', e.message);
+    _ADMIN_COMERCIO_ID = '00000000-0000-0000-0000-000000000001';
+    return null;
+  }
+}
+
 // ── Cliente fetch directo (sin CDN) ─────────────────────────────────
 // Los headers se calculan en cada llamada para inyectar el token de sesión
 // activo. Cuando el usuario está autenticado, _authSession.access_token
@@ -5358,11 +5400,17 @@ Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadConfig() {
   try {
-    const rows = await SB.get('configuracion', {
+    // MULTITENANT: filtrar por comercio_id del admin logueado
+    const _cfgAdmP = {
       select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,nit,telefono_local,url_logo,url_portada,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto,horario_semanal',
-      'id': 'eq.1',
       limit: 1
-    });
+    };
+    if (_ADMIN_COMERCIO_ID) {
+      _cfgAdmP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID;
+    } else {
+      _cfgAdmP['id'] = 'eq.1'; // fallback legacy para Papayaso
+    }
+    const rows = await SB.get('configuracion', _cfgAdmP);
     if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
     const c = rows[0];
 
@@ -5448,7 +5496,9 @@ async function sbSaveConfig() {
   };
 
   try {
-    await SB.patch('configuracion', 'id=eq.1', body);
+    // MULTITENANT: patch por comercio_id del admin
+    const _cfgFilter = _ADMIN_COMERCIO_ID ? 'comercio_id=eq.' + _ADMIN_COMERCIO_ID : 'id=eq.1';
+    await SB.patch('configuracion', _cfgFilter, body);
     // Actualizar memoria
     upd(function(s) {
       s.config.name       = body.nombre_negocio;
@@ -5484,7 +5534,9 @@ async function sbToggleOpen() {
   const s = getStore();
   const nuevoEstado = !s.config.isOpen;
   try {
-    await SB.patch('configuracion', 'id=eq.1', { esta_abierto: nuevoEstado });
+    // MULTITENANT
+    const _togFilter = _ADMIN_COMERCIO_ID ? 'comercio_id=eq.' + _ADMIN_COMERCIO_ID : 'id=eq.1';
+    await SB.patch('configuracion', _togFilter, { esta_abierto: nuevoEstado });
     upd(function(s2) { s2.config.isOpen = nuevoEstado; });
     const tog = document.getElementById('open-tog');
     if (tog) tog.className = 'tog ' + (nuevoEstado ? 'on' : 'off');
@@ -5502,9 +5554,10 @@ async function sbToggleOpen() {
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadProductos() {
   try {
-    const prods = await SB.get('productos', {
-      select: '*', order: 'categoria.asc,nombre.asc'
-    });
+    // MULTITENANT: filtrar productos por comercio_id
+    const _prodAdmP = { select: '*', order: 'categoria.asc,nombre.asc' };
+    if (_ADMIN_COMERCIO_ID) { _prodAdmP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
+    const prods = await SB.get('productos', _prodAdmP);
     upd(function(s) {
       s.products = (prods || []).map(function(p) {
         // extras: JSONB [{name,price}] directo desde Supabase
@@ -5705,11 +5758,10 @@ function fillAllCatSelects() {
 
 async function sbLoadCategorias() {
   try {
-    // Pedir las dos columnas correctas: extras_categoria y adiciones_categoria
-    const cats = await SB.get('categorias', {
-      select: 'id,nombre,orden,extras_categoria,adiciones_categoria',
-      order: 'orden.asc,nombre.asc'
-    });
+    // MULTITENANT: filtrar categorías por comercio_id
+    const _catAdmP = { select: 'id,nombre,orden,extras_categoria,adiciones_categoria', order: 'orden.asc,nombre.asc' };
+    if (_ADMIN_COMERCIO_ID) { _catAdmP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
+    const cats = await SB.get('categorias', _catAdmP);
 
     upd(function(s) {
       // Todas las categorías reales (ya no existe la fila __extras_globales__)
@@ -5777,8 +5829,10 @@ async function sbAddCat(nombre) {
     await SB.post('categorias', {
       nombre:              nombre,
       orden:               (getStore().categories || []).length,
-      extras_categoria:    [],   // [{nombre, precio}]
-      adiciones_categoria: []    // ["string", ...]
+      extras_categoria:    [],
+      adiciones_categoria: [],
+      // MULTITENANT
+      comercio_id: _ADMIN_COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
     });
     await sbLoadCategorias();
     showToast('Categoría creada ✓');
@@ -5881,14 +5935,16 @@ async function sbLoadPedidos() {
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
 
   try {
-    const pedidos = await SB.get('pedidos', {
+    // MULTITENANT: filtrar pedidos por comercio_id
+    const _pedAdmP = {
       select: '*',
       'created_at': `gte.${inicioHoy}`,
-      // Excluir ventas de caja/POS — solo domicilios y pedidos manuales
       'origen': 'neq.pos',
       order: 'created_at.desc',
       limit: 200
-    });
+    };
+    if (_ADMIN_COMERCIO_ID) { _pedAdmP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
+    const pedidos = await SB.get('pedidos', _pedAdmP);
 
     upd(function(s) {
       s.orders = (pedidos || []).map(function(p) {
@@ -5962,7 +6018,9 @@ async function sbSavePedidoManual(order) {
     metodo_pago:     order.payment || 'Efectivo',
     cambio:          order.cambio  || '',
     notas:           order.notes   || '',
-    origen:          'manual'
+    origen:          'manual',
+    // MULTITENANT
+    comercio_id: _ADMIN_COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
   };
 
   console.log('[SB] Guardando pedido manual:', body);
@@ -6183,10 +6241,10 @@ async function sbSavePedidoManual(order) {
 let _sbLastId = 0;
 async function sbPollNuevos() {
   try {
-    const r = await SB.get('pedidos', {
-      select: 'id,cliente,total,estado',
-      order: 'id.desc', limit: 1
-    });
+    // MULTITENANT: polling filtrado por comercio_id
+    const _pollP = { select: 'id,cliente,total,estado', order: 'id.desc', limit: 1 };
+    if (_ADMIN_COMERCIO_ID) { _pollP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
+    const r = await SB.get('pedidos', _pollP);
     if (!r || !r.length) return;
     const newest = r[0];
     if (_sbLastId === 0) { _sbLastId = newest.id; return; }
@@ -6237,12 +6295,15 @@ async function sbCargarHistorialCompleto() {
   try {
     // Traer TODOS los pedidos (sin límite de fecha) no cancelados
     // para las estadísticas y el panel de ventas
-    const todos = await SB.get('pedidos', {
+    // MULTITENANT: filtrar historial por comercio_id
+    const _histAdmP = {
       select: 'id,total,created_at,estado,metodo_pago,origen,cliente,telefono',
       'estado': 'neq.Cancelado',
       order:  'created_at.desc',
-      limit:  5000   // suficiente para cualquier negocio
-    });
+      limit:  5000
+    };
+    if (_ADMIN_COMERCIO_ID) { _histAdmP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
+    const todos = await SB.get('pedidos', _histAdmP);
 
     // Convertir al formato que usa getAllSalesData / _renderGlobalSales
     const sales = (todos||[]).map(p => ({
@@ -6306,7 +6367,7 @@ async function sbCargarVentasGlobales() {
 // ARRANQUE — reemplaza el INIT original
 // ══════════════════════════════════════════════════════════════════════
 async function sbInit() {
-  console.log('[SB] 🚀 Iniciando Papayaso Admin...');
+  console.log('[SB] 🚀 Iniciando Admin SaaS — Comercio:', _ADMIN_COMERCIO_SLUG || 'papayaso');
   try {
     // 1. Cargar configuración primero (nombre, logo, isOpen)
     await sbLoadConfig();
@@ -6446,6 +6507,17 @@ async function _activarAdmin(session) {
   _authSession = session;
   _guardarSesion(session);
   _mostrarAdmin();
+
+  // MULTITENANT: resolver el comercio del usuario antes de inicializar el admin
+  if (session.user && session.user.id) {
+    await _resolverComercioDelUsuario(session.user.id);
+    // Actualizar el título del topbar con el nombre del comercio
+    if (_ADMIN_COMERCIO_ROW && _ADMIN_COMERCIO_ROW.nombre) {
+      const tn = document.getElementById('t-name');
+      if (tn) tn.textContent = _ADMIN_COMERCIO_ROW.nombre;
+      document.title = 'Admin — ' + _ADMIN_COMERCIO_ROW.nombre;
+    }
+  }
 
   // Inicializar el admin solo ahora que el usuario está autenticado
   if (typeof sbInit === 'function') {
