@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin</title>
+<title>Admin — Papayaso</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -523,8 +523,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <!-- ══════════ PANTALLA DE LOGIN ══════════ -->
 <div id="login-container">
   <div class="login-box">
-    <div class="login-logo" id="login-logo">🍔</div>
-    <div class="login-sub" id="login-sub">Panel de administración</div>
+    <div class="login-logo">🍔 Papayaso</div>
+    <div class="login-sub">Panel de administración</div>
 
     <input
       class="login-field" id="login-email"
@@ -553,7 +553,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 <!-- TOPBAR -->
 <div class="topbar">
-  <div class="t-name" id="t-name"></div>
+  <div class="t-name" id="t-name">Papayaso</div>
   <div class="t-spacer"></div>
   <div class="tog-wrap">
     <button class="tog on" id="open-tog" onclick="toggleOpen()"><div class="tog-th"></div></button>
@@ -1391,7 +1391,7 @@ function getStore() {
 function seed() {
   var d = {
     config: {
-      name: '',  // se rellena desde comercios.nombre al login
+      name: 'Papayaso',
       whatsapp: '3001234567',
       address: 'Calle 8C 81B-10',
       hours: 'Lun-Dom 11am-10pm',
@@ -1705,7 +1705,7 @@ function chStatus(id, st) {
 }
 
 function notifyClient(phone, num, st) {
-  var nombre = getStore().config.name || _ADMIN_COMERCIO_NOMBRE || 'Restaurante';
+  var nombre = getStore().config.name || 'Papayaso';
   var msgs = {
     aceptado: '¡Hola! 👋 Somos ' + nombre + ' y acabamos de ACEPTAR tu pedido ' + num + '! ✅❤\n\nEstamos alistando todo para que sea perfecto 👨‍🍳\nGracias por tu preferencia! En un ratico te lo enviamos 🚵',
     preparando: '🔥 BUENAS NOTICIAS! Tu pedido ' + num + ' ya está siendo preparado en nuestra cocina! 🧑‍🍳❤\n\nNuestro equipo trabaja con todo para que llegue perfecto y delicioso 👌😊\nGracias por tu paciencia! Ya casi ⏰',
@@ -5258,76 +5258,6 @@ function dailyCleanup() {
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-// ══════════════════════════════════════════════════════════════════════
-// MULTITENANT — Variables globales del comercio activo
-// Se rellenan en _resolverComercioDelUsuario() justo después del login
-// ══════════════════════════════════════════════════════════════════════
-let _ADMIN_COMERCIO_ID     = null;   // UUID (tabla comercios)
-let _ADMIN_COMERCIO_SLUG   = null;   // 'papayaso' | 'real-broaster' | etc.
-let _ADMIN_COMERCIO_NOMBRE = null;   // nombre para mostrar en UI
-
-/**
- * _resolverComercioDelUsuario(userId)
- * Busca en la tabla `comercios` la fila cuyo user_id coincida con el
- * usuario autenticado, y rellena las tres variables de arriba.
- * Si no hay fila, usa el fallback de Papayaso para no romper nada.
- */
-async function _resolverComercioDelUsuario(userId) {
-  console.log('[SaaS] Resolviendo comercio para user_id:', userId);
-  try {
-    const rows = await SB.get('comercios', {
-      select: 'id,nombre,slug,whatsapp,logo_url,plan,activo',
-      'user_id': 'eq.' + userId,
-      'activo':  'eq.true',
-      limit: 1
-    });
-
-    if (rows && rows.length) {
-      const c = rows[0];
-      _ADMIN_COMERCIO_ID     = c.id;
-      _ADMIN_COMERCIO_SLUG   = c.slug;
-      _ADMIN_COMERCIO_NOMBRE = c.nombre;
-
-      // Persistir para repartidor.html y menu.html
-      try { localStorage.setItem('papayaso_comercio_id',   c.id);     } catch(e) {}
-      try { localStorage.setItem('papayaso_comercio_slug', c.slug);   } catch(e) {}
-
-      // ── Actualizar UI de login y topbar YA ─────────────────────────
-      const logoEl = document.getElementById('login-logo');
-      if (logoEl) logoEl.textContent = (c.logo_url ? '' : '🍔') + ' ' + c.nombre;
-
-      const subEl = document.getElementById('login-sub');
-      if (subEl) subEl.textContent = 'Panel de administración · ' + c.slug;
-
-      const tn = document.getElementById('t-name');
-      if (tn) tn.textContent = c.nombre;
-      document.title = 'Admin — ' + c.nombre;
-
-      // Si el store ya cargó config, actualizar también el nombre en memoria
-      upd(function(s) { if (!s.config.name) s.config.name = c.nombre; });
-
-      console.log('[SaaS] ✅ Comercio resuelto:', c.nombre, '| ID:', c.id);
-      return c;
-    }
-
-    // Sin comercio vinculado → fallback Papayaso
-    console.warn('[SaaS] No hay comercio para este user_id. Usando Papayaso como fallback.');
-    _ADMIN_COMERCIO_ID     = '00000000-0000-0000-0000-000000000001';
-    _ADMIN_COMERCIO_SLUG   = 'papayaso';
-    _ADMIN_COMERCIO_NOMBRE = 'Papayaso';
-    try { localStorage.setItem('papayaso_comercio_id',   _ADMIN_COMERCIO_ID);   } catch(e) {}
-    try { localStorage.setItem('papayaso_comercio_slug', _ADMIN_COMERCIO_SLUG); } catch(e) {}
-    return null;
-
-  } catch(e) {
-    console.error('[SaaS] Error resolviendo comercio:', e.message);
-    _ADMIN_COMERCIO_ID     = '00000000-0000-0000-0000-000000000001';
-    _ADMIN_COMERCIO_SLUG   = 'papayaso';
-    _ADMIN_COMERCIO_NOMBRE = 'Papayaso';
-    return null;
-  }
-}
-
 // ── Cliente fetch directo (sin CDN) ─────────────────────────────────
 // Los headers se calculan en cada llamada para inyectar el token de sesión
 // activo. Cuando el usuario está autenticado, _authSession.access_token
@@ -5428,20 +5358,16 @@ Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadConfig() {
   try {
-    // MULTITENANT: filtrar por comercio_id del usuario logueado
-    const _cfgP = {
+    const rows = await SB.get('configuracion', {
       select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,nit,telefono_local,url_logo,url_portada,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto,horario_semanal',
+      'id': 'eq.1',
       limit: 1
-    };
-    if (_ADMIN_COMERCIO_ID) { _cfgP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
-    else                     { _cfgP['id'] = 'eq.1'; }
-    const rows = await SB.get('configuracion', _cfgP);
+    });
     if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
     const c = rows[0];
 
     upd(function(s) {
-      // PRIORIDAD: comercios.nombre > configuracion.nombre_negocio
-      s.config.name       = _ADMIN_COMERCIO_NOMBRE || c.nombre_negocio || s.config.name;
+      s.config.name       = c.nombre_negocio   || s.config.name;
       s.config.whatsapp   = c.telefono_whatsapp || s.config.whatsapp;
       s.config.address    = c.direccion         || s.config.address  || '';
       s.config.desc       = c.descripcion       || s.config.desc     || '';
@@ -5468,10 +5394,8 @@ async function sbLoadConfig() {
 
     // ── Actualizar topbar ────────────────────────────────────────────────
     const cfg = getStore().config;
-    // Nombre final: prioridad comercios.nombre (ya en cfg.name gracias al paso anterior)
-    const _nombreFinal = cfg.name || _ADMIN_COMERCIO_NOMBRE || 'Admin';
-    const tn = document.getElementById('t-name'); if (tn) tn.textContent = _nombreFinal;
-    document.title = 'Admin — ' + _nombreFinal;
+    const tn = document.getElementById('t-name'); if (tn) tn.textContent = cfg.name;
+    document.title = 'Admin - ' + cfg.name;
     const tog = document.getElementById('open-tog');
     if (tog) tog.className = 'tog ' + (cfg.isOpen ? 'on' : 'off');
     const lbl = document.getElementById('open-lbl');
@@ -5506,7 +5430,7 @@ async function sbSaveConfig() {
   });
 
   const body = {
-    nombre_negocio:     gv('cfg-name')         || _ADMIN_COMERCIO_NOMBRE || '',
+    nombre_negocio:     gv('cfg-name')         || 'Papayaso',
     telefono_whatsapp:  gv('cfg-wa').replace(/\D/g,''),
     direccion:          gv('cfg-address'),
     descripcion:        gv('cfg-desc'),
@@ -5524,9 +5448,7 @@ async function sbSaveConfig() {
   };
 
   try {
-    // MULTITENANT: guardar solo la config de este comercio
-    const _cfgFilter = _ADMIN_COMERCIO_ID ? 'comercio_id=eq.' + _ADMIN_COMERCIO_ID : 'id=eq.1';
-    await SB.patch('configuracion', _cfgFilter, body);
+    await SB.patch('configuracion', 'id=eq.1', body);
     // Actualizar memoria
     upd(function(s) {
       s.config.name       = body.nombre_negocio;
@@ -5545,9 +5467,8 @@ async function sbSaveConfig() {
       s.config.hours      = (typeof getScheduleText === 'function') ? getScheduleText(sched) : '';
     });
     const tn = document.getElementById('t-name');
-    const _nb = body.nombre_negocio || _ADMIN_COMERCIO_NOMBRE;
-    if (tn) tn.textContent = _nb;
-    document.title = 'Admin — ' + _nb;
+    if (tn) tn.textContent = body.nombre_negocio;
+    document.title = 'Admin - ' + body.nombre_negocio;
     const su = document.getElementById('share-url-txt'); if (su) su.textContent = body.url_menu;
     const ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = body.url_repartidor;
     showToast('Configuración guardada ✓');
@@ -5563,9 +5484,7 @@ async function sbToggleOpen() {
   const s = getStore();
   const nuevoEstado = !s.config.isOpen;
   try {
-    // MULTITENANT
-    const _togFilter = _ADMIN_COMERCIO_ID ? 'comercio_id=eq.' + _ADMIN_COMERCIO_ID : 'id=eq.1';
-    await SB.patch('configuracion', _togFilter, { esta_abierto: nuevoEstado });
+    await SB.patch('configuracion', 'id=eq.1', { esta_abierto: nuevoEstado });
     upd(function(s2) { s2.config.isOpen = nuevoEstado; });
     const tog = document.getElementById('open-tog');
     if (tog) tog.className = 'tog ' + (nuevoEstado ? 'on' : 'off');
@@ -5583,10 +5502,9 @@ async function sbToggleOpen() {
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadProductos() {
   try {
-    // MULTITENANT
-    const _prodP = { select: '*', order: 'categoria.asc,nombre.asc' };
-    if (_ADMIN_COMERCIO_ID) { _prodP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
-    const prods = await SB.get('productos', _prodP);
+    const prods = await SB.get('productos', {
+      select: '*', order: 'categoria.asc,nombre.asc'
+    });
     upd(function(s) {
       s.products = (prods || []).map(function(p) {
         // extras: JSONB [{name,price}] directo desde Supabase
@@ -5662,9 +5580,7 @@ async function sbSaveProd() {
     descripcion: desc,
     categoria:   cat,
     disponible:  avail,
-    extras:      extras,
-    // MULTITENANT — solo se necesita en INSERT; PATCH usa el filtro id=eq.X
-    comercio_id: _ADMIN_COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
+    extras:      extras  // JSONB directo
   };
 
   // Si hay foto nueva en editPhoto (base64) → subir a Storage primero
@@ -5789,10 +5705,11 @@ function fillAllCatSelects() {
 
 async function sbLoadCategorias() {
   try {
-    // MULTITENANT: filtrar categorías por comercio_id
-    const _catP = { select: 'id,nombre,orden,extras_categoria,adiciones_categoria', order: 'orden.asc,nombre.asc' };
-    if (_ADMIN_COMERCIO_ID) { _catP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
-    const cats = await SB.get('categorias', _catP);
+    // Pedir las dos columnas correctas: extras_categoria y adiciones_categoria
+    const cats = await SB.get('categorias', {
+      select: 'id,nombre,orden,extras_categoria,adiciones_categoria',
+      order: 'orden.asc,nombre.asc'
+    });
 
     upd(function(s) {
       // Todas las categorías reales (ya no existe la fila __extras_globales__)
@@ -5860,9 +5777,8 @@ async function sbAddCat(nombre) {
     await SB.post('categorias', {
       nombre:              nombre,
       orden:               (getStore().categories || []).length,
-      extras_categoria:    [],
-      adiciones_categoria: [],
-      comercio_id:         _ADMIN_COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
+      extras_categoria:    [],   // [{nombre, precio}]
+      adiciones_categoria: []    // ["string", ...]
     });
     await sbLoadCategorias();
     showToast('Categoría creada ✓');
@@ -5901,39 +5817,88 @@ async function sbDelCat(nombre) {
 async function sbHandleLogoUpload(inp) {
   const f = inp.files[0]; if (!f) return;
   if (f.size > 3*1024*1024) { showToast('Logo muy grande (máx 3MB)'); return; }
+
+  // Necesitamos el comercio_id para saber qué fila actualizar
+  if (!_ADMIN_COMERCIO_ID) {
+    alert('❌ No se detectó el comercio activo. Recarga la página e intenta de nuevo.');
+    return;
+  }
+
   showToast('Subiendo logo...');
   try {
     const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `config/logo.${ext}`;
-    const url  = await SB.uploadFile('imagenes', path, f);
-    await SB.patch('configuracion', 'id=eq.1', { url_logo: url });
+    // Path único por comercio → evita colisiones entre restaurantes
+    const path = `logos/${_ADMIN_COMERCIO_ID}.${ext}`;
+
+    // 1. Subir al bucket 'imagenes' (el que tienes público)
+    const url = await SB.uploadFile('imagenes', path, f);
+    console.log('[SB] Logo subido a Storage:', url);
+
+    // 2. Guardar en comercios.logo_url (la columna que lee menu.html)
+    await SB.patch('comercios', 'id=eq.' + _ADMIN_COMERCIO_ID, { logo_url: url });
+    console.log('[SB] comercios.logo_url actualizado para id:', _ADMIN_COMERCIO_ID);
+
+    // 3. También guardar en configuracion.url_logo para compatibilidad con el Admin
+    if (_ADMIN_COMERCIO_ID) {
+      try {
+        await SB.patch('configuracion', 'comercio_id=eq.' + _ADMIN_COMERCIO_ID, { url_logo: url });
+      } catch(e2) { /* no crítico */ }
+    }
+
+    // 4. Actualizar estado en memoria y UI del Admin
     upd(function(s){ s.config.logo = url; });
     if (typeof _updateLogoUI === 'function') _updateLogoUI(url);
     showToast('Logo guardado ✓');
-    console.log('[SB] Logo subido:', url);
+
   } catch(e) {
     console.error('[SB] Error subiendo logo:', e);
     alert('❌ Error al subir logo:\n' + e.message +
-      '\n\nVerifica que el bucket "imagenes" existe y tiene política INSERT.');
+      '\n\nVerifica:\n' +
+      '1. El bucket "imagenes" existe en Supabase Storage\n' +
+      '2. El bucket tiene política INSERT para usuarios autenticados\n' +
+      '3. Estás logueado correctamente');
   }
 }
 
 async function sbHandleCoverUpload(inp) {
   const f = inp.files[0]; if (!f) return;
   if (f.size > 5*1024*1024) { showToast('Portada muy grande (máx 5MB)'); return; }
+
+  if (!_ADMIN_COMERCIO_ID) {
+    alert('❌ No se detectó el comercio activo. Recarga la página e intenta de nuevo.');
+    return;
+  }
+
   showToast('Subiendo portada...');
   try {
     const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `config/portada.${ext}`;
-    const url  = await SB.uploadFile('imagenes', path, f);
-    await SB.patch('configuracion', 'id=eq.1', { url_portada: url });
+    // Path único por comercio
+    const path = `portadas/${_ADMIN_COMERCIO_ID}.${ext}`;
+
+    // 1. Subir al bucket 'imagenes'
+    const url = await SB.uploadFile('imagenes', path, f);
+    console.log('[SB] Portada subida a Storage:', url);
+
+    // 2. Guardar en comercios.cover_url (la columna que lee menu.html)
+    await SB.patch('comercios', 'id=eq.' + _ADMIN_COMERCIO_ID, { cover_url: url });
+    console.log('[SB] comercios.cover_url actualizado para id:', _ADMIN_COMERCIO_ID);
+
+    // 3. También guardar en configuracion.url_portada para compatibilidad
+    if (_ADMIN_COMERCIO_ID) {
+      try {
+        await SB.patch('configuracion', 'comercio_id=eq.' + _ADMIN_COMERCIO_ID, { url_portada: url });
+      } catch(e2) { /* no crítico */ }
+    }
+
+    // 4. Actualizar estado en memoria y UI del Admin
     upd(function(s){ s.config.cover = url; });
     if (typeof _updateCoverUI === 'function') _updateCoverUI(url);
     showToast('Portada guardada ✓');
-    console.log('[SB] Portada subida:', url);
+
   } catch(e) {
     console.error('[SB] Error subiendo portada:', e);
-    alert('❌ Error al subir portada:\n' + e.message);
+    alert('❌ Error al subir portada:\n' + e.message +
+      '\n\nVerifica que el bucket "imagenes" existe y tiene política INSERT.');
   }
 }
 
@@ -5965,10 +5930,14 @@ async function sbLoadPedidos() {
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
 
   try {
-    // MULTITENANT: solo pedidos de este comercio
-    const _pedP = { select: '*', 'created_at': `gte.${inicioHoy}`, 'origen': 'neq.pos', order: 'created_at.desc', limit: 200 };
-    if (_ADMIN_COMERCIO_ID) { _pedP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
-    const pedidos = await SB.get('pedidos', _pedP);
+    const pedidos = await SB.get('pedidos', {
+      select: '*',
+      'created_at': `gte.${inicioHoy}`,
+      // Excluir ventas de caja/POS — solo domicilios y pedidos manuales
+      'origen': 'neq.pos',
+      order: 'created_at.desc',
+      limit: 200
+    });
 
     upd(function(s) {
       s.orders = (pedidos || []).map(function(p) {
@@ -6036,14 +6005,13 @@ async function sbSavePedidoManual(order) {
     telefono:        order.phone   || '',
     direccion:       order.address || '',
     referencia:      order.ref     || '',
-    detalles_pedido: detalles,
+    detalles_pedido: detalles,       // JSONB directo
     total:           parseFloat(order.total) || 0,
     estado:          'Pendiente',
     metodo_pago:     order.payment || 'Efectivo',
     cambio:          order.cambio  || '',
     notas:           order.notes   || '',
-    origen:          'manual',
-    comercio_id:     _ADMIN_COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
+    origen:          'manual'
   };
 
   console.log('[SB] Guardando pedido manual:', body);
@@ -6264,10 +6232,10 @@ async function sbSavePedidoManual(order) {
 let _sbLastId = 0;
 async function sbPollNuevos() {
   try {
-    // MULTITENANT: polling solo de este comercio
-    const _pollP = { select: 'id,cliente,total,estado', order: 'id.desc', limit: 1 };
-    if (_ADMIN_COMERCIO_ID) { _pollP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
-    const r = await SB.get('pedidos', _pollP);
+    const r = await SB.get('pedidos', {
+      select: 'id,cliente,total,estado',
+      order: 'id.desc', limit: 1
+    });
     if (!r || !r.length) return;
     const newest = r[0];
     if (_sbLastId === 0) { _sbLastId = newest.id; return; }
@@ -6290,9 +6258,10 @@ async function sbGetStats() {
   const hoy = new Date().toISOString().slice(0,10);
   const mes  = new Date().toISOString().slice(0,7);
   try {
-    const _stP = { select: 'total,created_at,estado', 'estado': 'neq.Cancelado' };
-    if (_ADMIN_COMERCIO_ID) { _stP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
-    const all = await SB.get('pedidos', _stP);
+    const all = await SB.get('pedidos', {
+      select: 'total,created_at,estado',
+      'estado': 'neq.Cancelado'
+    });
     let totalHoy = 0, totalMes = 0, totalGlobal = 0;
     (all||[]).forEach(p => {
       const t = parseFloat(p.total)||0;
@@ -6317,10 +6286,12 @@ async function sbCargarHistorialCompleto() {
   try {
     // Traer TODOS los pedidos (sin límite de fecha) no cancelados
     // para las estadísticas y el panel de ventas
-    // MULTITENANT
-    const _histP = { select: 'id,total,created_at,estado,metodo_pago,origen,cliente,telefono', 'estado': 'neq.Cancelado', order: 'created_at.desc', limit: 5000 };
-    if (_ADMIN_COMERCIO_ID) { _histP['comercio_id'] = 'eq.' + _ADMIN_COMERCIO_ID; }
-    const todos = await SB.get('pedidos', _histP);
+    const todos = await SB.get('pedidos', {
+      select: 'id,total,created_at,estado,metodo_pago,origen,cliente,telefono',
+      'estado': 'neq.Cancelado',
+      order:  'created_at.desc',
+      limit:  5000   // suficiente para cualquier negocio
+    });
 
     // Convertir al formato que usa getAllSalesData / _renderGlobalSales
     const sales = (todos||[]).map(p => ({
@@ -6384,7 +6355,7 @@ async function sbCargarVentasGlobales() {
 // ARRANQUE — reemplaza el INIT original
 // ══════════════════════════════════════════════════════════════════════
 async function sbInit() {
-  console.log('[SB] 🚀 Admin SaaS — slug:', _ADMIN_COMERCIO_SLUG || '(sin slug)', '| id:', _ADMIN_COMERCIO_ID || '(sin id)');
+  console.log('[SB] 🚀 Iniciando Papayaso Admin...');
   try {
     // 1. Cargar configuración primero (nombre, logo, isOpen)
     await sbLoadConfig();
@@ -6525,13 +6496,7 @@ async function _activarAdmin(session) {
   _guardarSesion(session);
   _mostrarAdmin();
 
-  // MULTITENANT PASO 0 — identificar el comercio de este usuario
-  // Esto rellena _ADMIN_COMERCIO_ID, _ADMIN_COMERCIO_NOMBRE y actualiza la UI
-  if (session && session.user && session.user.id) {
-    await _resolverComercioDelUsuario(session.user.id);
-  }
-
-  // Inicializar el admin (ya con comercio_id conocido)
+  // Inicializar el admin solo ahora que el usuario está autenticado
   if (typeof sbInit === 'function') {
     await sbInit();
   }
