@@ -260,6 +260,21 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
+// ── MULTITENANT: leer comercio_id del localStorage (escrito por menu.html/admin.html) ──
+const _COMERCIO_ID_REP = (() => {
+  try { return localStorage.getItem('papayaso_comercio_id') || null; } catch(e) { return null; }
+})();
+
+// ── MULTITENANT: también leer slug para cargar PIN de la tabla configuracion correcta ──
+const _COMERCIO_SLUG_REP = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('rest') || params.get('slug') || localStorage.getItem('papayaso_comercio_slug') || 'papayaso';
+  } catch(e) { return 'papayaso'; }
+})();
+
+console.log('[SaaS] Repartidor — comercio_id:', _COMERCIO_ID_REP, '| slug:', _COMERCIO_SLUG_REP);
+
 const SB = {
   h: {
     'Content-Type':  'application/json',
@@ -301,9 +316,17 @@ function showTab(tab) {
 /* ══ PIN ═════════════════════════════════════════════════ */
 async function cargarPinDesdeSupabase() {
   try {
-    const rows = await SB.get('configuracion', { select: 'pin_repartidor', 'id': 'eq.1', limit: 1 });
+    // MULTITENANT: filtrar por comercio_id si está disponible
+    const _pinP = { select: 'pin_repartidor', limit: 1 };
+    if (_COMERCIO_ID_REP) {
+      _pinP['comercio_id'] = 'eq.' + _COMERCIO_ID_REP;
+    } else {
+      _pinP['id'] = 'eq.1'; // fallback legacy
+    }
+    const rows = await SB.get('configuracion', _pinP);
     _pinReal    = (rows && rows[0] && rows[0].pin_repartidor) ? String(rows[0].pin_repartidor).trim() : '1234';
     _pinCargado = true;
+    console.log('[SaaS] PIN cargado para comercio:', _COMERCIO_ID_REP || 'legacy');
   } catch(e) { _pinReal = null; _pinCargado = false; }
 }
 
@@ -348,12 +371,15 @@ async function cargarPedidos(showFeedback) {
   const secCount = document.getElementById('sec-count');
   if (showFeedback && listEl) listEl.innerHTML = '<div class="spinner"></div>';
   try {
-    const pedidos = await SB.get('pedidos', {
+    // MULTITENANT: filtrar pedidos por comercio_id
+    const _pedP = {
       select: 'id,cliente,telefono,direccion,referencia,detalles_pedido,total,estado,metodo_pago,cambio,notas,created_at',
       'estado': 'in.(Listo,En camino)',
       'origen': 'neq.pos',
       order: 'created_at.asc'
-    });
+    };
+    if (_COMERCIO_ID_REP) { _pedP['comercio_id'] = 'eq.' + _COMERCIO_ID_REP; }
+    const pedidos = await SB.get('pedidos', _pedP);
     _pedidosActivos = pedidos || [];
     const n = _pedidosActivos.length;
     if (countEl) { countEl.textContent = n + ' pendiente' + (n !== 1 ? 's' : ''); countEl.className = 't-badge' + (n === 0 ? ' zero' : ''); }
@@ -381,14 +407,17 @@ async function cargarHistorial() {
   if (fechaEl) fechaEl.textContent = hoy.toLocaleDateString('es-CO', {weekday:'long', day:'numeric', month:'long'});
 
   try {
-    const pedidos = await SB.get('pedidos', {
+    // MULTITENANT: filtrar historial por comercio_id
+    const _histP = {
       select: 'id,cliente,telefono,direccion,total,metodo_pago,created_at,estado',
       'estado':     'eq.Entregado',
       'origen':     'neq.pos',
       'and':        '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
       order: 'created_at.desc',
       limit: 200
-    });
+    };
+    if (_COMERCIO_ID_REP) { _histP['comercio_id'] = 'eq.' + _COMERCIO_ID_REP; }
+    const pedidos = await SB.get('pedidos', _histP);
 
     renderHistorial(pedidos || []);
   } catch(e) {
