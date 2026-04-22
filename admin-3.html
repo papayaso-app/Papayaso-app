@@ -4097,28 +4097,23 @@ function drawBarChart(canvasId, labels, datasets) {
   } catch(e){}
 
   // ── Decidir si los labels necesitan rotación ───────────────
-  // Meses (Ene,Feb...) = 3 chars → rotar. Números de día (1..31) → horizontal
   var firstLbl  = String(labels[0]);
-  var isNumeric = /^\d+$/.test(firstLbl);   // true para días
-  var rotate    = !isNumeric;               // rotar para meses y texto
+  var isNumeric = /^\d+$/.test(firstLbl);
+  var rotate    = !isNumeric;
 
   // ── Dimensiones del canvas ─────────────────────────────────
-  var dpr  = window.devicePixelRatio || 1;
-  var W    = canvas.parentElement.clientWidth || 320;
-  if (W < 10) W = 320; // seguro cuando está oculto
+  var dpr = window.devicePixelRatio || 1;
+  var W   = canvas.parentElement ? (canvas.parentElement.clientWidth || 0) : 0;
+  if (W < 10) W = 320;
 
-  var padL  = 54;
-  var padR  = 16;
-  var padT  = 18;
-  // espacio inferior: más si hay rotación, menos si son números
-  var padB  = rotate ? 62 : 36;
-  var H     = padT + 180 + padB; // altura total fija
+  var padL = 54, padR = 16, padT = 18;
+  var padB = rotate ? 62 : 36;
+  var H    = padT + 180 + padB;
 
   canvas.width        = W * dpr;
   canvas.height       = H * dpr;
   canvas.style.width  = W + 'px';
   canvas.style.height = H + 'px';
-  // Quitar el max-height que podría recortar
   canvas.style.maxHeight = 'none';
 
   var ctx = canvas.getContext('2d');
@@ -4134,7 +4129,6 @@ function drawBarChart(canvasId, labels, datasets) {
     for (var li=0;li<datasets[di].data.length;li++)
       if (datasets[di].data[li] > maxRaw) maxRaw = datasets[di].data[li];
   if (maxRaw <= 0) maxRaw = 1000;
-  // Redondear a magnitud → eje Y siempre termina en número limpio
   var mag    = Math.pow(10, Math.floor(Math.log10(maxRaw)));
   var maxVal = Math.ceil(maxRaw / mag) * mag;
   if (maxVal < maxRaw * 1.05) maxVal = Math.ceil(maxRaw / (mag/2)) * (mag/2);
@@ -4166,13 +4160,11 @@ function drawBarChart(canvasId, labels, datasets) {
   var barW     = Math.min(groupW * 0.7 / nSets, nSets===1 ? 30 : 22);
   var groupGap = (groupW - barW * nSets) / 2;
 
-  // Resaltar columna actual (día o mes)
+  // Resaltar columna actual
   var todayIdx = -1;
   var _now = new Date();
   for (var ti=0; ti<labels.length; ti++) {
-    // días numéricos
     if (isNumeric && parseInt(labels[ti]) === _now.getDate() && n <= 31) { todayIdx=ti; break; }
-    // meses por índice (labels[0]=Ene→índice 0)
     if (!isNumeric && ti === _now.getMonth() && n === 12)                { todayIdx=ti; break; }
   }
   if (todayIdx >= 0) {
@@ -4205,18 +4197,16 @@ function drawBarChart(canvasId, labels, datasets) {
 
   // ── Etiquetas X ───────────────────────────────────────────
   var fs = n > 22 ? 8 : (n > 15 ? 9 : 10);
-  var yBase = padT + chartH + 6; // justo debajo de la línea base
+  var yBase = padT + chartH + 6;
 
   for (var li3=0; li3<labels.length; li3++) {
     var xc   = padL + li3*groupW + groupW/2;
     var lbl3 = String(labels[li3]);
 
-    // Decidir si pintar este label (para días >15, saltar los pares)
     var skip = (isNumeric && n > 15 && parseInt(lbl3) % 2 === 0 && li3 !== todayIdx);
     if (skip) continue;
 
     if (rotate) {
-      // Meses → rotar -45°
       ctx.save();
       ctx.translate(xc, yBase + 2);
       ctx.rotate(-Math.PI / 4);
@@ -4226,7 +4216,6 @@ function drawBarChart(canvasId, labels, datasets) {
       ctx.fillText(lbl3, 0, 0);
       ctx.restore();
     } else {
-      // Días → horizontal, resaltar hoy en naranja
       ctx.textAlign = 'center';
       if (li3 === todayIdx) {
         ctx.font      = 'bold ' + (fs+1) + 'px Inter,Arial,sans-serif';
@@ -4239,7 +4228,7 @@ function drawBarChart(canvasId, labels, datasets) {
     }
   }
 
-  // ── Leyenda bajo la gráfica ────────────────────────────────
+  // ── Leyenda ───────────────────────────────────────────────
   var legendEl = document.getElementById('est-chart-legend');
   if (legendEl) {
     var lh = '';
