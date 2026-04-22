@@ -2098,10 +2098,89 @@ init();
 <!-- ===== SUPABASE — 100% sin localStorage ===== -->
 <script>
 /* =============================================================
-   MENÚ CLIENTE — Supabase 100% (0 localStorage)
+   MENÚ CLIENTE — Supabase 100% — SaaS Multitenant
+   Detección dinámica por ?rest=slug (fallback: 'papayaso')
    ============================================================= */
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
+
+// ── MULTITENANT: ID del comercio activo (se rellena en getComercioConfig) ──
+let _COMERCIO_ID   = null;   // UUID del comercio activo
+let _COMERCIO_SLUG = null;   // slug leído de la URL o localStorage
+
+// ── CLAVE para persistir slug en localStorage ──────────────────────────
+const COMERCIO_SLUG_KEY = 'papayaso_comercio_slug';
+
+// ══════════════════════════════════════════════════════════════
+// getComercioConfig() — detección dinámica del comercio
+// 1. Lee ?rest= de la URL
+// 2. Si no hay, usa localStorage, si tampoco → 'papayaso'
+// 3. Busca en Supabase y guarda comercio_id globalmente
+// ══════════════════════════════════════════════════════════════
+async function getComercioConfig() {
+  // 1. Leer slug desde URL o localStorage
+  const params  = new URLSearchParams(window.location.search);
+  const urlSlug = params.get('rest') || params.get('slug') || '';
+  const stored  = (() => { try { return localStorage.getItem(COMERCIO_SLUG_KEY) || ''; } catch(e) { return ''; } })();
+  const slug    = urlSlug.trim() || stored.trim() || 'papayaso';
+
+  // Persistir en localStorage para recargas sin parámetro
+  try { localStorage.setItem(COMERCIO_SLUG_KEY, slug); } catch(e) {}
+  _COMERCIO_SLUG = slug;
+
+  console.log('[SaaS] Detectando comercio con slug:', slug);
+
+  try {
+    // 2. Buscar comercio en Supabase
+    const rows = await SB.get('comercios', {
+      select: 'id,nombre,slug,whatsapp,logo_url,cover_url,direccion,descripcion,activo',
+      'slug': `eq.${slug}`,
+      'activo': 'eq.true',
+      limit: 1
+    });
+
+    if (!rows || !rows.length) {
+      console.warn('[SaaS] Comercio no encontrado:', slug, '— usando Papayaso por defecto');
+      // Intento fallback con 'papayaso'
+      if (slug !== 'papayaso') {
+        _COMERCIO_SLUG = 'papayaso';
+        try { localStorage.setItem(COMERCIO_SLUG_KEY, 'papayaso'); } catch(e) {}
+        return getComercioConfig();
+      }
+      return null;
+    }
+
+    const c = rows[0];
+    _COMERCIO_ID = c.id;
+
+    // 3. Guardar comercio_id también en localStorage para otras páginas
+    try { localStorage.setItem('papayaso_comercio_id', c.id); } catch(e) {}
+
+    // 4. Actualizar UI del hero con datos del comercio
+    if (c.nombre) {
+      const hn = document.getElementById('hero-name');
+      if (hn) hn.textContent = c.nombre;
+      document.title = c.nombre + ' - Menú';
+    }
+    if (c.logo_url) {
+      const logoEl = document.getElementById('hero-logo-img');
+      if (logoEl) { logoEl.src = c.logo_url; logoEl.style.display = 'block'; }
+    }
+    if (c.cover_url) {
+      const coverEl = document.getElementById('hero-bg-el');
+      if (coverEl) coverEl.style.backgroundImage = `url(${JSON.stringify(c.cover_url)})`;
+    }
+    if (c.whatsapp) {
+      _STORE.config.whatsapp = c.whatsapp;
+    }
+
+    console.log('[SaaS] ✅ Comercio activo:', c.nombre, '| ID:', c.id);
+    return c;
+  } catch(e) {
+    console.error('[SaaS] Error detectando comercio:', e.message);
+    return null;
+  }
+}
 
 const SB = {
   h: {
@@ -2136,11 +2215,17 @@ const SB_TO_LOCAL = {
 // ══════════════════════════════════════════════════════════════
 async function sbCargarConfig() {
   try {
-    const rows = await SB.get('configuracion', {
+    // MULTITENANT: filtrar configuración por comercio_id
+    const _cfgParams = {
       select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,mensaje_bienvenida,esta_abierto,url_logo,url_portada,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal',
-      'id': 'eq.1',
       limit: 1
-    });
+    };
+    if (_COMERCIO_ID) {
+      _cfgParams['comercio_id'] = 'eq.' + _COMERCIO_ID;
+    } else {
+      _cfgParams['id'] = 'eq.1'; // fallback legacy
+    }
+    const rows = await SB.get('configuracion', _cfgParams);
     if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
     const c = rows[0];
 
@@ -2292,9 +2377,10 @@ function aplicarEstadoAbierto() {
 // ══════════════════════════════════════════════════════════════
 async function sbCargarProductos() {
   try {
-    const prods = await SB.get('productos', {
-      select:'*', 'disponible':'eq.true', order:'categoria.asc,nombre.asc'
-    });
+    // MULTITENANT: filtrar productos por comercio_id
+    const _prodP = { select: '*', 'disponible': 'eq.true', order: 'categoria.asc,nombre.asc' };
+    if (_COMERCIO_ID) { _prodP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
+    const prods = await SB.get('productos', _prodP);
     if (!prods || !prods.length) { console.warn('[SB] Sin productos'); return; }
 
     _STORE.products = prods.map(function(p) {
@@ -2383,7 +2469,9 @@ async function sbInsertPedido(orderData) {
     metodo_pago:     orderData.payment  || 'Efectivo',
     cambio:          orderData.cambio   || '',
     notas:           orderData.notes    || '',
-    origen:          'web'
+    origen:          'web',
+    // MULTITENANT: siempre incluir el comercio_id
+    comercio_id:     _COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
   };
 
   console.log('[SB] Insertando pedido:', body);
@@ -2632,11 +2720,10 @@ async function restaurarSeguimientoSiExiste() {
 
   console.log('[Track] ID guardado encontrado:', idGuardado, '— consultando Supabase...');
   try {
-    const rows = await SB.get('pedidos', {
-      select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at',
-      'id': 'eq.' + idGuardado,
-      limit: 1
-    });
+    // MULTITENANT: filtrar tracking por comercio_id
+    const _trackP = { select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at', 'id': 'eq.' + idGuardado, limit: 1 };
+    if (_COMERCIO_ID) { _trackP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
+    const rows = await SB.get('pedidos', _trackP);
     if (!rows || !rows.length) {
       // Pedido no existe o fue purgado — limpiar
       limpiarIdPedido();
@@ -2710,10 +2797,10 @@ async function restaurarSeguimientoSiExiste() {
 // ══════════════════════════════════════════════════════════════
 async function sbCargarCategorias() {
   try {
-    const cats = await SB.get('categorias', {
-      select: 'nombre,extras_categoria,adiciones_categoria',
-      order:  'orden.asc,nombre.asc'
-    });
+    // MULTITENANT: filtrar categorías por comercio_id
+    const _catP = { select: 'nombre,extras_categoria,adiciones_categoria', order: 'orden.asc,nombre.asc' };
+    if (_COMERCIO_ID) { _catP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
+    const cats = await SB.get('categorias', _catP);
 
     // Construir mapa indexado por nombre: { "Hamburguesas": { extras: [], adiciones: [] }, ... }
     const mapa = {};
@@ -2759,9 +2846,12 @@ async function sbCargarCategorias() {
 }
 
 (async function sbMenuInit() {
-  console.log('[SB] 🚀 Cargando menú de Papayaso...');
+  console.log('[SB] 🚀 Cargando menú SaaS Multitenant...');
   try {
-    // 1. Cargar config, productos y categorías en paralelo
+    // 0. MULTITENANT: detectar comercio PRIMERO (obtiene _COMERCIO_ID)
+    await getComercioConfig();
+
+    // 1. Cargar config, productos y categorías en paralelo (ya con comercio_id filtrado)
     await Promise.all([sbCargarConfig(), sbCargarProductos(), sbCargarCategorias()]);
 
     // 2. Renderizar UI con datos de Supabase
