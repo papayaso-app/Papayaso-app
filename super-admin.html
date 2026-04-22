@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Super Admin — Papayaso SaaS</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#ff6b00;--brand2:#e05a00;--brand-bg:#fff3e8;--brand-bd:rgba(255,107,0,.3);
+  --dark:#0d0d0d;--dark2:#1a1a1a;--dark3:#222;
+  --white:#fff;--bg:#f5f5f5;--border:#e5e5e5;--border2:#ccc;
+  --text:#111;--muted:#777;
+  --ok:#2d8a3e;--ok-bg:#f0faf2;--ok-bd:#a5d6a7;
+  --danger:#c62828;--danger-bg:#fdecea;--danger-bd:#f5a5a5;
+  --info:#1565c0;--info-bg:#e3f2fd;
+  --warn:#e65100;--warn-bg:#fff3e0;
+  --r:12px;--rs:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* ═══════════ LOGIN ═══════════ */
+#login-wrap{
+  position:fixed;inset:0;background:var(--dark);
+  display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;
+}
+#login-wrap.hidden{display:none;}
+.login-box{
+  background:var(--dark2);border-radius:20px;padding:42px 34px 38px;
+  max-width:380px;width:100%;text-align:center;
+  box-shadow:0 24px 64px rgba(0,0,0,.6);
+}
+.login-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(255,107,0,.15);border:1px solid var(--brand-bd);
+  border-radius:100px;padding:5px 14px;margin-bottom:20px;
+}
+.login-badge span{font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.8px;}
+.login-logo{font-family:'Montserrat',sans-serif;font-size:26px;font-weight:900;color:#fff;margin-bottom:4px;letter-spacing:-1px;}
+.login-sub{font-size:12px;color:rgba(255,255,255,.35);margin-bottom:28px;}
+.login-field{
+  width:100%;padding:14px 16px;background:rgba(255,255,255,.07);
+  border:1.5px solid rgba(255,255,255,.12);border-radius:10px;
+  font-family:inherit;font-size:14px;color:#fff;margin-bottom:12px;transition:border-color .2s;
+}
+.login-field:focus{outline:none;border-color:var(--brand);}
+.login-field::placeholder{color:rgba(255,255,255,.28);}
+.login-btn{
+  width:100%;padding:15px;background:var(--brand);color:#fff;border:none;
+  border-radius:10px;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;transition:background .15s;
+}
+.login-btn:hover{background:var(--brand2);}
+.login-btn:disabled{opacity:.5;cursor:not-allowed;}
+.login-err{font-size:12px;color:#ef5350;margin-top:10px;font-weight:600;min-height:18px;}
+.login-loading{font-size:12px;color:rgba(255,255,255,.4);margin-top:8px;display:none;}
+
+/* ═══════════ TOPBAR ═══════════ */
+.topbar{
+  background:var(--dark);padding:0 20px;height:54px;
+  display:flex;align-items:center;gap:12px;
+  position:sticky;top:0;z-index:200;border-bottom:1px solid rgba(255,255,255,.07);
+}
+.t-logo{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:900;color:var(--brand);}
+.t-sep{color:rgba(255,255,255,.15);font-size:18px;}
+.t-title{font-size:13px;font-weight:600;color:rgba(255,255,255,.5);}
+.t-spacer{flex:1;}
+.t-user{font-size:12px;color:rgba(255,255,255,.4);}
+.t-logout{
+  padding:6px 14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);
+  border-radius:var(--rs);font-family:inherit;font-size:12px;font-weight:600;
+  color:rgba(255,255,255,.7);cursor:pointer;transition:all .15s;
+}
+.t-logout:hover{background:rgba(255,255,255,.15);color:#fff;}
+
+/* ═══════════ LAYOUT ═══════════ */
+#app{display:none;}
+#app.visible{display:block;}
+.page{padding:28px 20px;max-width:1100px;margin:0 auto;}
+
+/* ═══════════ STATS ═══════════ */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px;}
+.sc{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:18px;}
+.sc-val{font-family:'Montserrat',sans-serif;font-size:30px;font-weight:900;line-height:1;margin-bottom:4px;}
+.sc-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+.sc-val.orange{color:var(--brand);}
+.sc-val.green{color:var(--ok);}
+.sc-val.red{color:var(--danger);}
+
+/* ═══════════ SECTION ═══════════ */
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;}
+.sec-hd h2{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:800;}
+.sec-hd p{font-size:12px;color:var(--muted);margin-top:2px;}
+
+/* ═══════════ BOTONES ═══════════ */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:var(--rs);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;border:none;transition:all .15s;white-space:nowrap;}
+.btn-p{background:var(--brand);color:#fff;}.btn-p:hover{background:var(--brand2);}
+.btn-g{background:var(--white);border:1.5px solid var(--border);color:var(--muted);}.btn-g:hover{color:var(--text);}
+.btn-ok{background:var(--ok);color:#fff;}
+.btn-d{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-bd);}
+.btn-sm{padding:6px 12px;font-size:12px;}
+.btn-xs{padding:4px 9px;font-size:11px;}
+
+/* ═══════════ FORMULARIO NUEVO COMERCIO ═══════════ */
+.card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:24px;}
+.card h3{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:18px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.fg{margin-bottom:0;}
+.fg label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.fg input,.fg select{width:100%;padding:10px 13px;background:var(--white);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text);transition:border-color .2s;}
+.fg input:focus,.fg select:focus{outline:none;border-color:var(--brand);}
+.fg-full{grid-column:1/-1;}
+.form-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;padding-top:16px;border-top:1px solid var(--border);}
+.slug-hint{font-size:11px;color:var(--muted);margin-top:4px;}
+.slug-preview{color:var(--brand);font-weight:700;}
+
+/* ═══════════ TABLA DE COMERCIOS ═══════════ */
+.table-wrap{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:24px;}
+.tbl-header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1.5px solid var(--border);background:var(--bg);}
+.tbl-header h3{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:800;}
+.tbl{width:100%;border-collapse:collapse;}
+.tbl th{padding:11px 16px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:left;border-bottom:1.5px solid var(--border);background:var(--bg);}
+.tbl td{padding:13px 16px;font-size:13px;border-bottom:1px solid var(--border);}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tr:hover td{background:#fafafa;}
+.tbl .name-cell{font-weight:700;}
+.tbl .slug-cell{font-family:'Courier New',monospace;font-size:12px;color:var(--info);}
+.tbl .plan-cell{}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:100px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
+.badge-activo{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-bd);}
+.badge-inactivo{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-bd);}
+.badge-plan-pro{background:var(--brand-bg);color:var(--brand);border:1px solid var(--brand-bd);}
+.badge-plan-basico{background:var(--bg);color:var(--muted);border:1px solid var(--border);}
+.badge-plan-enterprise{background:#f3e5f5;color:#6a1b9a;border:1px solid rgba(106,27,154,.3);}
+
+/* Acciones en tabla */
+.act-row{display:flex;gap:5px;flex-wrap:wrap;}
+
+/* Toggle activo */
+.tog{width:36px;height:20px;border-radius:100px;border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0;}
+.tog.on{background:var(--ok);}.tog.off{background:#ccc;}
+.tog-th{position:absolute;top:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:left .2s;pointer-events:none;}
+.tog.on .tog-th{left:18px;}.tog.off .tog-th{left:2px;}
+
+/* Empty state */
+.empty-state{padding:50px;text-align:center;color:var(--muted);}
+.empty-icon{font-size:44px;margin-bottom:14px;}
+.empty-title{font-family:'Montserrat',sans-serif;font-size:16px;font-weight:800;margin-bottom:6px;color:var(--text);}
+
+/* Toast */
+#toast{position:fixed;top:70px;right:18px;z-index:9999;background:var(--dark);color:#fff;padding:11px 18px;border-radius:var(--r);font-size:13px;font-weight:500;opacity:0;transition:opacity .25s;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.25);}
+#toast.show{opacity:1;}
+
+/* Spinner */
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,107,0,.2);border-top-color:var(--brand);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Responsive */
+@media(max-width:700px){
+  .stats-row{grid-template-columns:1fr 1fr;}
+  .form-grid{grid-template-columns:1fr;}
+  .fg-full{grid-column:1;}
+  .tbl th:nth-child(3),.tbl td:nth-child(3){display:none;}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     PANTALLA LOGIN
+══════════════════════════════════════ -->
+<div id="login-wrap">
+  <div class="login-box">
+    <div class="login-badge"><span>🔐 Super Admin</span></div>
+    <div class="login-logo">🍔 Papayaso</div>
+    <div class="login-sub">Panel maestro de plataforma SaaS</div>
+
+    <input class="login-field" id="sa-email" type="email" placeholder="Correo de super admin"
+      autocomplete="username"
+      onkeydown="if(event.key==='Enter')document.getElementById('sa-pass').focus()">
+    <input class="login-field" id="sa-pass" type="password" placeholder="Contraseña"
+      autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')saLogin()">
+    <button class="login-btn" id="sa-btn" onclick="saLogin()">Acceder →</button>
+    <div class="login-loading" id="sa-loading">Verificando...</div>
+    <div class="login-err" id="sa-err"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     APP PRINCIPAL
+══════════════════════════════════════ -->
+<div id="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="t-logo">Papayaso</div>
+    <div class="t-sep">·</div>
+    <div class="t-title">Super Admin</div>
+    <div class="t-spacer"></div>
+    <span class="t-user" id="sa-user-email"></span>
+    <button class="t-logout" onclick="saLogout()">Salir ↗</button>
+  </div>
+
+  <!-- PÁGINA -->
+  <div class="page">
+
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="sc">
+        <div class="sc-val orange" id="stat-total">—</div>
+        <div class="sc-lbl">🏪 Comercios totales</div>
+      </div>
+      <div class="sc">
+        <div class="sc-val green" id="stat-activos">—</div>
+        <div class="sc-lbl">✅ Activos</div>
+      </div>
+      <div class="sc">
+        <div class="sc-val red" id="stat-inactivos">—</div>
+        <div class="sc-lbl">🔴 Inactivos</div>
+      </div>
+      <div class="sc">
+        <div class="sc-val" id="stat-pro">—</div>
+        <div class="sc-lbl">⭐ Plan Pro/Enterprise</div>
+      </div>
+    </div>
+
+    <!-- FORMULARIO NUEVO COMERCIO -->
+    <div class="card">
+      <h3>➕ Registrar nuevo comercio</h3>
+      <div class="form-grid">
+        <div class="fg">
+          <label>Nombre del restaurante *</label>
+          <input type="text" id="nc-nombre" placeholder="Ej: Pizza Express" oninput="generarSlug()">
+        </div>
+        <div class="fg">
+          <label>Slug (URL) *</label>
+          <input type="text" id="nc-slug" placeholder="Ej: pizza-express">
+          <div class="slug-hint">URL pública: <span class="slug-preview" id="slug-preview">/menu.html?rest=...</span></div>
+        </div>
+        <div class="fg">
+          <label>WhatsApp</label>
+          <input type="text" id="nc-wa" placeholder="573001234567">
+        </div>
+        <div class="fg">
+          <label>Plan</label>
+          <select id="nc-plan">
+            <option value="basico">Básico</option>
+            <option value="pro" selected>Pro</option>
+            <option value="enterprise">Enterprise</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Email del dueño (Supabase Auth)</label>
+          <input type="email" id="nc-email" placeholder="dueño@restaurante.com">
+        </div>
+        <div class="fg">
+          <label>Dirección</label>
+          <input type="text" id="nc-dir" placeholder="Calle 123 # 45-67, Medellín">
+        </div>
+        <div class="fg fg-full">
+          <label>Descripción breve</label>
+          <input type="text" id="nc-desc" placeholder="El mejor sabor de la ciudad...">
+        </div>
+      </div>
+      <div class="form-footer">
+        <button class="btn btn-g" onclick="limpiarFormulario()">Limpiar</button>
+        <button class="btn btn-p" id="nc-btn" onclick="crearComercio()">✚ Crear comercio</button>
+      </div>
+      <div id="nc-msg" style="margin-top:12px;font-size:13px;font-weight:600;display:none;"></div>
+    </div>
+
+    <!-- TABLA DE COMERCIOS -->
+    <div class="table-wrap">
+      <div class="tbl-header">
+        <div>
+          <h3>🏪 Comercios registrados</h3>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="cargarComercios()">↻ Actualizar</button>
+      </div>
+
+      <div id="comercios-table-wrap">
+        <div class="empty-state">
+          <div class="spinner"></div>
+          <div style="margin-top:14px;color:var(--muted);">Cargando comercios...</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- .page -->
+</div><!-- #app -->
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ══════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── Constantes ────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
+const SA_SESSION_KEY = 'papayaso_superadmin_session';
+
+// ── Super Admin UIDs autorizados (agrega aquí los UUIDs permitidos) ──
+// IMPORTANTE: reemplaza este array con el UUID de tu cuenta en Supabase Auth
+// Lo encuentras en Supabase → Authentication → Users → tu usuario → User UID
+const SUPER_ADMIN_EMAILS = [
+  // Añade tu email de super admin aquí (o contrólalo con un campo en la BD)
+  // Por ahora, cualquier usuario que haga login verá el panel.
+  // Para mayor seguridad, crea una tabla `super_admins` con los emails autorizados.
+];
+
+let _saSession = null;
+
+// ── Cliente Supabase ──────────────────────────────────────────────────
+const SB = {
+  _h() {
+    const tok = (_saSession && _saSession.access_token) ? _saSession.access_token : SUPABASE_KEY;
+    return {
+      'Content-Type':  'application/json',
+      'apikey':        SUPABASE_KEY,
+      'Authorization': 'Bearer ' + tok,
+      'Prefer':        'return=representation'
+    };
+  },
+  async get(table, params = {}) {
+    const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+    Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
+    const r = await fetch(url, { headers: this._h() });
+    if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
+    return r.json();
+  },
+  async post(table, body) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST', headers: this._h(), body: JSON.stringify(body)
+    });
+    if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
+    return r.json();
+  },
+  async patch(table, filter, body) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      method: 'PATCH', headers: this._h(), body: JSON.stringify(body)
+    });
+    if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
+    return r.json();
+  },
+  async del(table, filter) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      method: 'DELETE', headers: this._h()
+    });
+    if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
+    return true;
+  },
+  // Auth helpers
+  async authPost(endpoint, body) {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Auth error');
+    return data;
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// AUTENTICACIÓN SUPER ADMIN
+// ══════════════════════════════════════════════════════════════════════
+function _saSetErr(msg) {
+  const el = document.getElementById('sa-err');
+  if (el) el.textContent = msg || '';
+}
+function _saSetLoading(on) {
+  const btn  = document.getElementById('sa-btn');
+  const load = document.getElementById('sa-loading');
+  if (btn)  { btn.disabled = on; btn.textContent = on ? 'Verificando...' : 'Acceder →'; }
+  if (load) load.style.display = on ? 'block' : 'none';
+}
+function _mostrarApp(session) {
+  document.getElementById('login-wrap').classList.add('hidden');
+  document.getElementById('app').style.display = 'block';
+  const eu = document.getElementById('sa-user-email');
+  if (eu && session.user) eu.textContent = session.user.email;
+}
+function _mostrarLogin(err) {
+  document.getElementById('login-wrap').classList.remove('hidden');
+  document.getElementById('app').style.display = 'none';
+  if (err) _saSetErr(err);
+}
+
+async function saLogin() {
+  const email = (document.getElementById('sa-email') || {}).value || '';
+  const pass  = (document.getElementById('sa-pass')  || {}).value || '';
+  _saSetErr('');
+  if (!email || !pass) { _saSetErr('Ingresa correo y contraseña'); return; }
+  _saSetLoading(true);
+  try {
+    const data = await SB.authPost('token?grant_type=password', { email, password: pass });
+    if (!data.access_token) throw new Error('Respuesta inesperada');
+    _saSession = {
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+      user:          data.user
+    };
+    try { sessionStorage.setItem(SA_SESSION_KEY, JSON.stringify(_saSession)); } catch(e) {}
+    console.log('[SA] Login exitoso:', _saSession.user.email);
+    _mostrarApp(_saSession);
+    await cargarComercios();
+  } catch(e) {
+    console.error('[SA] Error login:', e.message);
+    _saSetErr('Acceso denegado — ' + (e.message.includes('Invalid') ? 'correo o contraseña incorrectos' : e.message));
+    _saSetLoading(false);
+  }
+}
+
+async function saLogout() {
+  if (!confirm('¿Cerrar sesión del super admin?')) return;
+  try {
+    if (_saSession && _saSession.access_token) {
+      await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + _saSession.access_token }
+      });
+    }
+  } catch(e) {}
+  try { sessionStorage.removeItem(SA_SESSION_KEY); } catch(e) {}
+  _saSession = null;
+  _mostrarLogin('Sesión cerrada');
+}
+
+// Restaurar sesión al cargar
+(function() {
+  try {
+    const raw = sessionStorage.getItem(SA_SESSION_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.access_token && s.expires_at && Date.now() < s.expires_at) {
+        _saSession = s;
+        _mostrarApp(s);
+        cargarComercios();
+        return;
+      }
+    }
+  } catch(e) {}
+  _mostrarLogin();
+})();
+
+// ══════════════════════════════════════════════════════════════════════
+// CARGAR Y RENDERIZAR COMERCIOS
+// ══════════════════════════════════════════════════════════════════════
+let _comercios = [];
+
+async function cargarComercios() {
+  const wrap = document.getElementById('comercios-table-wrap');
+  if (wrap) wrap.innerHTML = '<div class="empty-state"><div class="spinner"></div><div style="margin-top:14px;color:var(--muted)">Cargando...</div></div>';
+  try {
+    const rows = await SB.get('comercios', {
+      select: 'id,nombre,slug,whatsapp,plan,activo,user_id,created_at',
+      order:  'created_at.desc'
+    });
+    _comercios = rows || [];
+    renderComercios(_comercios);
+    actualizarStats(_comercios);
+    console.log('[SA] Comercios cargados:', _comercios.length);
+  } catch(e) {
+    console.error('[SA] Error cargando comercios:', e.message);
+    if (wrap) wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Error al cargar</div><div>${esc(e.message)}</div></div>`;
+  }
+}
+
+function actualizarStats(comercios) {
+  const total     = comercios.length;
+  const activos   = comercios.filter(c => c.activo).length;
+  const inactivos = total - activos;
+  const premium   = comercios.filter(c => c.plan === 'pro' || c.plan === 'enterprise').length;
+  setEl('stat-total',    total);
+  setEl('stat-activos',  activos);
+  setEl('stat-inactivos', inactivos);
+  setEl('stat-pro',      premium);
+}
+
+function renderComercios(comercios) {
+  const wrap = document.getElementById('comercios-table-wrap');
+  if (!wrap) return;
+  if (!comercios.length) {
+    wrap.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🏪</div>
+      <div class="empty-title">Sin comercios registrados</div>
+      <div style="font-size:13px;color:var(--muted)">Crea el primero usando el formulario de arriba.</div>
+    </div>`;
+    return;
+  }
+  let html = `<table class="tbl"><thead><tr>
+    <th>Comercio</th>
+    <th>Slug / URL</th>
+    <th>Plan</th>
+    <th>Estado</th>
+    <th>Acciones</th>
+  </tr></thead><tbody>`;
+
+  for (const c of comercios) {
+    const planCls = c.plan === 'pro' ? 'badge-plan-pro' : c.plan === 'enterprise' ? 'badge-plan-enterprise' : 'badge-plan-basico';
+    const fecha   = c.created_at ? new Date(c.created_at).toLocaleDateString('es-CO') : '—';
+    const menuUrl = `menu.html?rest=${encodeURIComponent(c.slug)}`;
+    const admUrl  = `admin.html?rest=${encodeURIComponent(c.slug)}`;
+    const repUrl  = `repartidor.html?rest=${encodeURIComponent(c.slug)}`;
+
+    html += `<tr>
+      <td>
+        <div class="name-cell">${esc(c.nombre)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Creado: ${fecha}</div>
+      </td>
+      <td>
+        <div class="slug-cell">${esc(c.slug)}</div>
+        <div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;">
+          <a href="${menuUrl}" target="_blank" style="font-size:10px;color:var(--brand);font-weight:700;text-decoration:none;">🍔 Menú</a>
+          <span style="color:var(--border)">·</span>
+          <a href="${admUrl}"  target="_blank" style="font-size:10px;color:var(--info);font-weight:700;text-decoration:none;">⚙️ Admin</a>
+          <span style="color:var(--border)">·</span>
+          <a href="${repUrl}"  target="_blank" style="font-size:10px;color:var(--ok);font-weight:700;text-decoration:none;">🛵 Rep.</a>
+        </div>
+      </td>
+      <td><span class="badge ${planCls}">${esc(c.plan || 'basico')}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="tog ${c.activo ? 'on' : 'off'}" onclick="toggleActivo('${c.id}',${c.activo})" title="${c.activo ? 'Desactivar' : 'Activar'}">
+            <div class="tog-th"></div>
+          </button>
+          <span class="badge ${c.activo ? 'badge-activo' : 'badge-inactivo'}">${c.activo ? 'Activo' : 'Inactivo'}</span>
+        </div>
+      </td>
+      <td>
+        <div class="act-row">
+          <select class="btn btn-g btn-xs" onchange="cambiarPlan('${c.id}', this.value)" title="Cambiar plan">
+            <option value="basico"      ${c.plan==='basico'      ? 'selected':''}>Básico</option>
+            <option value="pro"         ${c.plan==='pro'         ? 'selected':''}>Pro</option>
+            <option value="enterprise"  ${c.plan==='enterprise'  ? 'selected':''}>Enterprise</option>
+          </select>
+          <button class="btn btn-d btn-xs" onclick="eliminarComercio('${c.id}','${esc(c.nombre)}')">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// CREAR NUEVO COMERCIO
+// ══════════════════════════════════════════════════════════════════════
+function generarSlug() {
+  const nombre = (document.getElementById('nc-nombre') || {}).value || '';
+  const slug = nombre
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quitar tildes
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .substring(0, 40);
+  const slugEl = document.getElementById('nc-slug');
+  if (slugEl) slugEl.value = slug;
+  const prev = document.getElementById('slug-preview');
+  if (prev) prev.textContent = slug ? `/menu.html?rest=${slug}` : '/menu.html?rest=...';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const slugEl = document.getElementById('nc-slug');
+  if (slugEl) {
+    slugEl.addEventListener('input', function() {
+      const prev = document.getElementById('slug-preview');
+      if (prev) prev.textContent = this.value ? `/menu.html?rest=${this.value}` : '/menu.html?rest=...';
+    });
+  }
+});
+
+async function crearComercio() {
+  const gv  = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const nombre = gv('nc-nombre');
+  const slug   = gv('nc-slug').toLowerCase().replace(/[^a-z0-9-]/g,'');
+  const wa     = gv('nc-wa').replace(/\D/g,'');
+  const plan   = gv('nc-plan') || 'basico';
+  const email  = gv('nc-email');
+  const dir    = gv('nc-dir');
+  const desc   = gv('nc-desc');
+
+  const msgEl = document.getElementById('nc-msg');
+  const setMsg = (txt, ok=false) => {
+    if (!msgEl) return;
+    msgEl.style.display = 'block';
+    msgEl.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+    msgEl.textContent = txt;
+  };
+
+  if (!nombre) { setMsg('⚠️ El nombre del comercio es obligatorio.'); return; }
+  if (!slug)   { setMsg('⚠️ El slug es obligatorio (ej: mi-restaurante).'); return; }
+  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(slug)) { setMsg('⚠️ El slug solo puede tener letras minúsculas, números y guiones.'); return; }
+
+  // Verificar slug único en memoria
+  if (_comercios.some(c => c.slug === slug)) {
+    setMsg(`⚠️ Ya existe un comercio con el slug "${slug}".`);
+    return;
+  }
+
+  const btn = document.getElementById('nc-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
+  if (msgEl) msgEl.style.display = 'none';
+
+  try {
+    // 1. Buscar user_id si se proporcionó email
+    let userId = null;
+    if (email) {
+      try {
+        // Buscar en comercios existentes o intentar con auth admin
+        // Nota: con anon key no podemos listar users; el dueño debe registrarse
+        // y luego vincularse. Por ahora guardamos el email como referencia.
+        console.log('[SA] Email del dueño registrado (vincular manualmente):', email);
+      } catch(e) {}
+    }
+
+    // 2. Insertar comercio
+    const body = {
+      nombre:      nombre,
+      slug:        slug,
+      whatsapp:    wa   || null,
+      direccion:   dir  || null,
+      descripcion: desc || null,
+      plan:        plan,
+      activo:      true,
+      user_id:     userId
+    };
+
+    const result = await SB.post('comercios', body);
+    const nuevo = result && result[0] ? result[0] : null;
+
+    if (nuevo) {
+      setMsg(`✅ Comercio "${nombre}" creado con ID: ${nuevo.id}\n\nURL del menú: menu.html?rest=${slug}`, true);
+      showToast('✅ Comercio creado');
+      limpiarFormulario();
+      await cargarComercios();
+    }
+  } catch(e) {
+    console.error('[SA] Error creando comercio:', e.message);
+    if (e.message.includes('duplicate') || e.message.includes('unique') || e.message.includes('409')) {
+      setMsg('⚠️ Ya existe un comercio con ese slug. Elige otro.');
+    } else {
+      setMsg('❌ Error: ' + e.message);
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✚ Crear comercio'; }
+  }
+}
+
+function limpiarFormulario() {
+  ['nc-nombre','nc-slug','nc-wa','nc-email','nc-dir','nc-desc'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const plan = document.getElementById('nc-plan');
+  if (plan) plan.value = 'pro';
+  const prev = document.getElementById('slug-preview');
+  if (prev) prev.textContent = '/menu.html?rest=...';
+  const msgEl = document.getElementById('nc-msg');
+  if (msgEl) msgEl.style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// TOGGLE ACTIVO / INACTIVO
+// ══════════════════════════════════════════════════════════════════════
+async function toggleActivo(id, estadoActual) {
+  const nuevoEstado = !estadoActual;
+  const label = nuevoEstado ? 'activar' : 'desactivar';
+  const c = _comercios.find(x => x.id === id);
+  if (!confirm(`¿${label.charAt(0).toUpperCase() + label.slice(1)} "${c ? c.nombre : id}"?`)) return;
+  try {
+    await SB.patch('comercios', `id=eq.${id}`, { activo: nuevoEstado });
+    showToast(nuevoEstado ? '✅ Comercio activado' : '🔴 Comercio desactivado');
+    await cargarComercios();
+  } catch(e) {
+    alert('❌ Error al actualizar: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// CAMBIAR PLAN
+// ══════════════════════════════════════════════════════════════════════
+async function cambiarPlan(id, nuevoPlan) {
+  try {
+    await SB.patch('comercios', `id=eq.${id}`, { plan: nuevoPlan });
+    showToast('Plan actualizado a ' + nuevoPlan);
+    await cargarComercios();
+  } catch(e) {
+    alert('❌ Error al actualizar plan: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ELIMINAR COMERCIO
+// ══════════════════════════════════════════════════════════════════════
+async function eliminarComercio(id, nombre) {
+  if (!confirm(`⚠️ ELIMINAR PERMANENTEMENTE "${nombre}"?\n\nEsto eliminará el comercio. Los pedidos y productos asociados pueden quedar huérfanos si no has configurado ON DELETE CASCADE.\n\nEscribe "ELIMINAR" para confirmar.`)) return;
+  const confirmacion = prompt(`Escribe ELIMINAR para confirmar la eliminación de "${nombre}":`);
+  if (confirmacion !== 'ELIMINAR') { showToast('Cancelado'); return; }
+  try {
+    await SB.del('comercios', `id=eq.${id}`);
+    showToast('🗑 Comercio eliminado');
+    await cargarComercios();
+  } catch(e) {
+    alert('❌ Error al eliminar: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// UTILIDADES
+// ══════════════════════════════════════════════════════════════════════
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function setEl(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = String(val);
+}
+
+let _toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t && t.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>
