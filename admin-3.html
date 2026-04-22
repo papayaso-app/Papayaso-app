@@ -35,6 +35,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .topbar-btn{padding:6px 12px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:var(--rs);font-family:inherit;font-size:12px;font-weight:600;color:rgba(255,255,255,.8);cursor:pointer;}
 .topbar-btn:hover{background:rgba(255,255,255,.22);color:#fff;}
 
+/* Botones de período rápido — ventas globales */
+.global-period-btn { background:var(--bg); border:1.5px solid var(--border); color:var(--text); font-weight:600; }
+.global-period-btn:hover { border-color:var(--green); color:var(--green); }
+.global-period-btn.active { background:var(--green); border-color:var(--green); color:#fff; }
+
 /* MENÚ VERTICAL (solo Configuración y Ventas globales) */
 .vmenu-wrap{position:relative;}
 .vmenu-btn{width:36px;height:36px;border-radius:var(--rs);border:none;background:rgba(255,255,255,.1);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0;flex-shrink:0;}
@@ -936,7 +941,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <button class="btn btn-g btn-sm" onclick="printGlobalDaySummary()">🖨 Imprimir resumen</button>
     </div>
   </div>
-  <div class="date-frow" style="margin-bottom:16px">
+  <!-- Botones de período rápido -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    <button class="btn btn-sm global-period-btn active" id="gp-hoy"     onclick="setGlobalPeriod('hoy')">📅 Hoy</button>
+    <button class="btn btn-sm global-period-btn"        id="gp-semana"  onclick="setGlobalPeriod('semana')">📆 Esta semana</button>
+    <button class="btn btn-sm global-period-btn"        id="gp-mes"     onclick="setGlobalPeriod('mes')">🗓 Este mes</button>
+    <button class="btn btn-sm global-period-btn"        id="gp-personalizado" onclick="setGlobalPeriod('personalizado')">🔍 Personalizado</button>
+  </div>
+  <div class="date-frow" id="global-custom-row" style="margin-bottom:16px;display:none">
     <div class="fg"><label>Desde</label><input type="date" id="date-from-global"></div>
     <div class="fg"><label>Hasta</label><input type="date" id="date-to-global"></div>
     <div class="fg" style="min-width:130px">
@@ -950,6 +962,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div style="display:flex;align-items:flex-end;padding-bottom:14px">
       <button class="btn btn-p" onclick="renderSalesByDate('global')">Buscar</button>
     </div>
+  </div>
+  <!-- Fila de canal visible siempre (fuera del bloque personalizado) -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <label style="font-size:12px;color:var(--muted);font-weight:600">Canal:</label>
+    <select class="fsel" id="hist-canal-quick" style="width:160px" onchange="document.getElementById('hist-canal').value=this.value;renderSalesByDate('global')">
+      <option value="all">Todos</option>
+      <option value="domicilio">🛵 Domicilios</option>
+      <option value="pos">🏪 POS Caja</option>
+    </select>
   </div>
   <div class="stats-row" id="sales-global-stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px"></div>
   <div id="global-pago-breakdown" style="margin-bottom:14px"></div>
@@ -1500,7 +1521,9 @@ function loadPanel(p) {
     return;
   }
   if (p === 'ventas-global')  {
-    sbCargarHistorialCompleto().then(function() { initDateFilter('global'); });
+    sbCargarHistorialCompleto().then(function() {
+      setGlobalPeriod('hoy');  // abrir siempre en "Hoy" por defecto
+    });
     return;
   }
   if (p === 'estadisticas')   {
@@ -1897,6 +1920,56 @@ function initDateFilter(mode) {
   if(df&&!df.value) df.value=weekAgo;
   if(dt&&!dt.value) dt.value=today;
   renderSalesByDate(mode);
+}
+
+// Botones de período rápido para ventas globales
+function setGlobalPeriod(period) {
+  // Marcar botón activo
+  var btns = document.querySelectorAll('.global-period-btn');
+  for (var i=0;i<btns.length;i++) btns[i].classList.remove('active');
+  var activeBtn = document.getElementById('gp-' + period);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  var now   = new Date();
+  var today = localDateStr();
+  var from, to;
+
+  // Mostrar / ocultar fila de fechas personalizado
+  var customRow = document.getElementById('global-custom-row');
+
+  if (period === 'personalizado') {
+    if (customRow) customRow.style.display = 'flex';
+    return; // el usuario elige las fechas manualmente y presiona "Buscar"
+  }
+
+  if (customRow) customRow.style.display = 'none';
+
+  if (period === 'hoy') {
+    from = today;
+    to   = today;
+  } else if (period === 'semana') {
+    // Lunes de la semana actual
+    var dow   = now.getDay() || 7;           // 1=lun … 7=dom
+    var lunes = new Date(now);
+    lunes.setDate(now.getDate() - (dow - 1));
+    from = localDateStr(lunes);
+    to   = today;
+  } else if (period === 'mes') {
+    var primeroDeMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    from = localDateStr(primeroDeMes);
+    to   = today;
+  }
+
+  // Inyectar en los inputs ocultos y sincronizar el select de canal
+  var df = document.getElementById('date-from-global');
+  var dt = document.getElementById('date-to-global');
+  var cq = document.getElementById('hist-canal-quick');
+  var ch = document.getElementById('hist-canal');
+  if (df) df.value = from;
+  if (dt) dt.value = to;
+  if (cq && ch) ch.value = cq.value; // sincronizar canal
+
+  renderSalesByDate('global');
 }
 
 function renderSalesByDate(mode) {
