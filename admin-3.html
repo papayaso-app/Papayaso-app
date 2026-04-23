@@ -1384,8 +1384,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 var _STORE = null;
 
 // ══════════════════════════════════════════════════════════════════════
-// IDENTIDAD DEL COMERCIO — visibles en ambos bloques <script>
-// Se asignan ANTES de sbInit(). Si son null → sbInit aborta todo.
+// IDENTIDAD DEL COMERCIO ACTIVO
+// Declaradas aquí (primer script) → visibles en ambos bloques <script>.
+// Se asignan en _resolverComercioDesdeURL() antes de cualquier carga.
+// Mientras sean null, sbInit y todas las funciones de carga abortan.
 // ══════════════════════════════════════════════════════════════════════
 window._ADMIN_COMERCIO_ID     = null;
 window._ADMIN_COMERCIO_SLUG   = null;
@@ -3139,57 +3141,32 @@ function posCheckout(payMethod) {
 // SUPABASE POS — carga desde pos_productos y pos_categorias
 // ══════════════════════════════════════════════════════════════
 async function sbPosLoadProductos() {
-  // Punto 1 & 2: bloqueo total si no hay ID — no se hace ninguna query
-  if (!window._ADMIN_COMERCIO_ID) {
-    console.error('[SB-POS] sbPosLoadProductos: _ADMIN_COMERCIO_ID es null — BLOQUEADO');
-    _mostrarMensajeComercioNull('productos POS');
-    return;
-  }
-  // Punto 4: diagnóstico al inicio de cada carga
-  console.log('[ID-CHECK] Slug detectado:', window._ADMIN_COMERCIO_SLUG,
-    '| ID asignado:', window._ADMIN_COMERCIO_ID);
-
   try {
-    // Punto 2: tabla pos_productos + filtro obligatorio por comercio_id
     var prods = await SB.get('pos_productos', {
-      select: '*',
-      order: 'categoria.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      select: '*', order: 'categoria.asc,nombre.asc'
     });
-
-    var mapped = (prods || []).map(function(p) {
-      return {
-        id:        p.id,
-        sb_id:     p.id,
-        name:      p.nombre      || '',
-        cat:       p.categoria   || '',
-        price:     parseInt(p.precio) || 0,
-        desc:      p.descripcion || '',
-        photo:     p.imagen_url  || '',
-        emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
-        available: p.disponible !== false
-      };
+    updPos(function(s) {
+      s.products = (prods || []).map(function(p) {
+        return {
+          id:        p.id,
+          sb_id:     p.id,
+          name:      p.nombre      || '',
+          cat:       p.categoria   || '',
+          price:     parseInt(p.precio) || 0,
+          desc:      p.descripcion || '',
+          photo:     p.imagen_url  || '',
+          emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
+          available: p.disponible !== false
+        };
+      });
     });
-
-    updPos(function(s) { s.products = mapped; });
-
-    // Punto 3: sessionStorage con slug como prefijo para aislar pestañas
-    try {
-      sessionStorage.setItem(
-        'pos_items_' + window._ADMIN_COMERCIO_SLUG,
-        JSON.stringify(mapped)
-      );
-    } catch(e2) { /* quota — ignorar */ }
-
     if (typeof renderPosEditor === 'function') renderPosEditor();
     if (typeof renderPosCats   === 'function') renderPosCats();
     if (typeof renderPosGrid   === 'function') renderPosGrid('all');
-    console.log('[SB-POS] ✅ pos_productos cargados:', mapped.length,
-      '| comercio:', window._ADMIN_COMERCIO_SLUG);
-
+    console.log('[SB-POS] Productos cargados:', (prods||[]).length);
   } catch(e) {
     console.error('[SB-POS] Error cargando pos_productos:', e.message);
-    _manejarError401(e);
+    // Si la tabla no existe aún, aviso claro
     if (e.message.indexOf('42P01') >= 0 || e.message.indexOf('does not exist') >= 0) {
       console.warn('[SB-POS] La tabla pos_productos no existe. Créala con el SQL del README.');
     }
@@ -3197,35 +3174,16 @@ async function sbPosLoadProductos() {
 }
 
 async function sbPosLoadCategorias() {
-  if (!window._ADMIN_COMERCIO_ID) {
-    console.error('[SB-POS] sbPosLoadCategorias: _ADMIN_COMERCIO_ID es null — BLOQUEADO');
-    _mostrarMensajeComercioNull('categorías POS');
-    return;
-  }
-  console.log('[ID-CHECK] Slug detectado:', window._ADMIN_COMERCIO_SLUG,
-    '| ID asignado:', window._ADMIN_COMERCIO_ID);
-
   try {
-    // Tabla pos_categorias + filtro obligatorio
     var cats = await SB.get('pos_categorias', {
-      select: 'id,nombre,orden',
-      order: 'orden.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc'
     });
-
     updPos(function(s) {
       s.categories = (cats || []).map(function(c) { return c.nombre; });
       s._cats_raw  = cats || [];
     });
-
-    try {
-      sessionStorage.setItem(
-        'pos_cats_' + window._ADMIN_COMERCIO_SLUG,
-        JSON.stringify(cats || [])
-      );
-    } catch(e2) { /* ignorar */ }
-
     if (typeof renderPosCatsList === 'function') renderPosCatsList();
+    // Rellenar el select del modal de producto POS
     var sel = document.getElementById('pos-ped-cat');
     if (sel) {
       var s = getPosStore();
@@ -3233,12 +3191,9 @@ async function sbPosLoadCategorias() {
         return '<option value="' + c + '">' + c + '</option>';
       }).join('');
     }
-    console.log('[SB-POS] ✅ pos_categorias cargadas:', (cats||[]).length,
-      '| comercio:', window._ADMIN_COMERCIO_SLUG);
-
+    console.log('[SB-POS] Categorías cargadas:', (cats||[]).length);
   } catch(e) {
     console.error('[SB-POS] Error cargando pos_categorias:', e.message);
-    _manejarError401(e);
     if (e.message.indexOf('42P01') >= 0 || e.message.indexOf('does not exist') >= 0) {
       console.warn('[SB-POS] La tabla pos_categorias no existe. Créala con el SQL del README.');
     }
@@ -3247,19 +3202,11 @@ async function sbPosLoadCategorias() {
 
 // Arranque POS — se llama desde sbInit general
 async function sbPosInit() {
-  if (!window._ADMIN_COMERCIO_ID) {
-    console.error('[SB-POS] sbPosInit: _ADMIN_COMERCIO_ID es null — abortando POS');
-    _mostrarMensajeComercioNull('POS');
-    return;
-  }
-  // Punto 4: primer log de diagnóstico del POS
-  console.log('[ID-CHECK] Slug detectado:', window._ADMIN_COMERCIO_SLUG,
-    '| ID asignado:', window._ADMIN_COMERCIO_ID);
   await sbPosLoadCategorias();
   await sbPosLoadProductos();
+  // Cargar ventas del día para que estén disponibles al abrir la pestaña
   await sbPosLoadVentas();
-  console.log('[SB-POS] ✅ POS listo — comercio:', window._ADMIN_COMERCIO_NOMBRE,
-    '| productos:', (getPosStore().products || []).length);
+  console.log('[SB-POS] ✅ POS listo desde Supabase');
 }
 // Fuente de verdad: tabla pedidos donde origen = 'pos'
 // Filtro de fecha: hoy por defecto, pero acepta rango opcional
@@ -3276,17 +3223,13 @@ async function sbPosLoadVentas(fechaDesde, fechaHasta) {
 
     // PostgREST no admite el mismo param dos veces con Object.entries/set.
     // Usamos el filtro 'and' en un solo parámetro para el rango de fechas.
-    var _vP = {
+    var rows = await SB.get('pedidos', {
       select: '*',
       'origen': 'eq.pos',
-      'and': '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
-      order: 'created_at.desc',
-      limit: 500
-    };
-    if (window._ADMIN_COMERCIO_ID) {
-      _vP['comercio_id'] = 'eq.' + window._ADMIN_COMERCIO_ID;
-    }
-    var rows = await SB.get('pedidos', _vP);
+      'and':    '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
+      order:    'created_at.desc',
+      limit:    500
+    });
 
     // Normalizar al formato que usa renderPosSales
     var sales = (rows || []).map(function(p) {
@@ -5424,59 +5367,70 @@ Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 // CONFIGURACIÓN
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadConfig() {
+  // Fuente única: tabla 'comercios'. La tabla 'configuracion' ya no existe.
+  if (!window._ADMIN_COMERCIO_ID) {
+    console.error('[SB] sbLoadConfig: _ADMIN_COMERCIO_ID null — abortando');
+    return;
+  }
   try {
-    const rows = await SB.get('configuracion', {
-      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,nit,telefono_local,url_logo,url_portada,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto,horario_semanal',
-      'id': 'eq.1',
+    const rows = await SB.get('comercios', {
+      select: [
+        'nombre','nombre_negocio','whatsapp','telefono_local',
+        'direccion','descripcion','nit','mensaje_bienvenida',
+        'url_menu','url_repartidor','pin_repartidor',
+        'tiempo_entrega_min','tiempo_entrega_max',
+        'esta_abierto','horario_semanal',
+        'logo_url','cover_url'
+      ].join(','),
+      'id': 'eq.' + window._ADMIN_COMERCIO_ID,
       limit: 1
     });
-    if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
+    if (!rows || !rows.length) {
+      console.warn('[SB] Sin datos en comercios para id:', window._ADMIN_COMERCIO_ID);
+      return;
+    }
     const c = rows[0];
+    if (c.nombre) window._ADMIN_COMERCIO_NOMBRE = c.nombre;
 
     upd(function(s) {
-      s.config.name       = c.nombre_negocio   || s.config.name;
-      s.config.whatsapp   = c.telefono_whatsapp || s.config.whatsapp;
-      s.config.address    = c.direccion         || s.config.address  || '';
-      s.config.desc       = c.descripcion       || s.config.desc     || '';
-      s.config.nit        = c.nit               || s.config.nit      || '';
-      s.config.phone      = c.telefono_local    || s.config.phone    || '';
-      s.config.welcome    = c.mensaje_bienvenida|| s.config.welcome  || '';
-      s.config.menuUrl    = c.url_menu          || s.config.menuUrl  || 'menu.html';
-      s.config.riderUrl   = c.url_repartidor    || s.config.riderUrl || 'repartidor.html';
-      s.config.riderPin   = c.pin_repartidor    || s.config.riderPin || '1234';
+      // Nombre: comercios.nombre es la fuente principal
+      s.config.name       = c.nombre            || c.nombre_negocio || s.config.name;
+      // Whatsapp: comercios.whatsapp (no telefono_whatsapp de la vieja tabla)
+      s.config.whatsapp   = c.whatsapp           || s.config.whatsapp   || '';
+      s.config.address    = c.direccion          || s.config.address    || '';
+      s.config.desc       = c.descripcion        || s.config.desc       || '';
+      s.config.nit        = c.nit                || s.config.nit        || '';
+      s.config.phone      = c.telefono_local      || s.config.phone      || '';
+      s.config.welcome    = c.mensaje_bienvenida  || s.config.welcome    || '';
+      s.config.menuUrl    = c.url_menu             || s.config.menuUrl    || 'menu.html';
+      s.config.riderUrl   = c.url_repartidor       || s.config.riderUrl   || 'repartidor.html';
+      s.config.riderPin   = c.pin_repartidor        || s.config.riderPin   || '1234';
       s.config.deliveryMin= String(c.tiempo_entrega_min || s.config.deliveryMin || 30);
       s.config.deliveryMax= String(c.tiempo_entrega_max || s.config.deliveryMax || 60);
       s.config.isOpen     = c.esta_abierto !== false;
-
-      // Imágenes: solo sobreescribir si Supabase devuelve URL no vacía.
-      // Si la columna está vacía (''), mantener lo que ya había en memoria.
-      if (c.url_logo   && c.url_logo.trim())    s.config.logo  = c.url_logo.trim();
-      if (c.url_portada && c.url_portada.trim()) s.config.cover = c.url_portada.trim();
-
-      // Cargar horario semanal para que renderScheduleEditor lo muestre correctamente
-      if (c.horario_semanal && typeof c.horario_semanal === 'object') {
+      // Imágenes: columnas logo_url y cover_url (no url_logo / url_portada)
+      if (c.logo_url  && c.logo_url.trim())
+        s.config.logo  = c.logo_url.trim()  + (c.logo_url.includes('?v=')  ? '' : '?v=' + Date.now());
+      if (c.cover_url && c.cover_url.trim())
+        s.config.cover = c.cover_url.trim() + (c.cover_url.includes('?v=') ? '' : '?v=' + Date.now());
+      if (c.horario_semanal && typeof c.horario_semanal === 'object')
         s.config.schedule = c.horario_semanal;
-      }
     });
 
-    // ── Actualizar topbar ────────────────────────────────────────────────
     const cfg = getStore().config;
-    const tn = document.getElementById('t-name'); if (tn) tn.textContent = cfg.name;
-    document.title = 'Admin - ' + cfg.name;
+    const nombre = window._ADMIN_COMERCIO_NOMBRE || cfg.name || 'Admin';
+    const tn = document.getElementById('t-name'); if (tn) tn.textContent = nombre;
+    document.title = 'Admin — ' + nombre;
     const tog = document.getElementById('open-tog');
     if (tog) tog.className = 'tog ' + (cfg.isOpen ? 'on' : 'off');
     const lbl = document.getElementById('open-lbl');
     if (lbl) lbl.textContent = cfg.isOpen ? 'Abierto' : 'Cerrado';
-
-    // ── Aplicar logo al panel de Configuración si ya está visible ────────
-    // _updateLogoUI y _updateCoverUI son las funciones que actualizan el
-    // área de previsualización del admin. Solo actúan si hay URL.
     if (cfg.logo  && typeof _updateLogoUI  === 'function') _updateLogoUI(cfg.logo);
     if (cfg.cover && typeof _updateCoverUI === 'function') _updateCoverUI(cfg.cover);
-
-    console.log('[SB] Config cargada — logo:', cfg.logo || '(sin url)', '| portada:', cfg.cover || '(sin url)');
+    console.log('[SB] comercios cargado — nombre:', nombre,
+      '| logo_url:', c.logo_url || '(vacío)', '| isOpen:', cfg.isOpen);
   } catch(e) {
-    console.error('[SB] Error cargando configuración:', e.message);
+    console.error('[SB] Error en sbLoadConfig:', e.message);
   }
 }
 
@@ -5496,70 +5450,76 @@ async function sbSaveConfig() {
     };
   });
 
-  const body = {
-    nombre_negocio:     gv('cfg-name')         || 'Papayaso',
-    telefono_whatsapp:  gv('cfg-wa').replace(/\D/g,''),
+  if (!window._ADMIN_COMERCIO_ID) { showToast('Sin comercio activo'); return; }
+
+  // Reescribir body con los nombres de columna correctos de comercios
+  const nombreNuevo = gv('cfg-name') || window._ADMIN_COMERCIO_NOMBRE || '';
+  const bodyComercio = {
+    nombre:             nombreNuevo,
+    nombre_negocio:     nombreNuevo,
+    whatsapp:           gv('cfg-wa').replace(/\D/g,''),
     direccion:          gv('cfg-address'),
     descripcion:        gv('cfg-desc'),
     nit:                gv('cfg-nit'),
     telefono_local:     gv('cfg-phone'),
     mensaje_bienvenida: gv('cfg-welcome'),
-    url_menu:           gv('cfg-menu-url')      || 'menu.html',
-    url_repartidor:     gv('cfg-rider-url')     || 'repartidor.html',
-    pin_repartidor:     gv('cfg-rider-pin')     || '1234',
+    url_menu:           gv('cfg-menu-url')     || 'menu.html',
+    url_repartidor:     gv('cfg-rider-url')    || 'repartidor.html',
+    pin_repartidor:     gv('cfg-rider-pin')    || '1234',
     tiempo_entrega_min: parseInt(gv('cfg-delivery-min')) || 30,
     tiempo_entrega_max: parseInt(gv('cfg-delivery-max')) || 60,
-    // Guardar horario semanal como JSONB — el menú lo lee para calcular isOpen automáticamente
-    // Formato: { lun:{open:true,from:"11:00 AM",to:"9:00 PM"}, mar:{...}, ... }
     horario_semanal:    sched
   };
 
   try {
-    await SB.patch('configuracion', 'id=eq.1', body);
-    // Actualizar memoria
+    // UPDATE comercios SET ... WHERE id = window._ADMIN_COMERCIO_ID
+    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, bodyComercio);
+    window._ADMIN_COMERCIO_NOMBRE = nombreNuevo;
     upd(function(s) {
-      s.config.name       = body.nombre_negocio;
-      s.config.whatsapp   = body.telefono_whatsapp;
-      s.config.address    = body.direccion;
-      s.config.desc       = body.descripcion;
-      s.config.nit        = body.nit;
-      s.config.phone      = body.telefono_local;
-      s.config.welcome    = body.mensaje_bienvenida;
-      s.config.menuUrl    = body.url_menu;
-      s.config.riderUrl   = body.url_repartidor;
-      s.config.riderPin   = body.pin_repartidor;
-      s.config.deliveryMin= String(body.tiempo_entrega_min);
-      s.config.deliveryMax= String(body.tiempo_entrega_max);
+      s.config.name       = nombreNuevo;
+      s.config.whatsapp   = bodyComercio.whatsapp;
+      s.config.address    = bodyComercio.direccion;
+      s.config.desc       = bodyComercio.descripcion;
+      s.config.nit        = bodyComercio.nit;
+      s.config.phone      = bodyComercio.telefono_local;
+      s.config.welcome    = bodyComercio.mensaje_bienvenida;
+      s.config.menuUrl    = bodyComercio.url_menu;
+      s.config.riderUrl   = bodyComercio.url_repartidor;
+      s.config.riderPin   = bodyComercio.pin_repartidor;
+      s.config.deliveryMin= String(bodyComercio.tiempo_entrega_min);
+      s.config.deliveryMax= String(bodyComercio.tiempo_entrega_max);
       s.config.schedule   = sched;
       s.config.hours      = (typeof getScheduleText === 'function') ? getScheduleText(sched) : '';
     });
     const tn = document.getElementById('t-name');
-    if (tn) tn.textContent = body.nombre_negocio;
-    document.title = 'Admin - ' + body.nombre_negocio;
-    const su = document.getElementById('share-url-txt'); if (su) su.textContent = body.url_menu;
-    const ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = body.url_repartidor;
+    if (tn) tn.textContent = nombreNuevo;
+    document.title = 'Admin — ' + nombreNuevo;
+    const su = document.getElementById('share-url-txt'); if (su) su.textContent = bodyComercio.url_menu;
+    const ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = bodyComercio.url_repartidor;
     showToast('Configuración guardada ✓');
-    console.log('[SB] Config guardada en Supabase');
+    console.log('[SB] comercios actualizado — nombre:', nombreNuevo, '| id:', window._ADMIN_COMERCIO_ID);
   } catch(e) {
-    console.error('[SB] Error guardando config:', e);
+    console.error('[SB] Error en sbSaveConfig:', e.message);
     alert('❌ Error al guardar configuración:\n' + e.message);
   }
 }
 
-// Toggle abierto/cerrado → Supabase
+// Toggle abierto/cerrado → comercios.esta_abierto
 async function sbToggleOpen() {
+  if (!window._ADMIN_COMERCIO_ID) { showToast('Sin comercio activo'); return; }
   const s = getStore();
   const nuevoEstado = !s.config.isOpen;
   try {
-    await SB.patch('configuracion', 'id=eq.1', { esta_abierto: nuevoEstado });
+    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID,
+      { esta_abierto: nuevoEstado });
     upd(function(s2) { s2.config.isOpen = nuevoEstado; });
     const tog = document.getElementById('open-tog');
     if (tog) tog.className = 'tog ' + (nuevoEstado ? 'on' : 'off');
     const lbl = document.getElementById('open-lbl');
     if (lbl) lbl.textContent = nuevoEstado ? 'Abierto' : 'Cerrado';
-    console.log('[SB] Estado abierto actualizado:', nuevoEstado);
+    console.log('[SB] comercios.esta_abierto =', nuevoEstado, '| id:', window._ADMIN_COMERCIO_ID);
   } catch(e) {
-    console.error('[SB] Error toggling open:', e.message);
+    console.error('[SB] Error en sbToggleOpen:', e.message);
     showToast('Error al actualizar estado');
   }
 }
@@ -5883,41 +5843,52 @@ async function sbDelCat(nombre) {
 // ══════════════════════════════════════════════════════════════════════
 async function sbHandleLogoUpload(inp) {
   const f = inp.files[0]; if (!f) return;
-  if (f.size > 3*1024*1024) { showToast('Logo muy grande (máx 3MB)'); return; }
-  showToast('Subiendo logo...');
+  if (f.size > 3 * 1024 * 1024) { showToast('Logo muy grande (máx 3 MB)'); return; }
+  if (!window._ADMIN_COMERCIO_ID) { alert('❌ Sin comercio activo.'); return; }
+  const _la = document.getElementById('logo-area');
+  if (_la) _la.style.opacity = '0.6';
   try {
-    const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `config/logo.${ext}`;
-    const url  = await SB.uploadFile('imagenes', path, f);
-    await SB.patch('configuracion', 'id=eq.1', { url_logo: url });
+    const mime = f.type || 'image/png';
+    const ext  = (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    const ts   = Date.now();
+    const path = 'logos/logo_' + window._ADMIN_COMERCIO_ID + '_' + ts + '.' + ext;
+    const rawUrl = await SB.uploadFile('imagenes', path, f);
+    const url    = rawUrl + '?v=' + ts;
+    // UPDATE comercios SET logo_url = url WHERE id = window._ADMIN_COMERCIO_ID
+    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { logo_url: url });
     upd(function(s){ s.config.logo = url; });
     if (typeof _updateLogoUI === 'function') _updateLogoUI(url);
-    showToast('Logo guardado ✓');
-    console.log('[SB] Logo subido:', url);
+    showToast('✅ Logo guardado');
+    console.log('[SB] comercios.logo_url =', url);
   } catch(e) {
-    console.error('[SB] Error subiendo logo:', e);
-    alert('❌ Error al subir logo:\n' + e.message +
-      '\n\nVerifica que el bucket "imagenes" existe y tiene política INSERT.');
-  }
+    console.error('[SB] Error subiendo logo:', e.message);
+    alert('❌ Error al subir logo:\n' + e.message);
+  } finally { if (_la) _la.style.opacity = '1'; }
 }
 
 async function sbHandleCoverUpload(inp) {
   const f = inp.files[0]; if (!f) return;
-  if (f.size > 5*1024*1024) { showToast('Portada muy grande (máx 5MB)'); return; }
-  showToast('Subiendo portada...');
+  if (f.size > 5 * 1024 * 1024) { showToast('Portada muy grande (máx 5 MB)'); return; }
+  if (!window._ADMIN_COMERCIO_ID) { alert('❌ Sin comercio activo.'); return; }
+  const _ca = document.getElementById('cover-area');
+  if (_ca) _ca.style.opacity = '0.6';
   try {
-    const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `config/portada.${ext}`;
-    const url  = await SB.uploadFile('imagenes', path, f);
-    await SB.patch('configuracion', 'id=eq.1', { url_portada: url });
+    const mime = f.type || 'image/jpeg';
+    const ext  = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    const ts   = Date.now();
+    const path = 'portadas/cover_' + window._ADMIN_COMERCIO_ID + '_' + ts + '.' + ext;
+    const rawUrl = await SB.uploadFile('imagenes', path, f);
+    const url    = rawUrl + '?v=' + ts;
+    // UPDATE comercios SET cover_url = url WHERE id = window._ADMIN_COMERCIO_ID
+    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { cover_url: url });
     upd(function(s){ s.config.cover = url; });
     if (typeof _updateCoverUI === 'function') _updateCoverUI(url);
-    showToast('Portada guardada ✓');
-    console.log('[SB] Portada subida:', url);
+    showToast('✅ Portada guardada');
+    console.log('[SB] comercios.cover_url =', url);
   } catch(e) {
-    console.error('[SB] Error subiendo portada:', e);
+    console.error('[SB] Error subiendo portada:', e.message);
     alert('❌ Error al subir portada:\n' + e.message);
-  }
+  } finally { if (_ca) _ca.style.opacity = '1'; }
 }
 
 async function sbHandleProdPhotoUpload(inp) {
@@ -6373,60 +6344,44 @@ async function sbCargarVentasGlobales() {
 // ARRANQUE — reemplaza el INIT original
 // ══════════════════════════════════════════════════════════════════════
 async function sbInit() {
-  // Punto 4: diagnóstico visible SIEMPRE como primer mensaje
-  console.log('[ID-CHECK] Slug detectado:', window._ADMIN_COMERCIO_SLUG,
-    '| ID asignado:', window._ADMIN_COMERCIO_ID);
-
-  // Punto 1: bloqueo total si no hay ID — nada se carga
-  if (!window._ADMIN_COMERCIO_ID) {
-    console.error('[SB] sbInit: _ADMIN_COMERCIO_ID es null — bloqueando toda carga');
-    _mostrarMensajeComercioNull('Admin');
-    return;
-  }
-
-  // Verificar que el slug del ID coincide con la URL actual
-  var slugEnUrl = (new URLSearchParams(window.location.search).get('rest') || '').trim();
-  if (slugEnUrl && window._ADMIN_COMERCIO_SLUG && slugEnUrl !== window._ADMIN_COMERCIO_SLUG) {
-    console.error('[ID-CHECK] ❌ MISMATCH — slug en URL:', slugEnUrl,
-      '| slug en memoria:', window._ADMIN_COMERCIO_SLUG, '— reiniciando');
-    window._ADMIN_COMERCIO_ID     = null;
-    window._ADMIN_COMERCIO_SLUG   = null;
-    window._ADMIN_COMERCIO_NOMBRE = null;
-    _limpiarSesion();
-    _mostrarLogin('Cambio de comercio detectado. Inicia sesión de nuevo.');
-    return;
-  }
-
-  console.log('[SB] 🚀 Admin iniciando — comercio:', window._ADMIN_COMERCIO_NOMBRE,
-    '| ID:', window._ADMIN_COMERCIO_ID);
-
-  // Limpiar UI del comercio anterior antes de cargar el nuevo
-  if (typeof clearAdminUI === 'function') clearAdminUI();
-
+  console.log('[SB] 🚀 Iniciando Papayaso Admin...');
   try {
+    // 1. Cargar configuración primero (nombre, logo, isOpen)
     await sbLoadConfig();
+
+    // 2. Cargar categorías y productos
     await sbLoadCategorias();
     await sbLoadProductos();
+
+    // 3. Cargar pedidos ACTIVOS de hoy (panel Pedidos)
     await sbLoadPedidos();
-    sbCargarHistorialCompleto();
+
+    // 4. Cargar historial COMPLETO para estadísticas y ventas globales
+    sbCargarHistorialCompleto(); // async sin await — no bloquea el render inicial
+
+    // 5. Cargar datos del POS desde sus propias tablas
     await sbPosInit();
 
+    // 5. Mostrar en UI
     const subPed = document.getElementById('sub-pedidos'); if (subPed) subPed.classList.add('visible');
     const pedTab = document.getElementById('tab-pedidos'); if (pedTab) pedTab.classList.add('active');
     if (typeof renderOrders === 'function') renderOrders();
     if (typeof updateStats  === 'function') updateStats();
+
+    // 5. Polling cada 8s para nuevos pedidos
     setInterval(sbPollNuevos, 8000);
+
+    // 6. Audio (primer clic del usuario)
     if (typeof _initAudio === 'function') {
       document.addEventListener('click',      _initAudio, { once: true });
       document.addEventListener('touchstart', _initAudio, { once: true });
     }
-    console.log('[SB] ✅ Admin listo — comercio:', window._ADMIN_COMERCIO_NOMBRE);
+
+    console.log('[SB] ✅ Admin listo. localStorage = 0 usos.');
   } catch(e) {
-    console.error('[SB] Error en arranque:', e.message);
-    _manejarError401(e);
-    if (!String(e.message).toLowerCase().includes('jwt') && !String(e.message).includes('401')) {
-      alert('❌ Error al iniciar:\n\n' + e.message);
-    }
+    console.error('[SB] Error en arranque:', e);
+    alert('❌ Error al conectar con Supabase:\n\n' + e.message +
+      '\n\nVerifica la URL y la API Key en el código.');
   }
 }
 
@@ -6443,298 +6398,199 @@ async function sbInit() {
 <script>
 'use strict';
 
-// ══════════════════════════════════════════════════════════════════════
-// BLOQUE DE AUTENTICACIÓN — Aislamiento total por slug
-// Cada pestaña tiene su propia sesión y su propio comercio.
-// ══════════════════════════════════════════════════════════════════════
+// ── Constantes (ya definidas en el script anterior, aquí como alias) ──
 const AUTH_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-// SESSION_KEY por slug: admin_session_papayaso / admin_session_real-broaster
-// Dos pestañas con slugs distintos NUNCA comparten sesión.
-function _sessionKey() {
-  const slug = (new URLSearchParams(window.location.search).get('rest') || 'default').trim();
-  return 'admin_session_' + slug;
-}
+// Clave para guardar la sesión en sessionStorage (no localStorage — se borra al cerrar tab)
+const SESSION_KEY = 'papayaso_admin_session';
 
-let _authSession = null;
+// ── Estado de sesión ────────────────────────────────────────────────
+let _authSession = null;   // { access_token, refresh_token, expires_at, user }
 
-// ── UI helpers ───────────────────────────────────────────────────────
+// ── Mostrar / ocultar capas ─────────────────────────────────────────
 function _mostrarAdmin() {
-  const l = document.getElementById('login-container'), a = document.getElementById('admin-content');
-  if (l) l.classList.add('hidden');
-  if (a) a.classList.add('visible');
+  const login = document.getElementById('login-container');
+  const admin = document.getElementById('admin-content');
+  if (login) login.classList.add('hidden');
+  if (admin) admin.classList.add('visible');
 }
-function _mostrarLogin(msg) {
-  const l = document.getElementById('login-container'), a = document.getElementById('admin-content');
-  if (l) l.classList.remove('hidden');
-  if (a) a.classList.remove('visible');
-  if (msg) _setLoginError(msg);
+
+function _mostrarLogin(errorMsg) {
+  const login = document.getElementById('login-container');
+  const admin = document.getElementById('admin-content');
+  if (login) login.classList.remove('hidden');
+  if (admin) admin.classList.remove('visible');
+  if (errorMsg) _setLoginError(errorMsg);
 }
+
 function _setLoginError(msg) {
-  const el = document.getElementById('login-error'); if (el) el.textContent = msg || '';
+  const el = document.getElementById('login-error');
+  if (el) el.textContent = msg || '';
 }
+
 function _setLoginLoading(on) {
-  const btn = document.getElementById('login-btn'), load = document.getElementById('login-loading');
-  if (btn)  { btn.disabled = on; btn.textContent = on ? 'Verificando...' : 'Entrar →'; }
+  const btn  = document.getElementById('login-btn');
+  const load = document.getElementById('login-loading');
+  if (btn)  { btn.disabled  = on; btn.textContent = on ? 'Verificando...' : 'Entrar →'; }
   if (load) { load.style.display = on ? 'block' : 'none'; }
 }
 
-// ── Punto 1: mensaje cuando _ADMIN_COMERCIO_ID es null ───────────────
-function _mostrarMensajeComercioNull(ctx) {
-  console.error('[Bloqueo] Comercio no identificado — contexto:', ctx);
-  // Mostrar aviso en UI sin destruir el panel
-  var banEl = document.getElementById('comercio-null-banner');
-  if (!banEl) {
-    banEl = document.createElement('div');
-    banEl.id = 'comercio-null-banner';
-    banEl.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;' +
-      'background:#c62828;color:#fff;font-weight:700;text-align:center;' +
-      'padding:14px;font-size:14px;font-family:inherit';
-    document.body.appendChild(banEl);
-  }
-  banEl.textContent = '⚠️ Comercio no identificado. ' +
-    'Asegúrate de abrir el admin con ?rest=slug en la URL y vuelve a iniciar sesión.';
+// ── Llamada directa a Supabase Auth ────────────────────────────────
+async function _authFetch(endpoint, body) {
+  const r = await fetch(AUTH_URL + '/auth/v1/' + endpoint, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey':       AUTH_KEY
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error de autenticación');
+  return data;
 }
 
-// ── Punto 3: manejador de errores 401 / JWT expired ──────────────────
-function _manejarError401(e) {
-  const msg = String(e && e.message || '').toLowerCase();
-  if (!msg.includes('jwt') && !msg.includes('401') && !(e && e.status === 401)) return;
-  console.error('[Auth] 401/JWT detectado — deteniendo todo y limpiando sesión');
-  // Detener: limpiar vars de comercio para que nada más pueda cargar
-  window._ADMIN_COMERCIO_ID     = null;
-  window._ADMIN_COMERCIO_SLUG   = null;
-  window._ADMIN_COMERCIO_NOMBRE = null;
-  // Limpiar sessionStorage de este slug
-  try { sessionStorage.removeItem(_sessionKey()); } catch(ex) {}
-  try {
-    const slug = (new URLSearchParams(window.location.search).get('rest') || '');
-    if (slug) {
-      sessionStorage.removeItem('pos_items_' + slug);
-      sessionStorage.removeItem('pos_cats_'  + slug);
-    }
-  } catch(ex) {}
-  _authSession = null;
-  // Redirigir a login con mensaje claro
-  _mostrarLogin('Sesión expirada (401). Vuelve a iniciar sesión para ' +
-    (new URLSearchParams(window.location.search).get('rest') || 'este comercio') + '.');
+async function _authRefreshFetch(refreshToken) {
+  const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || 'Sesión expirada');
+  return data;
 }
 
-// ── Sesión por slug ───────────────────────────────────────────────────
-function _guardarSesion(s) {
-  try { sessionStorage.setItem(_sessionKey(), JSON.stringify(s)); } catch(e) {}
+// ── Guardar / leer / limpiar sesión en sessionStorage ──────────────
+function _guardarSesion(session) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e) {}
 }
+
 function _leerSesion() {
-  try { const r = sessionStorage.getItem(_sessionKey()); return r ? JSON.parse(r) : null; }
-  catch(e) { return null; }
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
 }
+
 function _limpiarSesion() {
-  try { sessionStorage.removeItem(_sessionKey()); } catch(e) {}
+  try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {}
   _authSession = null;
 }
 
-// ── Resolver el comercio ──────────────────────────────────────────────
-// Prioridad 1: slug de la URL (?rest=)
-// Prioridad 2: user_id del usuario autenticado
-// NUNCA leer de localStorage para identificar el comercio.
-async function _resolverComercioDesdeURL(userId) {
-  const slug  = (new URLSearchParams(window.location.search).get('rest') || '').trim();
-  const token = (_authSession && _authSession.access_token) || AUTH_KEY;
-
-  const fetchC = async (filtros) => {
-    const url = new URL(AUTH_URL + '/rest/v1/comercios');
-    url.searchParams.set('select', 'id,nombre,slug,logo_url,cover_url,whatsapp,activo');
-    Object.entries(filtros).forEach(([k,v]) => url.searchParams.set(k, String(v)));
-    url.searchParams.set('activo', 'eq.true');
-    url.searchParams.set('limit',  '1');
-    const r = await fetch(url, {
-      headers: {
-        'Content-Type':  'application/json',
-        'apikey':        AUTH_KEY,
-        'Authorization': 'Bearer ' + token
-      }
-    });
-    if (r.status === 401) {
-      _manejarError401({ status: 401, message: 'JWT expired' });
-      throw Object.assign(new Error('JWT expired'), { status: 401 });
-    }
-    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text());
-    return r.json();
-  };
-
-  let rows = [];
-  // Prioridad 1: slug en la URL
-  if (slug) {
-    rows = await fetchC({ slug: 'eq.' + slug });
-    if (rows && rows.length) console.log('[SaaS] Comercio por slug URL:', slug);
-  }
-  // Prioridad 2: user_id del autenticado
-  if (!rows.length && userId) {
-    rows = await fetchC({ user_id: 'eq.' + userId });
-    if (rows && rows.length) console.log('[SaaS] Comercio por user_id:', userId);
-  }
-
-  if (!rows || !rows.length) {
-    console.error('[SaaS] Sin comercio para slug:', slug, '| user_id:', userId);
-    const ac = document.getElementById('admin-content');
-    if (ac) ac.classList.remove('visible');
-    _mostrarLogin('');
-    const errEl = document.getElementById('login-error');
-    if (errEl) errEl.innerHTML =
-      '⚠️ Tu cuenta no tiene un restaurante asignado.<br>' +
-      '<span style="font-size:11px;opacity:.75">Abre el admin con ?rest=tu-slug en la URL.</span>';
-    _limpiarSesion();
-    return false;
-  }
-
-  const c = rows[0];
-  // Asignar con window. — visibles en ambos bloques <script>
-  window._ADMIN_COMERCIO_ID     = c.id;
-  window._ADMIN_COMERCIO_SLUG   = c.slug;
-  window._ADMIN_COMERCIO_NOMBRE = c.nombre;
-
-  // Guardar por slug: id_comercio_papayaso / id_comercio_real-broaster
-  try { sessionStorage.setItem('id_comercio_' + c.slug, c.id); } catch(e) {}
-
-  // Pre-cargar en _STORE con cache-bust
-  if (typeof upd === 'function') {
-    upd(function(s) {
-      s.config.name = c.nombre;
-      if (c.logo_url)  s.config.logo  = c.logo_url  + '?v=' + Date.now();
-      if (c.cover_url) s.config.cover = c.cover_url + '?v=' + Date.now();
-      if (c.whatsapp)  s.config.whatsapp = c.whatsapp;
-    });
-  }
-
-  const tn = document.getElementById('t-name');
-  if (tn) tn.textContent = c.nombre;
-  document.title = 'Admin — ' + c.nombre;
-
-  // Punto 4: primer log de diagnóstico
-  console.log('[ID-CHECK] Slug detectado:', c.slug, '| ID asignado:', c.id,
-    '| nombre:', c.nombre);
-  return true;
-}
-
-// ── Activar admin: resolver → sbInit ─────────────────────────────────
+// ── Activar el admin (llamar sbInit y mostrar UI) ───────────────────
 async function _activarAdmin(session) {
   _authSession = session;
   _guardarSesion(session);
   _mostrarAdmin();
 
-  if (!session || !session.user || !session.user.id) {
-    _mostrarLogin('Sesión inválida');
-    return;
+  // Inicializar el admin solo ahora que el usuario está autenticado
+  if (typeof sbInit === 'function') {
+    await sbInit();
   }
-
-  // Resolver ANTES de sbInit — sin ID nada se carga
-  const ok = await _resolverComercioDesdeURL(session.user.id);
-  if (!ok) return;
-
-  if (typeof sbInit === 'function') await sbInit();
 }
 
-// ── LOGIN ─────────────────────────────────────────────────────────────
+// ── LOGIN ───────────────────────────────────────────────────────────
 async function authLogin() {
   const emailEl = document.getElementById('login-email');
   const passEl  = document.getElementById('login-pass');
   const email   = emailEl ? emailEl.value.trim() : '';
   const pass    = passEl  ? passEl.value         : '';
+
   _setLoginError('');
-  if (!email || !pass) { _setLoginError('Ingresa tu correo y contraseña'); return; }
+
+  if (!email || !pass) {
+    _setLoginError('Ingresa tu correo y contraseña');
+    return;
+  }
+
   _setLoginLoading(true);
+
   try {
-    const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY },
-      body: JSON.stringify({ email, password: pass })
+    const data = await _authFetch('token?grant_type=password', {
+      email:    email,
+      password: pass
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error');
-    if (!data.access_token) throw new Error('Respuesta inesperada');
+
+    if (!data.access_token) throw new Error('Respuesta inesperada del servidor');
+
     const session = {
       access_token:  data.access_token,
       refresh_token: data.refresh_token,
       expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
       user:          data.user
     };
-    console.log('[Auth] ✅ Login —', session.user.email);
+
+    console.log('[Auth] ✅ Login exitoso:', session.user.email);
     await _activarAdmin(session);
+
   } catch(e) {
-    console.error('[Auth] Error login:', e.message);
+    console.error('[Auth] Error de login:', e.message);
     _setLoginError('Acceso denegado — ' + (e.message.includes('Invalid') ? 'correo o contraseña incorrectos' : e.message));
     _setLoginLoading(false);
+    // Vibrar el campo de contraseña como feedback
     if (passEl) { passEl.value = ''; passEl.focus(); }
   }
 }
 
-// ── LOGOUT ────────────────────────────────────────────────────────────
+// ── LOGOUT ──────────────────────────────────────────────────────────
 async function authLogout() {
   if (!confirm('¿Cerrar sesión del panel de administración?')) return;
+
   try {
     if (_authSession && _authSession.access_token) {
       await fetch(AUTH_URL + '/auth/v1/logout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY,
-          'Authorization': 'Bearer ' + _authSession.access_token }
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'apikey':        AUTH_KEY,
+          'Authorization': 'Bearer ' + _authSession.access_token
+        }
       });
     }
-  } catch(e) { console.warn('[Auth] Error logout:', e.message); }
-
-  // Limpiar sessionStorage de este slug específico
-  const slug = window._ADMIN_COMERCIO_SLUG || '';
-  try { if (slug) sessionStorage.removeItem('id_comercio_' + slug); } catch(e) {}
-  try { if (slug) sessionStorage.removeItem('pos_items_'   + slug); } catch(e) {}
-  try { if (slug) sessionStorage.removeItem('pos_cats_'    + slug); } catch(e) {}
-  window._ADMIN_COMERCIO_ID     = null;
-  window._ADMIN_COMERCIO_SLUG   = null;
-  window._ADMIN_COMERCIO_NOMBRE = null;
-  _limpiarSesion();
-  if (typeof _STORE !== 'undefined') _STORE = null;
-  _mostrarLogin('Sesión cerrada');
-  console.log('[Auth] Sesión cerrada — comercio limpiado');
-}
-
-// ── PERSISTENCIA — restaurar sesión al recargar ───────────────────────
-(async function onLoad() {
-  // Antes de leer sesión: limpiar globals si el slug de la URL cambió
-  // respecto al que estaba en memoria (por si el usuario cambió de pestaña)
-  const slugUrl = (new URLSearchParams(window.location.search).get('rest') || '').trim();
-  if (slugUrl && window._ADMIN_COMERCIO_SLUG && slugUrl !== window._ADMIN_COMERCIO_SLUG) {
-    console.warn('[onLoad] Slug de URL cambió — limpiando globals anteriores');
-    window._ADMIN_COMERCIO_ID     = null;
-    window._ADMIN_COMERCIO_SLUG   = null;
-    window._ADMIN_COMERCIO_NOMBRE = null;
+  } catch(e) {
+    console.warn('[Auth] Error al cerrar sesión en servidor:', e.message);
+    // Continuar con la limpieza local de todas formas
   }
 
+  _limpiarSesion();
+  // Limpiar datos en memoria
+  if (typeof _STORE !== 'undefined') {
+    _STORE = null;
+  }
+  // Redirigir a login
+  _mostrarLogin('Sesión cerrada');
+  console.log('[Auth] Sesión cerrada correctamente');
+}
+
+// ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
+// Verificar al cargar si hay sesión guardada; si expiró, intentar renovar.
+(async function onLoad() {
   const session = _leerSesion();
+
   if (!session || !session.access_token) {
+    // Sin sesión → mostrar login
     _mostrarLogin();
-    console.log('[Auth] Sin sesión para slug:', slugUrl || 'default');
+    console.log('[Auth] Sin sesión activa — mostrando login');
     return;
   }
 
-  const ahora   = Date.now();
-  const margen  = 5 * 60 * 1000;
+  const ahoraMs = Date.now();
+  const margenMs = 5 * 60 * 1000; // renovar si expira en menos de 5 min
 
-  if (session.expires_at && ahora < session.expires_at - margen) {
-    console.log('[Auth] Sesión válida —', session.user && session.user.email);
+  if (session.expires_at && ahoraMs < session.expires_at - margenMs) {
+    // Sesión válida → entrar directamente
+    console.log('[Auth] Sesión activa encontrada —', session.user && session.user.email);
     await _activarAdmin(session);
     return;
   }
 
-  // Intentar renovar
+  // Sesión expirada — intentar renovar con refresh_token
   if (session.refresh_token) {
     try {
       console.log('[Auth] Renovando sesión...');
-      const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=refresh_token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY },
-        body: JSON.stringify({ refresh_token: session.refresh_token })
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error_description || 'No se pudo renovar');
+      const data = await _authRefreshFetch(session.refresh_token);
       const newSession = {
         access_token:  data.access_token,
         refresh_token: data.refresh_token || session.refresh_token,
@@ -6744,8 +6600,8 @@ async function authLogout() {
       console.log('[Auth] ✅ Sesión renovada');
       await _activarAdmin(newSession);
     } catch(e) {
-      console.warn('[Auth] No se pudo renovar:', e.message);
-      _manejarError401(e);
+      console.warn('[Auth] No se pudo renovar la sesión:', e.message);
+      _limpiarSesion();
       _mostrarLogin();
     }
   } else {
@@ -6754,10 +6610,14 @@ async function authLogout() {
   }
 })();
 
+// ── Tecla Enter en el email va al password ──────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   var emailEl = document.getElementById('login-email');
   if (emailEl) emailEl.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { var p = document.getElementById('login-pass'); if (p) p.focus(); }
+    if (e.key === 'Enter') {
+      var p = document.getElementById('login-pass');
+      if (p) p.focus();
+    }
   });
 });
 
