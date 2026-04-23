@@ -1382,10 +1382,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 // ── ESTADO EN MEMORIA — localStorage eliminado ──────────────────────
 // La fuente de verdad es Supabase. Este objeto se rellena al arrancar.
 var _STORE = null;
-
-// Identidad del comercio activo — declaradas aquí (primer script)
-// para que sean visibles en ambos bloques <script>.
-// Se asignan en _resolverComercio() ANTES de sbInit().
 window._ADMIN_COMERCIO_ID     = null;
 window._ADMIN_COMERCIO_SLUG   = null;
 window._ADMIN_COMERCIO_NOMBRE = null;
@@ -3139,8 +3135,10 @@ function posCheckout(payMethod) {
 // ══════════════════════════════════════════════════════════════
 async function sbPosLoadProductos() {
   try {
+    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB-POS] sin ID'); return; }
     var prods = await SB.get('pos_productos', {
-      select: '*', order: 'categoria.asc,nombre.asc'
+      select: '*', order: 'categoria.asc,nombre.asc',
+      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
     });
     updPos(function(s) {
       s.products = (prods || []).map(function(p) {
@@ -3172,8 +3170,10 @@ async function sbPosLoadProductos() {
 
 async function sbPosLoadCategorias() {
   try {
+    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB-POS] sin ID'); return; }
     var cats = await SB.get('pos_categorias', {
-      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc'
+      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc',
+      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
     });
     updPos(function(s) {
       s.categories = (cats || []).map(function(c) { return c.nombre; });
@@ -3220,13 +3220,11 @@ async function sbPosLoadVentas(fechaDesde, fechaHasta) {
 
     // PostgREST no admite el mismo param dos veces con Object.entries/set.
     // Usamos el filtro 'and' en un solo parámetro para el rango de fechas.
-    var rows = await SB.get('pedidos', {
-      select: '*',
-      'origen': 'eq.pos',
-      'and':    '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
-      order:    'created_at.desc',
-      limit:    500
-    });
+    var _vP = { select: '*', 'origen': 'eq.pos',
+      'and': '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
+      order: 'created_at.desc', limit: 500 };
+    if (window._ADMIN_COMERCIO_ID) _vP['comercio_id'] = 'eq.' + window._ADMIN_COMERCIO_ID;
+    var rows = await SB.get('pedidos', _vP);
 
     // Normalizar al formato que usa renderPosSales
     var sales = (rows || []).map(function(p) {
@@ -3643,7 +3641,8 @@ function savePosProd() {
         result = await SB.patch('pos_productos', 'id=eq.' + posEditId, body);
         console.log('[SB-POS] Producto actualizado:', posEditId);
       } else {
-        result = await SB.post('pos_productos', body);
+        body.comercio_id = window._ADMIN_COMERCIO_ID;
+      result = await SB.post('pos_productos', body);
         console.log('[SB-POS] Producto creado:', result && result[0] && result[0].id);
       }
       closePosProdModal();
@@ -3728,7 +3727,7 @@ function addPosCat() {
   if (s.categories.indexOf(v) >= 0) { showToast('Ya existe esa categoría'); return; }
   (async function() {
     try {
-      await SB.post('pos_categorias', { nombre: v, orden: s.categories.length });
+      await SB.post('pos_categorias', { nombre: v, orden: s.categories.length, comercio_id: window._ADMIN_COMERCIO_ID });
       if (inp) inp.value = '';
       await sbPosLoadCategorias();
       showToast('Categoría POS creada ✓');
@@ -5364,18 +5363,14 @@ Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 // CONFIGURACIÓN
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadConfig() {
-  // Lee SOLO de comercios — la tabla configuracion ya no existe.
-  if (!window._ADMIN_COMERCIO_ID) {
-    console.error('[SB] sbLoadConfig: _ADMIN_COMERCIO_ID null — abortando');
-    return;
-  }
   try {
+    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadConfig: ID null'); return; }
     const rows = await SB.get('comercios', {
       select: 'nombre,nombre_negocio,whatsapp,telefono_local,direccion,descripcion,nit,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto,horario_semanal,logo_url,cover_url',
       'id': 'eq.' + window._ADMIN_COMERCIO_ID,
       limit: 1
     });
-    if (!rows || !rows.length) { console.warn('[SB] Sin datos en comercios para id:', window._ADMIN_COMERCIO_ID); return; }
+    if (!rows || !rows.length) { console.warn('[SB] Sin datos en comercios id:', window._ADMIN_COMERCIO_ID); return; }
     const c = rows[0];
     if (c.nombre) window._ADMIN_COMERCIO_NOMBRE = c.nombre;
 
@@ -5408,7 +5403,7 @@ async function sbLoadConfig() {
     if (cfg.cover && typeof _updateCoverUI === 'function') _updateCoverUI(cfg.cover);
     console.log('[SB] comercios cargado — nombre:', nombre, '| logo_url:', c.logo_url || '(vacío)');
   } catch(e) {
-    console.error('[SB] Error en sbLoadConfig:', e.message);
+    console.error('[SB] Error cargando configuración:', e.message);
   }
 }
 
@@ -5448,22 +5443,17 @@ async function sbSaveConfig() {
 
   try {
     if (!window._ADMIN_COMERCIO_ID) { showToast('Sin comercio activo'); return; }
-    // Reescribir con nombres de columna de comercios
-    const bodyC = {
-      nombre: body.nombre_negocio || '', nombre_negocio: body.nombre_negocio || '',
-      whatsapp: body.telefono_whatsapp || '',
-      direccion: body.direccion, descripcion: body.descripcion, nit: body.nit,
-      telefono_local: body.telefono_local, mensaje_bienvenida: body.mensaje_bienvenida,
-      url_menu: body.url_menu, url_repartidor: body.url_repartidor,
-      pin_repartidor: body.pin_repartidor,
+    const bodyC = { nombre: body.nombre_negocio||'', nombre_negocio: body.nombre_negocio||'',
+      whatsapp: body.telefono_whatsapp||'', direccion: body.direccion, descripcion: body.descripcion,
+      nit: body.nit, telefono_local: body.telefono_local, mensaje_bienvenida: body.mensaje_bienvenida,
+      url_menu: body.url_menu, url_repartidor: body.url_repartidor, pin_repartidor: body.pin_repartidor,
       tiempo_entrega_min: body.tiempo_entrega_min, tiempo_entrega_max: body.tiempo_entrega_max,
-      horario_semanal: body.horario_semanal
-    };
+      horario_semanal: body.horario_semanal };
     await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, bodyC);
     // Actualizar memoria
     upd(function(s) {
       s.config.name       = body.nombre_negocio;
-      s.config.whatsapp   = bodyC ? bodyC.whatsapp : (body.telefono_whatsapp || body.whatsapp || '');
+      s.config.whatsapp   = body.telefono_whatsapp || body.whatsapp || '';
       s.config.address    = body.direccion;
       s.config.desc       = body.descripcion;
       s.config.nit        = body.nit;
@@ -5514,8 +5504,10 @@ async function sbToggleOpen() {
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadProductos() {
   try {
+    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadProductos: ID null'); return; }
     const prods = await SB.get('productos', {
-      select: '*', order: 'categoria.asc,nombre.asc'
+      select: '*', order: 'categoria.asc,nombre.asc',
+      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
     });
     upd(function(s) {
       s.products = (prods || []).map(function(p) {
@@ -5618,6 +5610,7 @@ async function sbSaveProd() {
       console.log('[SB] Producto actualizado:', editId);
     } else {
       // INSERT
+      body.comercio_id = window._ADMIN_COMERCIO_ID;
       result = await SB.post('productos', body);
       console.log('[SB] Producto creado:', result && result[0] && result[0].id);
     }
@@ -5718,9 +5711,11 @@ function fillAllCatSelects() {
 async function sbLoadCategorias() {
   try {
     // Pedir las dos columnas correctas: extras_categoria y adiciones_categoria
+    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadCategorias: ID null'); return; }
     const cats = await SB.get('categorias', {
       select: 'id,nombre,orden,extras_categoria,adiciones_categoria',
-      order: 'orden.asc,nombre.asc'
+      order: 'orden.asc,nombre.asc',
+      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
     });
 
     upd(function(s) {
@@ -5789,8 +5784,9 @@ async function sbAddCat(nombre) {
     await SB.post('categorias', {
       nombre:              nombre,
       orden:               (getStore().categories || []).length,
-      extras_categoria:    [],   // [{nombre, precio}]
-      adiciones_categoria: []    // ["string", ...]
+      extras_categoria:    [],
+      adiciones_categoria: [],
+      comercio_id:         window._ADMIN_COMERCIO_ID
     });
     await sbLoadCategorias();
     showToast('Categoría creada ✓');
@@ -5893,11 +5889,12 @@ async function sbLoadPedidos() {
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
 
   try {
+    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadPedidos: ID null'); return; }
     const pedidos = await SB.get('pedidos', {
       select: '*',
       'created_at': `gte.${inicioHoy}`,
-      // Excluir ventas de caja/POS — solo domicilios y pedidos manuales
       'origen': 'neq.pos',
+      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
       order: 'created_at.desc',
       limit: 200
     });
@@ -5974,7 +5971,8 @@ async function sbSavePedidoManual(order) {
     metodo_pago:     order.payment || 'Efectivo',
     cambio:          order.cambio  || '',
     notas:           order.notes   || '',
-    origen:          'manual'
+    origen:          'manual',
+    comercio_id:     window._ADMIN_COMERCIO_ID
   };
 
   console.log('[SB] Guardando pedido manual:', body);
@@ -6195,8 +6193,10 @@ async function sbSavePedidoManual(order) {
 let _sbLastId = 0;
 async function sbPollNuevos() {
   try {
+    if (!window._ADMIN_COMERCIO_ID) return;
     const r = await SB.get('pedidos', {
       select: 'id,cliente,total,estado',
+      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
       order: 'id.desc', limit: 1
     });
     if (!r || !r.length) return;
@@ -6221,10 +6221,9 @@ async function sbGetStats() {
   const hoy = new Date().toISOString().slice(0,10);
   const mes  = new Date().toISOString().slice(0,7);
   try {
-    const all = await SB.get('pedidos', {
-      select: 'total,created_at,estado',
-      'estado': 'neq.Cancelado'
-    });
+    const _sp = { select: 'total,created_at,estado', 'estado': 'neq.Cancelado' };
+    if (window._ADMIN_COMERCIO_ID) _sp['comercio_id'] = 'eq.' + window._ADMIN_COMERCIO_ID;
+    const all = await SB.get('pedidos', _sp);
     let totalHoy = 0, totalMes = 0, totalGlobal = 0;
     (all||[]).forEach(p => {
       const t = parseFloat(p.total)||0;
@@ -6249,11 +6248,13 @@ async function sbCargarHistorialCompleto() {
   try {
     // Traer TODOS los pedidos (sin límite de fecha) no cancelados
     // para las estadísticas y el panel de ventas
+    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbCargarHistorial: ID null'); return null; }
     const todos = await SB.get('pedidos', {
       select: 'id,total,created_at,estado,metodo_pago,origen,cliente,telefono',
       'estado': 'neq.Cancelado',
-      order:  'created_at.desc',
-      limit:  5000   // suficiente para cualquier negocio
+      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
+      order: 'created_at.desc',
+      limit: 5000
     });
 
     // Convertir al formato que usa getAllSalesData / _renderGlobalSales
@@ -6372,15 +6373,14 @@ async function sbInit() {
 <script>
 'use strict';
 
+// ── Constantes (ya definidas en el script anterior, aquí como alias) ──
 const AUTH_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-// SESSION_KEY usa el slug de la URL como prefijo
-// → admin_session_papayaso / admin_session_real-broaster
-// Dos pestañas con slugs distintos nunca comparten sesión.
+// Clave para guardar la sesión en sessionStorage (no localStorage — se borra al cerrar tab)
+// SESSION_KEY por slug — aísla sesiones de distintos comercios en el mismo navegador
 function _sessionKey() {
-  const s = (new URLSearchParams(window.location.search).get('rest') || 'default').trim();
-  return 'admin_session_' + s;
+  return 'admin_s_' + (new URLSearchParams(window.location.search).get('rest') || 'default');
 }
 
 let _authSession = null;
@@ -6394,9 +6394,7 @@ function _mostrarLogin(msg) {
   if (l) l.classList.remove('hidden'); if (a) a.classList.remove('visible');
   if (msg) _setLoginError(msg);
 }
-function _setLoginError(msg) {
-  const el = document.getElementById('login-error'); if (el) el.textContent = msg || '';
-}
+function _setLoginError(msg) { const el = document.getElementById('login-error'); if (el) el.textContent = msg||''; }
 function _setLoginLoading(on) {
   const btn = document.getElementById('login-btn'), load = document.getElementById('login-loading');
   if (btn)  { btn.disabled = on; btn.textContent = on ? 'Verificando...' : 'Entrar →'; }
@@ -6407,57 +6405,34 @@ function _guardarSesion(s) { try { sessionStorage.setItem(_sessionKey(), JSON.st
 function _leerSesion() {
   try { const r = sessionStorage.getItem(_sessionKey()); return r ? JSON.parse(r) : null; } catch(e) { return null; }
 }
-function _limpiarSesion() {
-  try { sessionStorage.removeItem(_sessionKey()); } catch(e) {}
-  _authSession = null;
-}
+function _limpiarSesion() { try { sessionStorage.removeItem(_sessionKey()); } catch(e) {} _authSession = null; }
 
-// ── Resolver el comercio desde la URL o el user_id ────────────────────
-// Esta es la pieza crítica que faltaba: asigna _ADMIN_COMERCIO_ID
-// ANTES de llamar sbInit(), usando el slug de la URL como prioridad.
+// ── _resolverComercio: asigna _ADMIN_COMERCIO_ID ANTES de sbInit ─────
+// Prioridad 1: slug en ?rest= de la URL
+// Prioridad 2: user_id del usuario autenticado
 async function _resolverComercio(userId) {
   const slugUrl = (new URLSearchParams(window.location.search).get('rest') || '').trim();
   const token   = (_authSession && _authSession.access_token) || AUTH_KEY;
-
-  const buscar = async (filtro) => {
+  const buscar  = async (filtro) => {
     const url = new URL(AUTH_URL + '/rest/v1/comercios');
     url.searchParams.set('select', 'id,nombre,slug,logo_url,cover_url,whatsapp,activo');
     Object.entries(filtro).forEach(([k,v]) => url.searchParams.set(k, String(v)));
-    url.searchParams.set('activo', 'eq.true');
-    url.searchParams.set('limit',  '1');
-    const r = await fetch(url, {
-      headers: { 'Content-Type':'application/json', 'apikey': AUTH_KEY, 'Authorization':'Bearer '+token }
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text());
+    url.searchParams.set('activo', 'eq.true'); url.searchParams.set('limit', '1');
+    const r = await fetch(url, { headers: { 'Content-Type':'application/json', 'apikey':AUTH_KEY, 'Authorization':'Bearer '+token } });
+    if (!r.ok) throw new Error('HTTP '+r.status+': '+await r.text());
     return r.json();
   };
-
   let rows = [];
-  // Prioridad 1: slug en la URL (?rest=real-broaster)
-  if (slugUrl) {
-    rows = await buscar({ slug: 'eq.' + slugUrl });
-    if (rows && rows.length) console.log('[Auth] Comercio por slug URL:', slugUrl);
-  }
-  // Prioridad 2: user_id del usuario autenticado
-  if (!rows.length && userId) {
-    rows = await buscar({ user_id: 'eq.' + userId });
-    if (rows && rows.length) console.log('[Auth] Comercio por user_id:', userId);
-  }
-
+  if (slugUrl) { rows = await buscar({ slug: 'eq.'+slugUrl }); }
+  if (!rows.length && userId) { rows = await buscar({ user_id: 'eq.'+userId }); }
   if (!rows || !rows.length) {
-    console.error('[Auth] Sin comercio — slug:', slugUrl, '| user_id:', userId);
     _mostrarLogin('Tu cuenta no tiene un restaurante asignado. Abre el admin con ?rest=tu-slug');
-    _limpiarSesion();
-    return false;
+    _limpiarSesion(); return false;
   }
-
   const c = rows[0];
-  // Asignar con window. → visibles en ambos bloques <script>
   window._ADMIN_COMERCIO_ID     = c.id;
   window._ADMIN_COMERCIO_SLUG   = c.slug;
   window._ADMIN_COMERCIO_NOMBRE = c.nombre;
-
-  // Pre-cargar en _STORE antes de sbInit
   if (typeof upd === 'function') {
     upd(function(s) {
       s.config.name = c.nombre;
@@ -6466,135 +6441,129 @@ async function _resolverComercio(userId) {
       if (c.whatsapp)  s.config.whatsapp = c.whatsapp;
     });
   }
-  const tn = document.getElementById('t-name');
-  if (tn) tn.textContent = c.nombre;
+  const tn = document.getElementById('t-name'); if (tn) tn.textContent = c.nombre;
   document.title = 'Admin — ' + c.nombre;
-
   console.log('[ID-CHECK] Slug detectado:', c.slug, '| ID asignado:', c.id);
   return true;
 }
 
-// ── _activarAdmin: resolver comercio PRIMERO, luego sbInit ────────────
+// ── _activarAdmin: resolver comercio ANTES de sbInit ──────────────────
 async function _activarAdmin(session) {
   _authSession = session;
   _guardarSesion(session);
   _mostrarAdmin();
-
-  if (!session || !session.user || !session.user.id) {
-    _mostrarLogin('Sesión inválida');
-    return;
-  }
-
-  // PASO CRÍTICO: resolver el comercio antes de sbInit.
-  // Sin esto _ADMIN_COMERCIO_ID es null y todas las queries van sin filtro.
+  if (!session || !session.user || !session.user.id) { _mostrarLogin('Sesión inválida'); return; }
   const ok = await _resolverComercio(session.user.id);
   if (!ok) return;
-
   if (typeof sbInit === 'function') await sbInit();
 }
 
-// ── LOGIN ─────────────────────────────────────────────────────────────
+// ── LOGIN ───────────────────────────────────────────────────────────
 async function authLogin() {
   const emailEl = document.getElementById('login-email');
   const passEl  = document.getElementById('login-pass');
   const email   = emailEl ? emailEl.value.trim() : '';
   const pass    = passEl  ? passEl.value         : '';
+
   _setLoginError('');
-  if (!email || !pass) { _setLoginError('Ingresa tu correo y contraseña'); return; }
+
+  if (!email || !pass) {
+    _setLoginError('Ingresa tu correo y contraseña');
+    return;
+  }
+
   _setLoginLoading(true);
+
   try {
-    const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY },
-      body: JSON.stringify({ email, password: pass })
+    const data = await _authFetch('token?grant_type=password', {
+      email:    email,
+      password: pass
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error');
+
     if (!data.access_token) throw new Error('Respuesta inesperada del servidor');
+
     const session = {
       access_token:  data.access_token,
       refresh_token: data.refresh_token,
       expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
       user:          data.user
     };
+
     console.log('[Auth] ✅ Login exitoso:', session.user.email);
     await _activarAdmin(session);
+
   } catch(e) {
     console.error('[Auth] Error de login:', e.message);
     _setLoginError('Acceso denegado — ' + (e.message.includes('Invalid') ? 'correo o contraseña incorrectos' : e.message));
     _setLoginLoading(false);
+    // Vibrar el campo de contraseña como feedback
     if (passEl) { passEl.value = ''; passEl.focus(); }
   }
 }
 
-// ── LOGOUT ────────────────────────────────────────────────────────────
+// ── LOGOUT ──────────────────────────────────────────────────────────
 async function authLogout() {
   if (!confirm('¿Cerrar sesión del panel de administración?')) return;
+
   try {
     if (_authSession && _authSession.access_token) {
       await fetch(AUTH_URL + '/auth/v1/logout', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json', 'apikey':AUTH_KEY, 'Authorization':'Bearer '+_authSession.access_token }
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'apikey':        AUTH_KEY,
+          'Authorization': 'Bearer ' + _authSession.access_token
+        }
       });
     }
-  } catch(e) { console.warn('[Auth] Error logout:', e.message); }
-  // Limpiar sessionStorage del slug activo
-  try { sessionStorage.removeItem('id_comercio_' + window._ADMIN_COMERCIO_SLUG); } catch(e) {}
-  window._ADMIN_COMERCIO_ID = null;
-  window._ADMIN_COMERCIO_SLUG = null;
-  window._ADMIN_COMERCIO_NOMBRE = null;
+  } catch(e) {
+    console.warn('[Auth] Error al cerrar sesión en servidor:', e.message);
+    // Continuar con la limpieza local de todas formas
+  }
+
   _limpiarSesion();
+  window._ADMIN_COMERCIO_ID = null; window._ADMIN_COMERCIO_SLUG = null; window._ADMIN_COMERCIO_NOMBRE = null;
   if (typeof _STORE !== 'undefined') _STORE = null;
   _mostrarLogin('Sesión cerrada');
   console.log('[Auth] Sesión cerrada');
 }
 
-// ── PERSISTENCIA — restaurar sesión al recargar ───────────────────────
+// ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
+// Verificar al cargar si hay sesión guardada; si expiró, intentar renovar.
 (async function onLoad() {
-  const session = _leerSesion();
-  if (!session || !session.access_token) {
-    _mostrarLogin();
-    return;
-  }
-  const ahora  = Date.now();
-  const margen = 5 * 60 * 1000;
+  const session = _leerSesion();  // usa _sessionKey() → aislado por slug
+  if (!session || !session.access_token) { _mostrarLogin(); return; }
+  const ahora = Date.now(), margen = 5*60*1000;
   if (session.expires_at && ahora < session.expires_at - margen) {
     console.log('[Auth] Sesión activa —', session.user && session.user.email);
-    await _activarAdmin(session);
-    return;
+    await _activarAdmin(session); return;
   }
   if (session.refresh_token) {
     try {
       console.log('[Auth] Renovando sesión...');
       const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=refresh_token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY },
+        method: 'POST', headers: { 'Content-Type':'application/json', 'apikey':AUTH_KEY },
         body: JSON.stringify({ refresh_token: session.refresh_token })
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error_description || 'No se pudo renovar');
       console.log('[Auth] ✅ Sesión renovada');
-      await _activarAdmin({
-        access_token:  data.access_token,
+      await _activarAdmin({ access_token: data.access_token,
         refresh_token: data.refresh_token || session.refresh_token,
-        expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
-        user:          data.user || session.user
-      });
-    } catch(e) {
-      console.warn('[Auth] No se pudo renovar:', e.message);
-      _limpiarSesion();
-      _mostrarLogin();
-    }
-  } else {
-    _limpiarSesion();
-    _mostrarLogin();
-  }
+        expires_at: Date.now() + (data.expires_in||3600)*1000,
+        user: data.user || session.user });
+    } catch(e) { console.warn('[Auth] No se pudo renovar:', e.message); _limpiarSesion(); _mostrarLogin(); }
+  } else { _limpiarSesion(); _mostrarLogin(); }
 })();
 
+// ── Tecla Enter en el email va al password ──────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   var emailEl = document.getElementById('login-email');
   if (emailEl) emailEl.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { var p = document.getElementById('login-pass'); if (p) p.focus(); }
+    if (e.key === 'Enter') {
+      var p = document.getElementById('login-pass');
+      if (p) p.focus();
+    }
   });
 });
 
