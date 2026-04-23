@@ -1383,24 +1383,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 // La fuente de verdad es Supabase. Este objeto se rellena al arrancar.
 var _STORE = null;
 
-function clearAdminUI() {
-  _STORE = null;
-  var tn = document.getElementById('t-name');   if (tn) tn.textContent = '';
-  var tg = document.getElementById('open-tog'); if (tg) tg.className = 'tog off';
-  var lb = document.getElementById('open-lbl'); if (lb) lb.textContent = 'Cargando...';
-  ['stat-total-global','stat-total-mes','stat-total-hoy','stat-num-ventas'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = el.id.startsWith('stat-num') ? '0' : '$0';
-  });
-  var og = document.getElementById('orders-grid');
-  if (og) og.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted)">Cargando pedidos...</div>';
-  var eg = document.getElementById('editor-grid'); if (eg) eg.innerHTML = '';
-  if (typeof _updateLogoUI  === 'function') _updateLogoUI('');
-  if (typeof _updateCoverUI === 'function') _updateCoverUI('');
-  if (typeof _POS_STORE !== 'undefined') _POS_STORE = null;
-  console.log('[Admin] clearAdminUI() ejecutada');
-}
-
 function getStore() {
   if (!_STORE) _STORE = seed();
   return _STORE;
@@ -2568,16 +2550,20 @@ function loadConfig() {
 }
 
 function handleLogoUpload(inp) {
-  if (typeof sbHandleLogoUpload === 'function') { sbHandleLogoUpload(inp); }
-  else { var f=inp.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=function(e){_updateLogoUI(e.target.result);}; rd.readAsDataURL(f); }
+  var f = inp.files[0]; if (!f) return;
+  if (f.size > 3*1024*1024) { showToast('Logo muy grande (máx 3MB)'); return; }
+  var r = new FileReader();
+  r.onload = function(e) {
+    upd(function(s){ s.config.logo = e.target.result; });
+    _updateLogoUI(e.target.result);
+    showToast('Logo guardado');
+  };
+  r.readAsDataURL(f);
 }
 function removeLogo() {
-  console.log('ID activo para borrado:', window._ADMIN_COMERCIO_ID);
-  if (!window._ADMIN_COMERCIO_ID) { showToast('Sin comercio activo — recarga la página'); return; }
-  if (!confirm('¿Quitar el logo actual?')) return;
-  SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { logo_url: null })
-    .then(function() { upd(function(s){s.config.logo='';}); _updateLogoUI(''); showToast('Logo eliminado ✓'); })
-    .catch(function(e) { alert('❌ Error: ' + e.message); });
+  upd(function(s){ s.config.logo = ''; });
+  _updateLogoUI('');
+  showToast('Logo eliminado');
 }
 function _updateLogoUI(src) {
   var area = document.getElementById('logo-area');
@@ -2596,16 +2582,20 @@ function _updateLogoUI(src) {
 }
 
 function handleCoverUpload(inp) {
-  if (typeof sbHandleCoverUpload === 'function') { sbHandleCoverUpload(inp); }
-  else { var f=inp.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=function(e){_updateCoverUI(e.target.result);}; rd.readAsDataURL(f); }
+  var f = inp.files[0]; if (!f) return;
+  if (f.size > 5*1024*1024) { showToast('Portada muy grande (máx 5MB)'); return; }
+  var r = new FileReader();
+  r.onload = function(e) {
+    upd(function(s){ s.config.cover = e.target.result; });
+    _updateCoverUI(e.target.result);
+    showToast('Portada guardada');
+  };
+  r.readAsDataURL(f);
 }
 function removeCover() {
-  console.log('ID activo para borrado:', window._ADMIN_COMERCIO_ID);
-  if (!window._ADMIN_COMERCIO_ID) { showToast('Sin comercio activo — recarga la página'); return; }
-  if (!confirm('¿Quitar la portada actual?')) return;
-  SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { cover_url: null })
-    .then(function() { upd(function(s){s.config.cover='';}); _updateCoverUI(''); showToast('Portada eliminada ✓'); })
-    .catch(function(e) { alert('❌ Error: ' + e.message); });
+  upd(function(s){ s.config.cover = ''; });
+  _updateCoverUI('');
+  showToast('Portada eliminada');
 }
 function _updateCoverUI(src) {
   var area = document.getElementById('cover-area');
@@ -3141,11 +3131,9 @@ function posCheckout(payMethod) {
 // SUPABASE POS — carga desde pos_productos y pos_categorias
 // ══════════════════════════════════════════════════════════════
 async function sbPosLoadProductos() {
-  if (!window._ADMIN_COMERCIO_ID) { console.error('[SB-POS] sbPosLoadProductos: _ADMIN_COMERCIO_ID es null — abortando'); return; }
   try {
     var prods = await SB.get('pos_productos', {
-      select: '*', order: 'categoria.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      select: '*', order: 'categoria.asc,nombre.asc'
     });
     updPos(function(s) {
       s.products = (prods || []).map(function(p) {
@@ -3176,11 +3164,9 @@ async function sbPosLoadProductos() {
 }
 
 async function sbPosLoadCategorias() {
-  if (!window._ADMIN_COMERCIO_ID) { console.error('[SB-POS] sbPosLoadCategorias: _ADMIN_COMERCIO_ID es null — abortando'); return; }
   try {
     var cats = await SB.get('pos_categorias', {
-      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc'
     });
     updPos(function(s) {
       s.categories = (cats || []).map(function(c) { return c.nombre; });
@@ -3206,7 +3192,6 @@ async function sbPosLoadCategorias() {
 
 // Arranque POS — se llama desde sbInit general
 async function sbPosInit() {
-  if (!window._ADMIN_COMERCIO_ID) { console.error('[SB-POS] sbPosInit: _ADMIN_COMERCIO_ID es null — abortando'); return; }
   await sbPosLoadCategorias();
   await sbPosLoadProductos();
   // Cargar ventas del día para que estén disponibles al abrir la pestaña
@@ -3228,9 +3213,13 @@ async function sbPosLoadVentas(fechaDesde, fechaHasta) {
 
     // PostgREST no admite el mismo param dos veces con Object.entries/set.
     // Usamos el filtro 'and' en un solo parámetro para el rango de fechas.
-    var _vP = { select: '*', 'origen': 'eq.pos', 'and': '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')', order: 'created_at.desc', limit: 500 };
-    if (window._ADMIN_COMERCIO_ID) { _vP['comercio_id'] = 'eq.' + window._ADMIN_COMERCIO_ID; }
-    var rows = await SB.get('pedidos', _vP);
+    var rows = await SB.get('pedidos', {
+      select: '*',
+      'origen': 'eq.pos',
+      'and':    '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
+      order:    'created_at.desc',
+      limit:    500
+    });
 
     // Normalizar al formato que usa renderPosSales
     var sales = (rows || []).map(function(p) {
@@ -5512,11 +5501,9 @@ async function sbToggleOpen() {
 // PRODUCTOS
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadProductos() {
-  if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadProductos: _ADMIN_COMERCIO_ID es null — abortando'); return; }
   try {
     const prods = await SB.get('productos', {
-      select: '*', order: 'categoria.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      select: '*', order: 'categoria.asc,nombre.asc'
     });
     upd(function(s) {
       s.products = (prods || []).map(function(p) {
@@ -5587,15 +5574,13 @@ async function sbSaveProd() {
   const extras = (typeof editExtras !== 'undefined' ? editExtras : [])
     .filter(e => e.name && e.name.trim());
 
-  if (!window._ADMIN_COMERCIO_ID) { alert('❌ Sin comercio activo. Recarga la página.'); return; }
   const body = {
     nombre:      name,
     precio:      price,
     descripcion: desc,
     categoria:   cat,
     disponible:  avail,
-    extras:      extras,
-    comercio_id: window._ADMIN_COMERCIO_ID
+    extras:      extras  // JSONB directo
   };
 
   // Si hay foto nueva en editPhoto (base64) → subir a Storage primero
@@ -5719,13 +5704,11 @@ function fillAllCatSelects() {
 }
 
 async function sbLoadCategorias() {
-  if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadCategorias: _ADMIN_COMERCIO_ID es null — abortando'); return; }
   try {
     // Pedir las dos columnas correctas: extras_categoria y adiciones_categoria
     const cats = await SB.get('categorias', {
       select: 'id,nombre,orden,extras_categoria,adiciones_categoria',
-      order: 'orden.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      order: 'orden.asc,nombre.asc'
     });
 
     upd(function(s) {
@@ -5832,57 +5815,112 @@ async function sbDelCat(nombre) {
 // IMÁGENES (Storage)
 // ══════════════════════════════════════════════════════════════════════
 async function sbHandleLogoUpload(inp) {
-  const f = inp.files[0]; if (!f) return;
+  const f = inp.files[0];
+  if (!f) return;
   if (f.size > 3 * 1024 * 1024) { showToast('Logo muy grande (máx 3 MB)'); return; }
-  if (!window._ADMIN_COMERCIO_ID) { alert('❌ Sin comercio activo. Recarga e inicia sesión.'); return; }
-  const area = document.getElementById('logo-area');
-  const inn  = document.getElementById('logo-inner');
-  if (inn) inn.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px">⏳ Subiendo...</div>';
-  if (area) area.style.opacity = '0.6';
+
+  // Guardia: sin este ID no sabemos qué fila actualizar
+  if (!window._ADMIN_COMERCIO_ID) {
+    alert('❌ No se detectó el comercio activo.\nRecarga la página e inicia sesión de nuevo.');
+    return;
+  }
+
+  // Feedback visual durante la subida
+  const areaEl = document.getElementById('logo-area');
+  const innEl  = document.getElementById('logo-inner');
+  if (innEl)  innEl.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px">⏳ Subiendo...</div>';
+  if (areaEl) areaEl.style.opacity = '0.6';
+
   try {
-    const mime = f.type || 'image/png';
-    const ext  = (mime.split('/')[1] || 'png').replace('jpeg','jpg');
-    const ts   = Date.now();
-    const path = 'logos/logo_' + window._ADMIN_COMERCIO_ID + '_' + ts + '.' + ext;
-    console.log('[SB] Subiendo logo →', path);
+    // PASO 1 — Subida al bucket 'imagenes'
+    // Path único por comercio + timestamp → nunca colisiona entre restaurantes
+    const mime   = f.type || 'image/png';
+    const ext    = (mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    const ts     = Date.now();
+    const path   = 'logos/logo_' + window._ADMIN_COMERCIO_ID + '_' + ts + '.' + ext;
+    console.log('[SB] PASO 1 — Subiendo logo a Storage:', path);
     const rawUrl = await SB.uploadFile('imagenes', path, f);
-    const publicUrl = rawUrl + '?v=' + ts;
-    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { logo_url: publicUrl });
-    console.log('[SB] comercios.logo_url:', publicUrl);
-    upd(function(s) { s.config.logo = publicUrl; });
-    if (typeof _updateLogoUI === 'function') _updateLogoUI(publicUrl);
+
+    // PASO 2 — Obtención de URL pública con cache-bust
+    // El ?v=timestamp fuerza al navegador a descargar la imagen nueva
+    // en lugar de servir la versión anterior cacheada
+    const nuevaUrl = rawUrl + '?v=' + ts;
+    console.log('[SB] PASO 2 — URL pública obtenida:', nuevaUrl);
+
+    // PASO 3 — UPDATE en tabla 'comercios', columna logo_url
+    // Esta es la tabla que lee menu.html → Admin y Menú ven lo mismo
+    console.log('[SB] PASO 3 — Guardando en comercios.logo_url para id:', window._ADMIN_COMERCIO_ID);
+    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { logo_url: nuevaUrl });
+    console.log('[SB] ✅ comercios.logo_url actualizado correctamente');
+
+    // PASO 4 — Actualización de memoria y UI (sin necesitar refrescar)
+    upd(function(s) { s.config.logo = nuevaUrl; });
+    if (typeof _updateLogoUI === 'function') _updateLogoUI(nuevaUrl);
     showToast('✅ Logo guardado');
+
   } catch(e) {
-    console.error('[SB] Error subiendo logo:', e.message);
-    alert('❌ Error al subir el logo:\n\n' + e.message);
-  } finally { if (area) area.style.opacity = '1'; }
+    console.error('[SB] Error en uploadLogo:', e.message);
+    // Restaurar UI si falló
+    if (typeof _updateLogoUI === 'function') _updateLogoUI(getStore().config.logo || '');
+    alert('❌ Error al subir el logo:\n\n' + e.message +
+      '\n\nVerifica en Supabase:\n' +
+      '• Storage → bucket "imagenes" existe\n' +
+      '• El bucket tiene política INSERT para usuarios autenticados\n' +
+      '• La tabla "comercios" tiene la columna "logo_url"');
+  } finally {
+    if (areaEl) areaEl.style.opacity = '1';
+  }
 }
 
 async function sbHandleCoverUpload(inp) {
-  const f = inp.files[0]; if (!f) return;
+  const f = inp.files[0];
+  if (!f) return;
   if (f.size > 5 * 1024 * 1024) { showToast('Portada muy grande (máx 5 MB)'); return; }
-  if (!window._ADMIN_COMERCIO_ID) { alert('❌ Sin comercio activo. Recarga e inicia sesión.'); return; }
-  const area = document.getElementById('cover-area');
-  const inn  = document.getElementById('cover-inner');
-  if (inn) inn.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px">⏳ Subiendo...</div>';
-  if (area) area.style.opacity = '0.6';
+
+  if (!window._ADMIN_COMERCIO_ID) {
+    alert('❌ No se detectó el comercio activo.\nRecarga la página e inicia sesión de nuevo.');
+    return;
+  }
+
+  const areaEl = document.getElementById('cover-area');
+  const innEl  = document.getElementById('cover-inner');
+  if (innEl)  innEl.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px">⏳ Subiendo...</div>';
+  if (areaEl) areaEl.style.opacity = '0.6';
+
   try {
-    const mime = f.type || 'image/jpeg';
-    const ext  = (mime.split('/')[1] || 'jpg').replace('jpeg','jpg');
-    const ts   = Date.now();
-    const path = 'portadas/cover_' + window._ADMIN_COMERCIO_ID + '_' + ts + '.' + ext;
-    console.log('[SB] Subiendo portada →', path);
+    // PASO 1 — Subida al bucket 'imagenes'
+    const mime   = f.type || 'image/jpeg';
+    const ext    = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    const ts     = Date.now();
+    const path   = 'portadas/cover_' + window._ADMIN_COMERCIO_ID + '_' + ts + '.' + ext;
+    console.log('[SB] PASO 1 — Subiendo portada a Storage:', path);
     const rawUrl = await SB.uploadFile('imagenes', path, f);
-    const publicUrl = rawUrl + '?v=' + ts;
-    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { cover_url: publicUrl });
-    console.log('[SB] comercios.cover_url:', publicUrl);
-    upd(function(s) { s.config.cover = publicUrl; });
-    if (typeof _updateCoverUI === 'function') _updateCoverUI(publicUrl);
+
+    // PASO 2 — URL pública con cache-bust
+    const nuevaUrl = rawUrl + '?v=' + ts;
+    console.log('[SB] PASO 2 — URL pública obtenida:', nuevaUrl);
+
+    // PASO 3 — UPDATE en tabla 'comercios', columna cover_url
+    console.log('[SB] PASO 3 — Guardando en comercios.cover_url para id:', window._ADMIN_COMERCIO_ID);
+    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { cover_url: nuevaUrl });
+    console.log('[SB] ✅ comercios.cover_url actualizado correctamente');
+
+    // PASO 4 — Actualización de memoria y UI
+    upd(function(s) { s.config.cover = nuevaUrl; });
+    if (typeof _updateCoverUI === 'function') _updateCoverUI(nuevaUrl);
     showToast('✅ Portada guardada');
+
   } catch(e) {
-    console.error('[SB] Error subiendo portada:', e.message);
-    alert('❌ Error al subir la portada:\n\n' + e.message);
-  } finally { if (area) area.style.opacity = '1'; }
+    console.error('[SB] Error en uploadCover:', e.message);
+    if (typeof _updateCoverUI === 'function') _updateCoverUI(getStore().config.cover || '');
+    alert('❌ Error al subir la portada:\n\n' + e.message +
+      '\n\nVerifica en Supabase:\n' +
+      '• Storage → bucket "imagenes" existe\n' +
+      '• El bucket tiene política INSERT para usuarios autenticados\n' +
+      '• La tabla "comercios" tiene la columna "cover_url"');
+  } finally {
+    if (areaEl) areaEl.style.opacity = '1';
+  }
 }
 
 async function sbHandleProdPhotoUpload(inp) {
@@ -5908,7 +5946,6 @@ async function sbHandleProdPhotoUpload(inp) {
 // PEDIDOS — SOLO PEDIDOS DE HOY
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadPedidos() {
-  if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadPedidos: _ADMIN_COMERCIO_ID es null — abortando'); return; }
   const hoy = new Date();
   // Inicio del día en hora local → ISO
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
@@ -5917,8 +5954,8 @@ async function sbLoadPedidos() {
     const pedidos = await SB.get('pedidos', {
       select: '*',
       'created_at': `gte.${inicioHoy}`,
+      // Excluir ventas de caja/POS — solo domicilios y pedidos manuales
       'origen': 'neq.pos',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
       order: 'created_at.desc',
       limit: 200
     });
@@ -6215,11 +6252,9 @@ async function sbSavePedidoManual(order) {
 // ══════════════════════════════════════════════════════════════════════
 let _sbLastId = 0;
 async function sbPollNuevos() {
-  if (!window._ADMIN_COMERCIO_ID) return;
   try {
     const r = await SB.get('pedidos', {
       select: 'id,cliente,total,estado',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
       order: 'id.desc', limit: 1
     });
     if (!r || !r.length) return;
@@ -6244,9 +6279,10 @@ async function sbGetStats() {
   const hoy = new Date().toISOString().slice(0,10);
   const mes  = new Date().toISOString().slice(0,7);
   try {
-    const _stP = { select: 'total,created_at,estado', 'estado': 'neq.Cancelado' };
-    if (window._ADMIN_COMERCIO_ID) { _stP['comercio_id'] = 'eq.' + window._ADMIN_COMERCIO_ID; }
-    const all = await SB.get('pedidos', _stP);
+    const all = await SB.get('pedidos', {
+      select: 'total,created_at,estado',
+      'estado': 'neq.Cancelado'
+    });
     let totalHoy = 0, totalMes = 0, totalGlobal = 0;
     (all||[]).forEach(p => {
       const t = parseFloat(p.total)||0;
@@ -6268,14 +6304,14 @@ async function sbGetStats() {
 // y las Estadísticas y Ventas muestran el acumulado total.
 // ══════════════════════════════════════════════════════════════════════
 async function sbCargarHistorialCompleto() {
-  if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbCargarHistorialCompleto: _ADMIN_COMERCIO_ID es null — abortando'); return null; }
   try {
+    // Traer TODOS los pedidos (sin límite de fecha) no cancelados
+    // para las estadísticas y el panel de ventas
     const todos = await SB.get('pedidos', {
       select: 'id,total,created_at,estado,metodo_pago,origen,cliente,telefono',
       'estado': 'neq.Cancelado',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
-      order: 'created_at.desc',
-      limit: 5000
+      order:  'created_at.desc',
+      limit:  5000   // suficiente para cualquier negocio
     });
 
     // Convertir al formato que usa getAllSalesData / _renderGlobalSales
@@ -6340,48 +6376,48 @@ async function sbCargarVentasGlobales() {
 // ARRANQUE — reemplaza el INIT original
 // ══════════════════════════════════════════════════════════════════════
 async function sbInit() {
-  // ── GUARDIA CENTRAL ─────────────────────────────────────────────────
-  if (!window._ADMIN_COMERCIO_ID) {
-    console.error('[SaaS] sbInit: _ADMIN_COMERCIO_ID es null — abortando TODO');
-    if (typeof _mostrarLogin === 'function') _mostrarLogin('Sesión no válida — vuelve a iniciar sesión');
-    return;
-  }
-  console.log('[SaaS] 🚀 Admin iniciando — comercio:', window._ADMIN_COMERCIO_NOMBRE,
-              '| ID:', window._ADMIN_COMERCIO_ID);
-
-  // Paso A: limpiar UI del comercio anterior
-  clearAdminUI();
-
+  console.log('[SB] 🚀 Iniciando Papayaso Admin...');
   try {
-    // Paso B: carga secuencial — cada función tiene su propia guardia
+    // 1. Cargar configuración primero (nombre, logo, isOpen)
     await sbLoadConfig();
+
+    // 2. Cargar categorías y productos
     await sbLoadCategorias();
     await sbLoadProductos();
+
+    // 3. Cargar pedidos ACTIVOS de hoy (panel Pedidos)
     await sbLoadPedidos();
-    sbCargarHistorialCompleto(); // no bloquea el render
+
+    // 4. Cargar historial COMPLETO para estadísticas y ventas globales
+    sbCargarHistorialCompleto(); // async sin await — no bloquea el render inicial
+
+    // 5. Cargar datos del POS desde sus propias tablas
     await sbPosInit();
 
-    // Paso C: activar UI
+    // 5. Mostrar en UI
     const subPed = document.getElementById('sub-pedidos'); if (subPed) subPed.classList.add('visible');
     const pedTab = document.getElementById('tab-pedidos'); if (pedTab) pedTab.classList.add('active');
     if (typeof renderOrders === 'function') renderOrders();
     if (typeof updateStats  === 'function') updateStats();
 
+    // 5. Polling cada 8s para nuevos pedidos
     setInterval(sbPollNuevos, 8000);
 
+    // 6. Audio (primer clic del usuario)
     if (typeof _initAudio === 'function') {
       document.addEventListener('click',      _initAudio, { once: true });
       document.addEventListener('touchstart', _initAudio, { once: true });
     }
 
-    console.log('[SaaS] ✅ Admin listo — comercio:', window._ADMIN_COMERCIO_NOMBRE);
+    console.log('[SB] ✅ Admin listo. localStorage = 0 usos.');
   } catch(e) {
-    console.error('[SaaS] Error en arranque:', e);
-    alert('❌ Error al iniciar el panel:\n\n' + e.message);
+    console.error('[SB] Error en arranque:', e);
+    alert('❌ Error al conectar con Supabase:\n\n' + e.message +
+      '\n\nVerifica la URL y la API Key en el código.');
   }
 }
 
-// sbInit ya NO se llama aquí — lo llama _activarAdmin tras resolver el comercio
+// sbInit ya NO se llama aquí — lo llama el sistema de auth cuando confirma sesión
 
 </script>
 
@@ -6475,73 +6511,15 @@ function _limpiarSesion() {
   _authSession = null;
 }
 
-// ── Activar el admin: A=resolver comercio, B=sbInit ─────────────────
+// ── Activar el admin (llamar sbInit y mostrar UI) ───────────────────
 async function _activarAdmin(session) {
   _authSession = session;
   _guardarSesion(session);
   _mostrarAdmin();
 
-  if (!session || !session.user || !session.user.id) {
-    _mostrarLogin('Sesión inválida — vuelve a iniciar sesión');
-    return;
-  }
-  const resuelto = await _resolverComercioDelUsuario(session.user.id);
-  if (!resuelto) return;  // error ya mostrado
-
-  if (typeof sbInit === 'function') await sbInit();
-}
-
-// ── Resolver el comercio del usuario usando su token real ─────────────
-async function _resolverComercioDelUsuario(userId) {
-  console.log('[SaaS] Resolviendo comercio para user_id:', userId);
-  const token = (_authSession && _authSession.access_token) ? _authSession.access_token : AUTH_KEY;
-  try {
-    const url = new URL(AUTH_URL + '/rest/v1/comercios');
-    url.searchParams.set('select',  'id,nombre,slug,logo_url,cover_url,whatsapp,activo');
-    url.searchParams.set('user_id', 'eq.' + userId);
-    url.searchParams.set('activo',  'eq.true');
-    url.searchParams.set('limit',   '1');
-    const r = await fetch(url, {
-      headers: { 'Content-Type':'application/json', 'apikey': AUTH_KEY, 'Authorization': 'Bearer ' + token }
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text());
-    const rows = await r.json();
-    if (!rows || rows.length === 0) {
-      console.error('[SaaS] Sin comercio para user_id:', userId);
-      const ac = document.getElementById('admin-content');
-      if (ac) ac.classList.remove('visible');
-      _mostrarLogin('');
-      const errEl = document.getElementById('login-error');
-      if (errEl) errEl.innerHTML = '⚠️ Tu cuenta no tiene un restaurante asignado.<br>' +
-        '<span style="font-size:11px;opacity:.75">Contacta al administrador. (uid: ' + String(userId).slice(0,8) + '...)</span>';
-      _limpiarSesion();
-      return false;
-    }
-    const c = rows[0];
-    // window. garantiza visibilidad en ambos bloques <script>
-    window._ADMIN_COMERCIO_ID     = c.id;
-    window._ADMIN_COMERCIO_SLUG   = c.slug;
-    window._ADMIN_COMERCIO_NOMBRE = c.nombre;
-    try { localStorage.setItem('papayaso_comercio_id',   c.id);   } catch(e) {}
-    try { localStorage.setItem('papayaso_comercio_slug', c.slug); } catch(e) {}
-    if (typeof upd === 'function') {
-      upd(function(s) {
-        s.config.name = c.nombre;
-        if (c.logo_url)  s.config.logo  = c.logo_url  + '?v=' + Date.now();
-        if (c.cover_url) s.config.cover = c.cover_url + '?v=' + Date.now();
-        if (c.whatsapp)  s.config.whatsapp = c.whatsapp;
-      });
-    }
-    var tn = document.getElementById('t-name');
-    if (tn) tn.textContent = c.nombre;
-    document.title = 'Admin — ' + c.nombre;
-    console.log('[SaaS] ✅ Comercio resuelto:', c.nombre, '| ID:', c.id,
-      '| logo_url:', c.logo_url || '(vacío)');
-    return true;
-  } catch(e) {
-    console.error('[SaaS] Error resolviendo comercio:', e.message);
-    alert('❌ Error al identificar tu restaurante:\n' + e.message);
-    return false;
+  // Inicializar el admin solo ahora que el usuario está autenticado
+  if (typeof sbInit === 'function') {
+    await sbInit();
   }
 }
 
@@ -6609,14 +6587,13 @@ async function authLogout() {
   }
 
   _limpiarSesion();
-  window._ADMIN_COMERCIO_ID     = null;
-  window._ADMIN_COMERCIO_SLUG   = null;
-  window._ADMIN_COMERCIO_NOMBRE = null;
-  try { localStorage.removeItem('papayaso_comercio_id');   } catch(e) {}
-  try { localStorage.removeItem('papayaso_comercio_slug'); } catch(e) {}
-  if (typeof clearAdminUI === 'function') clearAdminUI();
+  // Limpiar datos en memoria
+  if (typeof _STORE !== 'undefined') {
+    _STORE = null;
+  }
+  // Redirigir a login
   _mostrarLogin('Sesión cerrada');
-  console.log('[Auth] Sesión cerrada — comercio limpiado');
+  console.log('[Auth] Sesión cerrada correctamente');
 }
 
 // ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
