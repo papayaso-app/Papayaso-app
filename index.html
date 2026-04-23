@@ -520,7 +520,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
   <!-- Contenido debajo de la portada -->
   <div class="hero-content">
     <!-- Nombre -->
-    <div class="hero-name" id="hero-name"></div>
+    <div class="hero-name" id="hero-name">Papayaso</div>
     <!-- Información -->
     <div class="hero-info-row">
       <span class="hero-info-chip">📍 <span id="hero-addr">Dirección</span></span>
@@ -720,7 +720,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
 // ── ESTADO EN MEMORIA (0 localStorage) ──────────────────────────────
 var _STORE = {
   config: {
-    name: '', whatsapp: '',  // se rellena desde comercios por sbMenuInit
+    name: 'Papayaso', whatsapp: '3001234567',
     address: '', hours: '', desc: '', welcome: '',
     isOpen: true, logo: '', cover: '',
     deliveryMin: '30', deliveryMax: '60'
@@ -729,9 +729,9 @@ var _STORE = {
 };
 // ID del último pedido en Supabase (para tracking)
 var _lastSbPedidoId = 0;
-// ID y slug del comercio activo (se resuelve por ?rest= al arrancar)
-var _COMERCIO_ID   = null;
-var _COMERCIO_SLUG = null;
+// Comercio activo — se asigna en sbResolverComercio() al arrancar
+var _COMERCIO_ID   = null;   // UUID → comercios.id (fuente de verdad)
+var _COMERCIO_SLUG = null;   // slug leído de ?rest= en la URL
 // Datos del cliente guardados en sesión (no persisten al cerrar tab)
 var _clientData = { name:'', phone:'', address:'', ref:'' };
 
@@ -1812,26 +1812,26 @@ function buildTrackMapHTML() {
   // Función de calle horizontal
   function hRoad(y, w, col) {
     col = col || '#c8c6c0';
-    o += '<rect x="0" y="' + (y - w/2) + '" width="' + W + '" height="' + w + '" fill="' + col + '"/>';
-    // línea central punteada
+    var ry = Math.max(0, y - w/2);
+    o += '<rect x="0" y="' + ry + '" width="' + W + '" height="' + Math.max(0,w) + '" fill="' + col + '"/>';
     var dashW = 20, gap = 14, yCenter = y;
     for (var dx = 0; dx < W; dx += dashW + gap) {
-      o += '<rect x="' + dx + '" y="' + (yCenter-1) + '" width="' + dashW + '" height="2" fill="white" opacity=".5" rx="1"/>';
+      o += '<rect x="' + dx + '" y="' + Math.max(0,yCenter-1) + '" width="' + Math.max(0,dashW) + '" height="2" fill="white" opacity=".5" rx="1"/>';
     }
-    // Bordes acera
-    o += '<rect x="0" y="' + (y - w/2 - 4) + '" width="' + W + '" height="4" fill="#d4cfc8"/>';
-    o += '<rect x="0" y="' + (y + w/2)     + '" width="' + W + '" height="4" fill="#d4cfc8"/>';
+    o += '<rect x="0" y="' + Math.max(0, y - w/2 - 4) + '" width="' + W + '" height="4" fill="#d4cfc8"/>';
+    o += '<rect x="0" y="' + Math.max(0, y + w/2)     + '" width="' + W + '" height="4" fill="#d4cfc8"/>';
   }
 
   function vRoad(x, w, col) {
     col = col || '#c8c6c0';
-    o += '<rect x="' + (x - w/2) + '" y="0" width="' + w + '" height="' + H + '" fill="' + col + '"/>';
+    var rx = Math.max(0, x - w/2);
+    o += '<rect x="' + rx + '" y="0" width="' + Math.max(0,w) + '" height="' + H + '" fill="' + col + '"/>';
     var dashH = 18, gap = 12;
     for (var dy = 0; dy < H; dy += dashH + gap) {
-      o += '<rect x="' + (x-1) + '" y="' + dy + '" width="2" height="' + dashH + '" fill="white" opacity=".5" rx="1"/>';
+      o += '<rect x="' + Math.max(0,x-1) + '" y="' + dy + '" width="2" height="' + Math.max(0,dashH) + '" fill="white" opacity=".5" rx="1"/>';
     }
-    o += '<rect x="' + (x - w/2 - 4) + '" y="0" width="4" height="' + H + '" fill="#d4cfc8"/>';
-    o += '<rect x="' + (x + w/2)     + '" y="0" width="4" height="' + H + '" fill="#d4cfc8"/>';
+    o += '<rect x="' + Math.max(0, x - w/2 - 4) + '" y="0" width="4" height="' + H + '" fill="#d4cfc8"/>';
+    o += '<rect x="' + Math.max(0, x + w/2)     + '" y="0" width="4" height="' + H + '" fill="#d4cfc8"/>';
   }
 
   // Dibujar calles (atrás → adelante)
@@ -1871,14 +1871,13 @@ function buildTrackMapHTML() {
   // Helper: bloque de edificio top-down
   function bld(x, y, w, h, color, roofColor) {
     roofColor = roofColor || '#8a9b6a';
-    // Sombra
+    w = Math.max(0, w); h = Math.max(0, h);
     o += '<rect x="' + (x+4) + '" y="' + (y+4) + '" width="' + w + '" height="' + h + '" fill="rgba(0,0,0,0.18)" rx="2"/>';
-    // Cuerpo
     o += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + color + '" rx="2"/>';
-    // Techo (color diferente)
-    o += '<rect x="' + (x+3) + '" y="' + (y+3) + '" width="' + (w-6) + '" height="' + (h-6) + '" fill="' + roofColor + '" rx="1" opacity=".7"/>';
-    // Ventanas (top-down view)
-    var wCols = Math.floor((w-8)/12), wRows = Math.floor((h-10)/14);
+    // Techo — clamp para evitar dimensiones negativas si el edificio es pequeño
+    var roofW = Math.max(0, w-6), roofH = Math.max(0, h-6);
+    o += '<rect x="' + (x+3) + '" y="' + (y+3) + '" width="' + roofW + '" height="' + roofH + '" fill="' + roofColor + '" rx="1" opacity=".7"/>';
+    var wCols = Math.max(0, Math.floor((w-8)/12)), wRows = Math.max(0, Math.floor((h-10)/14));
     for (var wr2=0;wr2<Math.min(wRows,3);wr2++) {
       for (var wc2=0;wc2<Math.min(wCols,4);wc2++) {
         o += '<rect x="' + (x+5+wc2*12) + '" y="' + (y+6+wr2*13) + '" width="6" height="8" fill="rgba(200,230,255,0.7)" rx="1"/>';
@@ -1888,11 +1887,11 @@ function buildTrackMapHTML() {
 
   // Helper: parque / jardín
   function park(x, y, w, h) {
+    w = Math.max(0, w); h = Math.max(0, h);
     o += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="#7ab648" rx="4"/>';
-    o += '<rect x="' + (x+4) + '" y="' + (y+4) + '" width="' + (w-8) + '" height="' + (h-8) + '" fill="#8dc65a" rx="3"/>';
-    // Sendero
-    o += '<rect x="' + (x+w/2-3) + '" y="' + y + '" width="6" height="' + h + '" fill="#b5a97a" opacity=".5" rx="2"/>';
-    o += '<rect x="' + x + '" y="' + (y+h/2-3) + '" width="' + w + '" height="6" fill="#b5a97a" opacity=".5" rx="2"/>';
+    o += '<rect x="' + (x+4) + '" y="' + (y+4) + '" width="' + Math.max(0,w-8) + '" height="' + Math.max(0,h-8) + '" fill="#8dc65a" rx="3"/>';
+    o += '<rect x="' + Math.max(0,x+w/2-3) + '" y="' + y + '" width="6" height="' + h + '" fill="#b5a97a" opacity=".5" rx="2"/>';
+    o += '<rect x="' + x + '" y="' + Math.max(0,y+h/2-3) + '" width="' + w + '" height="6" fill="#b5a97a" opacity=".5" rx="2"/>';
     // Árboles (vista top)
     var treePos = [[x+10,y+10],[x+w-16,y+10],[x+10,y+h-16],[x+w-16,y+h-16],[x+w/2,y+h/2]];
     for (var tp=0;tp<treePos.length;tp++) {
@@ -2135,28 +2134,43 @@ const SB_TO_LOCAL = {
 };
 
 // ══════════════════════════════════════════════════════════════
-// PASO 0 — Detectar comercio por ?rest=slug
-// Lee slug de la URL, busca en 'comercios', aplica nombre/logo/cover
-// al DOM ANTES de cargar productos, guarda _COMERCIO_ID para filtros.
+// PASO 0 — sbResolverComercio()
+// Lee ?rest=slug de la URL, busca en tabla 'comercios',
+// aplica nombre/logo/cover al DOM YA, guarda _COMERCIO_ID.
+// Debe llamarse ANTES de sbCargarConfig y sbCargarProductos.
 // ══════════════════════════════════════════════════════════════
 async function sbResolverComercio() {
-  const params  = new URLSearchParams(window.location.search);
-  const urlSlug = (params.get('rest') || params.get('slug') || '').trim();
-  let stored = '';
+  // 1. Leer slug de la URL (o localStorage como fallback)
+  var params  = new URLSearchParams(window.location.search);
+  var urlSlug = (params.get('rest') || params.get('slug') || '').trim();
+  var stored  = '';
   try { stored = localStorage.getItem('papayaso_comercio_slug') || ''; } catch(e) {}
-  const slug = urlSlug || stored || 'papayaso';
+  var slug = urlSlug || stored || 'papayaso';
   _COMERCIO_SLUG = slug;
   try { localStorage.setItem('papayaso_comercio_slug', slug); } catch(e) {}
+
+  // 2. Limpiar imágenes del comercio anterior (para evitar que se mezclen
+  //    al navegar entre ?rest=papayaso y ?rest=real-broaster)
+  var heroLogo  = document.getElementById('hero-logo-img');
+  var heroCover = document.getElementById('hero-bg-el');
+  if (heroLogo)  { heroLogo.src = ''; heroLogo.style.display = 'none'; }
+  if (heroCover) { heroCover.style.backgroundImage = 'none'; }
+  _STORE.config.logo  = '';
+  _STORE.config.cover = '';
+
   console.log('[SaaS] Detectando comercio con slug:', slug);
 
   try {
-    const rows = await SB.get('comercios', {
+    // 3. Buscar en 'comercios' — aquí están logo_url y cover_url
+    var rows = await SB.get('comercios', {
       select: 'id,nombre,slug,whatsapp,logo_url,cover_url,activo',
-      'slug': 'eq.' + slug, 'activo': 'eq.true', limit: 1
+      'slug':   'eq.' + slug,
+      'activo': 'eq.true',
+      limit: 1
     });
 
     if (!rows || !rows.length) {
-      // Restaurante no encontrado — mostrar pantalla de error
+      // Restaurante no encontrado — mostrar pantalla amigable
       document.body.innerHTML = '<div style="min-height:100vh;display:flex;flex-direction:column;'
         + 'align-items:center;justify-content:center;font-family:Inter,sans-serif;'
         + 'background:#f5f5f5;padding:32px;text-align:center">'
@@ -2164,47 +2178,49 @@ async function sbResolverComercio() {
         + '<h1 style="font-family:Montserrat,sans-serif;font-size:24px;font-weight:900;'
         + 'color:#111;margin-bottom:10px">Restaurante no encontrado</h1>'
         + '<p style="font-size:15px;color:#666;max-width:340px;line-height:1.6">'
-        + 'No existe un restaurante con el identificador <strong style="color:#ff6b00">'
-        + slug + '</strong> o ha sido desactivado.</p></div>';
+        + 'No existe un restaurante con el identificador '
+        + '<strong style="color:#ff6b00">' + slug + '</strong>'
+        + ' o ha sido desactivado.</p></div>';
       console.warn('[SaaS] Comercio no encontrado:', slug);
       return null;
     }
 
-    const c = rows[0];
+    var c = rows[0];
     _COMERCIO_ID = c.id;
     try { localStorage.setItem('papayaso_comercio_id', c.id); } catch(e) {}
+
     console.log('[SaaS] ✅ Comercio encontrado:', c.nombre, '| ID:', c.id);
 
-    // Inyectar nombre en el DOM INMEDIATAMENTE (antes de que carguen productos)
+    // 4. Inyectar nombre en el DOM INMEDIATAMENTE (antes de que carguen productos)
     _STORE.config.name = c.nombre;
-    const heroName = document.getElementById('hero-name');
+    var heroName = document.getElementById('hero-name');
     if (heroName) heroName.textContent = c.nombre;
     document.title = c.nombre + ' — Menú';
 
-    // Logo desde comercios.logo_url con cache-bust
+    // 5. Logo desde comercios.logo_url (nunca desde configuracion.url_logo)
     if (c.logo_url && c.logo_url.trim()) {
-      const logoUrl = c.logo_url.trim() + (c.logo_url.includes('?v=') ? '' : '?v=' + Date.now());
+      // Cache-bust para no ver la imagen anterior cacheada
+      var logoUrl = c.logo_url.trim() + (c.logo_url.includes('?v=') ? '' : '?v=' + Date.now());
       _STORE.config.logo = logoUrl;
-      const logoEl = document.getElementById('hero-logo-img');
-      if (logoEl) {
-        logoEl.src = logoUrl;
-        logoEl.style.display = 'block';
-        logoEl.onerror = function() { logoEl.style.display = 'none'; };
+      if (heroLogo) {
+        heroLogo.src = logoUrl;
+        heroLogo.style.display = 'block';
+        heroLogo.onerror = function() { heroLogo.style.display = 'none'; };
       }
       console.log('[SaaS] Logo aplicado desde comercios.logo_url:', logoUrl);
     }
 
-    // Cover/portada desde comercios.cover_url con cache-bust
+    // 6. Portada desde comercios.cover_url (nunca desde configuracion.url_portada)
     if (c.cover_url && c.cover_url.trim()) {
-      const coverUrl = c.cover_url.trim() + (c.cover_url.includes('?v=') ? '' : '?v=' + Date.now());
+      var coverUrl = c.cover_url.trim() + (c.cover_url.includes('?v=') ? '' : '?v=' + Date.now());
       _STORE.config.cover = coverUrl;
-      const coverEl = document.getElementById('hero-bg-el');
-      if (coverEl) coverEl.style.backgroundImage = 'url(' + JSON.stringify(coverUrl) + ')';
+      if (heroCover) heroCover.style.backgroundImage = 'url(' + JSON.stringify(coverUrl) + ')';
       console.log('[SaaS] Cover aplicado desde comercios.cover_url:', coverUrl);
     }
 
     if (c.whatsapp) _STORE.config.whatsapp = c.whatsapp;
     return c;
+
   } catch(e) {
     console.error('[SaaS] Error detectando comercio:', e.message);
     return null;
@@ -2212,31 +2228,38 @@ async function sbResolverComercio() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// PASO 1 — Cargar datos operativos desde 'configuracion'
-// (horario, tiempos de entrega, pin, etc.)
-// NO lee url_logo / url_portada — esas vienen de PASO 0.
+// PASO 1 — sbCargarConfig()
+// Carga datos OPERATIVOS desde 'configuracion':
+// horario, tiempos de entrega, pin repartidor, etc.
+// NO lee url_logo / url_portada (esas vienen del PASO 0).
 // ══════════════════════════════════════════════════════════════
 async function sbCargarConfig() {
   try {
-    const qp = {
+    var qp = {
       select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,mensaje_bienvenida,esta_abierto,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal',
       limit: 1
     };
+    // Filtrar por comercio_id para obtener la config del restaurante correcto
     if (_COMERCIO_ID) { qp['comercio_id'] = 'eq.' + _COMERCIO_ID; }
     else              { qp['id'] = 'eq.1'; }
+
     const rows = await SB.get('configuracion', qp);
-    if (!rows || !rows.length) { console.warn('[SB] Sin fila en configuracion'); return; }
+    if (!rows || !rows.length) {
+      console.warn('[SB] Sin fila en configuracion para comercio_id:', _COMERCIO_ID);
+      return;
+    }
     const c = rows[0];
     const prev = _STORE.config;
+
     _STORE.config = {
-      // Nombre: prioridad a lo que ya puso sbResolverComercio (PASO 0)
+      // Nombre: respetar lo que puso sbResolverComercio (de comercios.nombre)
       name:        prev.name        || c.nombre_negocio  || '',
       whatsapp:    prev.whatsapp    || c.telefono_whatsapp || '',
       address:     c.direccion      || prev.address        || '',
       desc:        c.descripcion    || prev.desc           || '',
       welcome:     c.mensaje_bienvenida || prev.welcome    || '',
       isOpen:      c.esta_abierto !== false,
-      // Imágenes: respetar lo que puso sbResolverComercio
+      // Imágenes: SIEMPRE respetar las de sbResolverComercio (comercios.logo_url)
       logo:        prev.logo  || '',
       cover:       prev.cover || '',
       deliveryMin: String(c.tiempo_entrega_min || prev.deliveryMin || 30),
@@ -2247,13 +2270,16 @@ async function sbCargarConfig() {
       schedule:    (c.horario_semanal && typeof c.horario_semanal === 'object')
                      ? c.horario_semanal : (prev.schedule || null)
     };
+
     if (_STORE.config.schedule) {
       _STORE.config.isOpen = calcularIsOpenPorHorario(_STORE.config.schedule);
     }
-    // Re-inyectar nombre por si init() ya corrió antes
-    const hn = document.getElementById('hero-name');
+
+    // Re-inyectar nombre por si init() ya corrió antes de sbCargarConfig
+    var hn = document.getElementById('hero-name');
     if (hn && _STORE.config.name) hn.textContent = _STORE.config.name;
     document.title = (_STORE.config.name || 'Menú') + ' — Menú';
+
     console.log('[SB] Config cargada — nombre:', _STORE.config.name,
       '| isOpen:', _STORE.config.isOpen,
       '| logo (de comercios):', _STORE.config.logo || '(vacío)');
@@ -2356,8 +2382,8 @@ function aplicarEstadoAbierto() {
 // ══════════════════════════════════════════════════════════════
 async function sbCargarProductos() {
   try {
-    // MULTITENANT: filtrar productos por comercio_id
-    const _prodP = { select: '*', 'disponible': 'eq.true', order: 'categoria.asc,nombre.asc' };
+    // Filtrar por comercio_id para no mezclar productos entre restaurantes
+    var _prodP = { select: '*', 'disponible': 'eq.true', order: 'categoria.asc,nombre.asc' };
     if (_COMERCIO_ID) { _prodP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
     const prods = await SB.get('productos', _prodP);
     if (!prods || !prods.length) { console.warn('[SB] Sin productos'); return; }
@@ -2449,6 +2475,7 @@ async function sbInsertPedido(orderData) {
     cambio:          orderData.cambio   || '',
     notas:           orderData.notes    || '',
     origen:          'web',
+    // Necesario para RLS y para que el admin filtre por restaurante
     comercio_id:     _COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
   };
 
@@ -2698,18 +2725,37 @@ async function restaurarSeguimientoSiExiste() {
 
   console.log('[Track] ID guardado encontrado:', idGuardado, '— consultando Supabase...');
   try {
-    const rows = await SB.get('pedidos', {
-      select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at',
+    // Incluir comercio_id en la query para que el filtro sea estricto
+    var _trackP = {
+      select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at,comercio_id',
       'id': 'eq.' + idGuardado,
       limit: 1
-    });
+    };
+    // Si ya tenemos el ID del comercio activo, añadirlo al filtro
+    // para que Supabase no devuelva pedidos de otros restaurantes
+    if (_COMERCIO_ID) { _trackP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
+
+    const rows = await SB.get('pedidos', _trackP);
     if (!rows || !rows.length) {
-      // Pedido no existe o fue purgado — limpiar
+      // El pedido no existe O pertenece a otro comercio → limpiar
       limpiarIdPedido();
-      console.log('[Track] Pedido no encontrado en Supabase, limpiando');
+      if (_COMERCIO_ID) {
+        console.log('[Track] Pedido', idGuardado, 'no pertenece a comercio', _COMERCIO_ID, '— limpiando tracking');
+      } else {
+        console.log('[Track] Pedido no encontrado en Supabase, limpiando');
+      }
       return;
     }
     const p = rows[0];
+
+    // Doble verificación en el cliente: aunque Supabase ya filtró,
+    // si por alguna razón el comercio_id no coincide → descartar
+    if (_COMERCIO_ID && p.comercio_id && String(p.comercio_id) !== String(_COMERCIO_ID)) {
+      limpiarIdPedido();
+      console.warn('[Track] Mismatch de comercio_id — pedido de otro restaurante, ignorando');
+      return;
+    }
+
     const estadoLocal = SB_TO_LOCAL[p.estado] || 'nuevo';
 
     // Si ya fue entregado o cancelado → limpiar y no mostrar tracking
@@ -2776,8 +2822,7 @@ async function restaurarSeguimientoSiExiste() {
 // ══════════════════════════════════════════════════════════════
 async function sbCargarCategorias() {
   try {
-    // MULTITENANT: filtrar categorías por comercio_id
-    const _catP = { select: 'nombre,extras_categoria,adiciones_categoria', order: 'orden.asc,nombre.asc' };
+    var _catP = { select: 'nombre,extras_categoria,adiciones_categoria', order: 'orden.asc,nombre.asc' };
     if (_COMERCIO_ID) { _catP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
     const cats = await SB.get('categorias', _catP);
 
@@ -2827,45 +2872,41 @@ async function sbCargarCategorias() {
 (async function sbMenuInit() {
   console.log('[SaaS] 🚀 Iniciando menú multitenant...');
   try {
-    // PASO 0: detectar comercio por ?rest=slug (BLOQUEANTE)
-    // Inyecta nombre/logo/cover en el DOM antes de cargar productos.
-    // Si el slug no existe → muestra "Restaurante no encontrado" y para.
-    const comercio = await sbResolverComercio();
-    if (!comercio) return;
+    // ── PASO 0 (bloqueante): detectar comercio por ?rest=slug ─────────
+    // Inyecta nombre/logo/cover en el DOM ANTES de cargar productos.
+    // Si el slug no existe → muestra pantalla de "no encontrado" y para.
+    var comercio = await sbResolverComercio();
+    if (!comercio) return;  // pantalla de error ya mostrada
 
-    // PASO 1: cargar datos operativos + productos + categorías en paralelo
-    // ya con _COMERCIO_ID definido para que los filtros funcionen.
+    // ── PASO 1: cargar datos en paralelo (ya con _COMERCIO_ID definido) ─
     await Promise.all([sbCargarConfig(), sbCargarProductos(), sbCargarCategorias()]);
 
-    // 2. Renderizar UI con datos de Supabase
-    if (typeof init          === 'function') init();
-    if (typeof renderCats    === 'function') renderCats(getStore());
-    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
+    // ── PASO 2: renderizar UI ─────────────────────────────────────────
+    if (typeof init           === 'function') init();
+    if (typeof renderCats     === 'function') renderCats(getStore());
+    if (typeof renderSections === 'function') renderSections(getStore(), 'all');
 
-    // 3. Restaurar seguimiento si el cliente tiene un pedido activo guardado
+    // ── PASO 3: restaurar seguimiento (verifica comercio_id) ──────────
     await restaurarSeguimientoSiExiste();
 
-    // 4. Auto-verificación de horario cada 60 segundos
-    // Recalcula si el negocio está abierto sin recargar la página
+    // ── PASO 4: recálculo automático de horario cada 60 segundos ─────
     setInterval(function() {
       if (_STORE.config.schedule) {
-        var eraAbierto = _STORE.config.isOpen;
-        var ahoraAbierto = aplicarEstadoAbierto();
+        var eraAbierto    = _STORE.config.isOpen;
+        var ahoraAbierto  = aplicarEstadoAbierto();
         if (eraAbierto !== ahoraAbierto) {
-          // El estado cambió — actualizar el badge y re-evaluar la UI
-          console.log('[Horario] Estado cambió automáticamente →', ahoraAbierto ? 'Abierto' : 'Cerrado');
+          console.log('[Horario] Estado cambió →', ahoraAbierto ? 'Abierto' : 'Cerrado');
         }
       }
-    }, 60000); // cada 60 segundos
-
-    // Aplicar estado inicial inmediatamente después de cargar
+    }, 60000);
     aplicarEstadoAbierto();
 
-    console.log('[SB] ✅ Menú listo.');
+    console.log('[SaaS] ✅ Menú listo — comercio:', _STORE.config.name,
+      '| ID:', _COMERCIO_ID);
   } catch(e) {
-    console.error('[SB] Error en arranque del menú:', e.message);
-    if (typeof init          === 'function') init();
-    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
+    console.error('[SaaS] Error en arranque del menú:', e.message);
+    if (typeof init           === 'function') init();
+    if (typeof renderSections === 'function') renderSections(getStore(), 'all');
   }
 })();
 
