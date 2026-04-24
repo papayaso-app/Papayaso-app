@@ -257,6 +257,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <input type="email" id="nc-email" placeholder="dueño@restaurante.com">
         </div>
         <div class="fg">
+          <label>Contraseña inicial del dueño *</label>
+          <input type="password" id="nc-password" placeholder="Mín. 8 caracteres" autocomplete="new-password">
+          <div class="slug-hint">Se creará la cuenta en Supabase Auth automáticamente</div>
+        </div>
+        <div class="fg">
           <label>Dirección</label>
           <input type="text" id="nc-dir" placeholder="Calle 123 # 45-67, Medellín">
         </div>
@@ -394,6 +399,22 @@ function _mostrarLogin(err) {
   if (err) _saSetErr(err);
 }
 
+// ── Email y roles autorizados para Super Admin ─────────────────────
+const SUPER_ADMIN_ALLOWED_EMAILS = [
+  'escobardiego1992@hotmail.com'
+];
+
+function _esSuperAdmin(data) {
+  var user    = data.user || {};
+  var email   = (user.email || '').toLowerCase().trim();
+  var meta    = user.user_metadata  || {};
+  var appMeta = user.app_metadata   || {};
+  var role    = meta.role || appMeta.role || '';
+
+  // Autorizado si: el email está en la lista O el role es super_admin
+  return SUPER_ADMIN_ALLOWED_EMAILS.indexOf(email) >= 0 || role === 'super_admin';
+}
+
 async function saLogin() {
   const email = (document.getElementById('sa-email') || {}).value || '';
   const pass  = (document.getElementById('sa-pass')  || {}).value || '';
@@ -403,6 +424,28 @@ async function saLogin() {
   try {
     const data = await SB.authPost('token?grant_type=password', { email, password: pass });
     if (!data.access_token) throw new Error('Respuesta inesperada');
+
+    // ── BLOQUEO DE SEGURIDAD ─────────────────────────────────────────────
+    // Si el usuario autenticado NO es super_admin: cerrar sesión y denegar.
+    if (!_esSuperAdmin(data)) {
+      console.warn('[SA] Acceso denegado — el usuario no tiene rol super_admin:', data.user && data.user.email);
+      // Revocar el token inmediatamente
+      try {
+        await fetch(SUPABASE_URL + '/auth/v1/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'apikey':        SUPABASE_KEY,
+            'Authorization': 'Bearer ' + data.access_token
+          }
+        });
+      } catch(e2) {}
+      _saSetLoading(false);
+      _saSetErr('⛔ Acceso denegado — esta cuenta no tiene permisos de Super Admin.');
+      return;
+    }
+    // ── FIN BLOQUEO ──────────────────────────────────────────────────────
+
     _saSession = {
       access_token:  data.access_token,
       refresh_token: data.refresh_token,
@@ -432,7 +475,8 @@ async function saLogout() {
   } catch(e) {}
   try { sessionStorage.removeItem(SA_SESSION_KEY); } catch(e) {}
   _saSession = null;
-  _mostrarLogin('Sesión cerrada');
+  // Redirigir al login centralizado
+  window.location.href = 'login.html';
 }
 
 // Restaurar sesión al cargar
@@ -442,6 +486,13 @@ async function saLogout() {
     if (raw) {
       const s = JSON.parse(raw);
       if (s && s.access_token && s.expires_at && Date.now() < s.expires_at) {
+        // ── BLOQUEO: verificar que la sesión guardada es de super_admin ──
+        if (!_esSuperAdmin({ user: s.user })) {
+          console.warn('[SA] Sesión guardada no es super_admin — redirigiendo al login');
+          try { sessionStorage.removeItem(SA_SESSION_KEY); } catch(e2) {}
+          _mostrarLogin('⛔ Sin permisos de Super Admin');
+          return;
+        }
         _saSession = s;
         _mostrarApp(s);
         cargarComercios();
@@ -613,35 +664,81 @@ async function crearComercio() {
   if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
   if (msgEl) msgEl.style.display = 'none';
 
+  const password = (document.getElementById('nc-password') || {}).value || '';
+
   try {
-    // 1. Buscar user_id si se proporcionó email
     let userId = null;
+    let authWarning = '';
+
+    // ── PASO 1: Crear cuenta en Supabase Auth con signUp ────────────────
+    // Se usa el endpoint /auth/v1/signup para crear el acceso del restaurante.
+    // Esto requiere que la anon key tenga permisos de signUp habilitados en Supabase
+    // (Authentication → Providers → Email → Enable Sign Ups).
     if (email) {
+      if (!password || password.length < 8) {
+        setMsg('⚠️ La contraseña debe tener al menos 8 caracteres.', false);
+        if (btn) { btn.disabled = false; btn.textContent = '✚ Crear comercio'; }
+        return;
+      }
       try {
-        // Buscar en comercios existentes o intentar con auth admin
-        // Nota: con anon key no podemos listar users; el dueño debe registrarse
-        // y luego vincularse. Por ahora guardamos el email como referencia.
-        console.log('[SA] Email del dueño registrado (vincular manualmente):', email);
-      } catch(e) {}
+        const signUpData = await SB.authPost('signup', {
+          email:    email,
+          password: password,
+          data: {
+            // user_metadata: info útil para identificar al dueño
+            role:           'admin',
+            comercio_slug:  slug,
+            comercio_nombre: nombre
+          }
+        });
+
+        if (signUpData.user && signUpData.user.id) {
+          userId = signUpData.user.id;
+          console.log('[SA] ✅ Usuario Auth creado:', email, '| id:', userId);
+
+          // Verificar si requiere confirmación de email
+          if (signUpData.user.identities && signUpData.user.identities.length === 0) {
+            authWarning = ' ⚠️ El email ya estaba registrado en Auth.';
+          } else if (!signUpData.session) {
+            authWarning = ' 📧 Se envió un correo de confirmación al dueño.';
+          }
+        }
+      } catch(authErr) {
+        console.warn('[SA] Error en signUp Auth:', authErr.message);
+        if (authErr.message.includes('already registered') || authErr.message.includes('already been registered')) {
+          authWarning = ' ⚠️ El email ya tenía cuenta en Auth (no se modificó la contraseña existente).';
+          // Intentar obtener el user_id buscando en comercios por email
+          // (no podemos listar users con anon key, se deja null)
+          userId = null;
+        } else {
+          // Error inesperado en Auth — continuar creando el comercio de todas formas
+          authWarning = ' ⚠️ No se pudo crear la cuenta Auth: ' + authErr.message;
+        }
+      }
     }
 
-    // 2. Insertar comercio
+    // ── PASO 2: Insertar el comercio en la tabla comercios ───────────────
     const body = {
       nombre:      nombre,
       slug:        slug,
-      whatsapp:    wa   || null,
-      direccion:   dir  || null,
-      descripcion: desc || null,
+      whatsapp:    wa       || null,
+      direccion:   dir      || null,
+      descripcion: desc     || null,
       plan:        plan,
       activo:      true,
-      user_id:     userId
+      user_id:     userId   || null   // vincula el comercio con la cuenta Auth
     };
 
     const result = await SB.post('comercios', body);
-    const nuevo = result && result[0] ? result[0] : null;
+    const nuevo  = result && result[0] ? result[0] : null;
 
     if (nuevo) {
-      setMsg(`✅ Comercio "${nombre}" creado con ID: ${nuevo.id}\n\nURL del menú: menu.html?rest=${slug}`, true);
+      const mensajeOk =
+        '✅ Comercio "' + nombre + '" creado con ID: ' + nuevo.id +
+        '\n\nURL del menú: menu.html?rest=' + slug +
+        (email ? '\nAcceso Admin: admin.html?rest=' + slug : '') +
+        authWarning;
+      setMsg(mensajeOk, true);
       showToast('✅ Comercio creado');
       limpiarFormulario();
       await cargarComercios();
@@ -659,7 +756,7 @@ async function crearComercio() {
 }
 
 function limpiarFormulario() {
-  ['nc-nombre','nc-slug','nc-wa','nc-email','nc-dir','nc-desc'].forEach(id => {
+  ['nc-nombre','nc-slug','nc-wa','nc-email','nc-password','nc-dir','nc-desc'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
