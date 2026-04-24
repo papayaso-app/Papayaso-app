@@ -1038,9 +1038,19 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <button id="photo-rm" class="btn btn-d btn-sm hidden" style="margin-top:6px" onclick="removePhoto()">✕ Eliminar foto</button>
         </div>
         <div class="fg">
-          <label>Extras de este producto</label>
+          <label>Extras de este producto <span style="font-size:10px;font-weight:400;color:var(--muted)">(columna <code>extras</code>)</span></label>
           <div id="extras-builder"></div>
           <button class="xadd" onclick="addXRow()">+ Agregar extra</button>
+        </div>
+        <div class="fg" style="margin-top:4px">
+          <label>Adiciones <span style="font-size:10px;font-weight:400;color:var(--muted)">(columna <code>opciones_sabores</code> — opciones sin costo o con precio)</span></label>
+          <div id="adiciones-builder"></div>
+          <button class="xadd" onclick="addAdicionRow()">+ Agregar adición</button>
+        </div>
+        <div class="fg" style="margin-top:4px">
+          <label>Extras globales <span style="font-size:10px;font-weight:400;color:var(--muted)">(columna <code>opciones_extras</code> — extras que aplican globalmente)</span></label>
+          <div id="op-ext-builder"></div>
+          <button class="xadd" onclick="addOpExtRow()">+ Agregar extra global</button>
         </div>
       </div>
       <div class="mfoot">
@@ -2065,6 +2075,8 @@ function _renderGlobalSales() {
 
 // ---- EDITOR ----
 var editId = null, editExtras = [], editPhoto = '';
+var editAdiciones = [];       // ← opciones_sabores en la tabla productos
+var editOpcionesExtras = [];   // ← opciones_extras en la tabla productos
 
 function renderEditor() {
   var s = getStore();
@@ -2138,6 +2150,8 @@ function delProd(id) {
 function openProdModal(id) {
   editId = (id !== null && id !== undefined) ? id : null;
   editExtras = []; editPhoto = '';
+  editAdiciones = [];       // se llenará desde p.adiciones (columna opciones_sabores)
+  editOpcionesExtras = [];  // se llenará desde p.extras_globales (columna opciones_extras)
   var s = getStore();
   var p = editId ? s.products.filter(function(x) { return x.id === editId; })[0] : null;
   var ttl = document.getElementById('pm-ttl');
@@ -2168,7 +2182,26 @@ function openProdModal(id) {
   editExtras = rawExtras.map(function(e) {
     return { name: String(e.name || ''), price: parseInt(e.price) || 0 };
   });
-  updatePhotoUI(); renderXs();
+
+  // Cargar adiciones (columna opciones_sabores) — formato [{name, price}]
+  var rawAdiciones = (p && p.adiciones) ? p.adiciones : [];
+  if (!Array.isArray(rawAdiciones)) {
+    try { rawAdiciones = JSON.parse(rawAdiciones); } catch(e) { rawAdiciones = []; }
+  }
+  editAdiciones = rawAdiciones.map(function(e) {
+    return { name: String(e.name || ''), price: parseInt(e.price) || 0 };
+  });
+
+  // Cargar extras globales (columna opciones_extras) — formato [{name, price}]
+  var rawOpExt = (p && p.extras_globales) ? p.extras_globales : [];
+  if (!Array.isArray(rawOpExt)) {
+    try { rawOpExt = JSON.parse(rawOpExt); } catch(e) { rawOpExt = []; }
+  }
+  editOpcionesExtras = rawOpExt.map(function(e) {
+    return { name: String(e.name || ''), price: parseInt(e.price) || 0 };
+  });
+
+  updatePhotoUI(); renderXs(); renderAdicionesRows(); renderOpExtRows();
   var modal = document.getElementById('prod-modal');
   if (modal) { modal.classList.add('open'); setTimeout(function() { modal.scrollIntoView({behavior:'smooth',block:'start'}); }, 40); }
 }
@@ -2215,6 +2248,44 @@ function renderXs() {
 
 function addXRow() { editExtras.push({name:'',price:0}); renderXs(); }
 function rmX(i) { editExtras.splice(i, 1); renderXs(); }
+
+// ── ADICIONES (se guardan en columna opciones_sabores) ───────────────
+function renderAdicionesRows() {
+  var el = document.getElementById('adiciones-builder'); if (!el) return;
+  var html = '';
+  for (var i = 0; i < editAdiciones.length; i++) {
+    html += '<div class="xbrow">'
+      + '<input type="text" value="' + editAdiciones[i].name + '" placeholder="Nombre de la adición" '
+      + 'oninput="editAdiciones[' + i + '].name=this.value" '
+      + 'style="flex:1;padding:7px 10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px">'
+      + '<input type="number" value="' + editAdiciones[i].price + '" placeholder="Precio" '
+      + 'oninput="editAdiciones[' + i + '].price=parseInt(this.value)||0" '
+      + 'style="max-width:100px;padding:7px 10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px">'
+      + '<button class="btn btn-d btn-sm" onclick="rmAdicion(' + i + ')">X</button></div>';
+  }
+  el.innerHTML = html;
+}
+function addAdicionRow() { editAdiciones.push({name:'',price:0}); renderAdicionesRows(); }
+function rmAdicion(i) { editAdiciones.splice(i, 1); renderAdicionesRows(); }
+
+// ── EXTRAS GLOBALES (se guardan en columna opciones_extras) ──────────
+function renderOpExtRows() {
+  var el = document.getElementById('op-ext-builder'); if (!el) return;
+  var html = '';
+  for (var i = 0; i < editOpcionesExtras.length; i++) {
+    html += '<div class="xbrow">'
+      + '<input type="text" value="' + editOpcionesExtras[i].name + '" placeholder="Nombre del extra global" '
+      + 'oninput="editOpcionesExtras[' + i + '].name=this.value" '
+      + 'style="flex:1;padding:7px 10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px">'
+      + '<input type="number" value="' + editOpcionesExtras[i].price + '" placeholder="Precio" '
+      + 'oninput="editOpcionesExtras[' + i + '].price=parseInt(this.value)||0" '
+      + 'style="max-width:100px;padding:7px 10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px">'
+      + '<button class="btn btn-d btn-sm" onclick="rmOpExt(' + i + ')">X</button></div>';
+  }
+  el.innerHTML = html;
+}
+function addOpExtRow() { editOpcionesExtras.push({name:'',price:0}); renderOpExtRows(); }
+function rmOpExt(i) { editOpcionesExtras.splice(i, 1); renderOpExtRows(); }
 
 function saveProd() {
   var nameEl = document.getElementById('ped-name');
@@ -5728,30 +5799,49 @@ async function sbLoadProductos() {
     });
     upd(function(s) {
       s.products = (prods || []).map(function(p) {
+        // ── extras propios del producto (columna extras) → [{name, price}]
         let extras = [];
         if (Array.isArray(p.extras)) {
-          extras = p.extras;
+          extras = p.extras.map(function(e) {
+            if (typeof e === 'string') return { name: e.trim(), price: 0 };
+            return { name: String(e.name || e.nombre || ''), price: parseInt(e.price || e.precio) || 0 };
+          }).filter(function(e) { return e.name; });
         } else if (p.extras) {
           try { extras = JSON.parse(p.extras); } catch(e) {}
         }
-        let sabores = [];
+        // ── adiciones (columna opciones_sabores) → [{name, price}]
+        let adiciones = [];
         if (Array.isArray(p.opciones_sabores)) {
-          sabores = p.opciones_sabores;
+          adiciones = p.opciones_sabores.map(function(e) {
+            if (typeof e === 'string') return { name: e.trim(), price: 0 };
+            return { name: String(e.name || e.nombre || ''), price: parseInt(e.price || e.precio) || 0 };
+          }).filter(function(e) { return e.name; });
         } else if (p.opciones_sabores) {
-          try { sabores = JSON.parse(p.opciones_sabores); } catch(e) {}
+          try { adiciones = JSON.parse(p.opciones_sabores); } catch(e) {}
+        }
+        // ── extras globales (columna opciones_extras) → [{name, price}]
+        let extrasGlobales = [];
+        if (Array.isArray(p.opciones_extras)) {
+          extrasGlobales = p.opciones_extras.map(function(e) {
+            if (typeof e === 'string') return { name: e.trim(), price: 0 };
+            return { name: String(e.name || e.nombre || ''), price: parseInt(e.price || e.precio) || 0 };
+          }).filter(function(e) { return e.name; });
+        } else if (p.opciones_extras) {
+          try { extrasGlobales = JSON.parse(p.opciones_extras); } catch(e) {}
         }
         return {
-          id:        p.id,
-          sb_id:     p.id,
-          name:      p.nombre     || '',
-          cat:       p.categoria  || 'General',
-          price:     parseInt(p.precio) || 0,
-          desc:      p.descripcion|| '',
-          photo:     p.imagen_url || '',
-          emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
-          available: p.disponible !== false,
-          extras:    extras,
-          sabores:   sabores
+          id:              p.id,
+          sb_id:           p.id,
+          name:            p.nombre     || '',
+          cat:             p.categoria  || 'General',
+          price:           parseInt(p.precio) || 0,
+          desc:            p.descripcion|| '',
+          photo:           p.imagen_url || '',
+          emoji:           (p.nombre||'P').charAt(0).toUpperCase(),
+          available:       p.disponible !== false,
+          extras:          extras,           // columna extras: opciones propias del producto
+          adiciones:       adiciones,        // columna opciones_sabores: adiciones
+          extras_globales: extrasGlobales    // columna opciones_extras: extras globales
         };
       });
       const catsDeProductos = [...new Set((prods||[]).map(p => p.categoria).filter(Boolean))];
@@ -5784,17 +5874,31 @@ async function sbSaveProd() {
   if (!price) { alert('⚠️ Ingresa un precio mayor a 0');    return; }
   if (!cat)   { alert('⚠️ Selecciona una categoría');       return; }
 
+  // extras → columna "extras" [{name, price}]
   const extras = (typeof editExtras !== 'undefined' ? editExtras : [])
-    .filter(e => e.name && e.name.trim());
+    .filter(e => e.name && e.name.trim())
+    .map(e => ({ name: String(e.name).trim(), price: parseInt(e.price) || 0 }));
+
+  // adiciones → columna "opciones_sabores" [{name, price}]
+  const adiciones = (typeof editAdiciones !== 'undefined' ? editAdiciones : [])
+    .filter(e => e.name && e.name.trim())
+    .map(e => ({ name: String(e.name).trim(), price: parseInt(e.price) || 0 }));
+
+  // extras globales → columna "opciones_extras" [{name, price}]
+  const opcionesExtras = (typeof editOpcionesExtras !== 'undefined' ? editOpcionesExtras : [])
+    .filter(e => e.name && e.name.trim())
+    .map(e => ({ name: String(e.name).trim(), price: parseInt(e.price) || 0 }));
 
   const body = {
-    comercio_id: _COMERCIO_ID,    // ← AISLAMIENTO MULTI-TENANT
-    nombre:      name,
-    precio:      price,
-    descripcion: desc,
-    categoria:   cat,
-    disponible:  avail,
-    extras:      extras
+    comercio_id:      _COMERCIO_ID,    // ← AISLAMIENTO MULTI-TENANT
+    nombre:           name,
+    precio:           price,
+    descripcion:      desc,
+    categoria:        cat,
+    disponible:       avail,
+    extras:           extras,           // columna extras: opciones propias del producto
+    opciones_sabores: adiciones,        // columna opciones_sabores: adiciones del producto
+    opciones_extras:  opcionesExtras    // columna opciones_extras: extras globales
   };
 
   if (typeof editPhoto !== 'undefined' && editPhoto && editPhoto.startsWith('data:')) {
