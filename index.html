@@ -2423,7 +2423,8 @@ async function sbCargarProductos() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// CATEGORÍAS — extras_categoria y adiciones_categoria
+// CATEGORÍAS — solo id y nombre (extras viven en el producto)
+// pos_categorias NO tiene extras_categoria ni adiciones_categoria.
 // Filtro por comercio_id obligatorio
 // ══════════════════════════════════════════════════════════════
 async function sbCargarCategorias() {
@@ -2819,38 +2820,60 @@ async function restaurarSeguimientoSiExiste() {
     return;
   }
 
+  // ── Paso 1: Configuración del comercio (nombre, logo, horario, whatsapp)
+  // Fallo tolerado: si falla, el menú sigue con valores por defecto.
   try {
-    // 1. Cargar config, productos y categorías en paralelo (todos con comercio_id)
-    await Promise.all([sbCargarConfig(), sbCargarProductos(), sbCargarCategorias()]);
-
-    // 2. Renderizar UI con datos de Supabase
-    if (typeof init          === 'function') init();
-    if (typeof renderCats    === 'function') renderCats(getStore());
-    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
-
-    // 3. Restaurar seguimiento si el cliente tiene un pedido activo guardado
-    await restaurarSeguimientoSiExiste();
-
-    // 4. Auto-verificación de horario cada 60 segundos
-    setInterval(function() {
-      if (_STORE.config.schedule) {
-        var eraAbierto = _STORE.config.isOpen;
-        var ahoraAbierto = aplicarEstadoAbierto();
-        if (eraAbierto !== ahoraAbierto) {
-          console.log('[Horario] Estado cambió automáticamente →', ahoraAbierto ? 'Abierto' : 'Cerrado');
-        }
-      }
-    }, 60000); // cada 60 segundos
-
-    // Aplicar estado inicial inmediatamente después de cargar
-    aplicarEstadoAbierto();
-
-    console.log('[SB] ✅ Menú listo. Comercio:', _SLUG, '| ID:', _COMERCIO_ID);
+    await sbCargarConfig();
   } catch(e) {
-    console.error('[SB] Error en arranque del menú:', e.message);
-    if (typeof init          === 'function') init();
-    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
+    console.warn('[SB] sbCargarConfig falló — continuando con defaults:', e.message);
   }
+
+  // ── Paso 2: Productos — es el dato crítico del menú.
+  // Se ejecuta de forma INDEPENDIENTE para que un fallo en categorías
+  // nunca impida mostrar los productos al cliente.
+  try {
+    await sbCargarProductos();
+  } catch(e) {
+    console.error('[SB] sbCargarProductos falló:', e.message);
+  }
+
+  // ── Paso 3: Categorías — solo id y nombre, sin columnas fantasma.
+  // Fallo totalmente tolerado: si pos_categorias tiene algún problema,
+  // el menú igual muestra productos usando las categorías derivadas de ellos.
+  try {
+    await sbCargarCategorias();
+  } catch(e) {
+    console.warn('[SB] sbCargarCategorias falló — el menú sigue funcionando:', e.message);
+    _STORE._categoriasMapa = {};
+  }
+
+  // ── Paso 4: Renderizar UI con todos los datos disponibles
+  if (typeof init          === 'function') init();
+  if (typeof renderCats    === 'function') renderCats(getStore());
+  if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
+
+  // ── Paso 5: Restaurar seguimiento si el cliente tiene un pedido activo
+  try {
+    await restaurarSeguimientoSiExiste();
+  } catch(e) {
+    console.warn('[SB] restaurarSeguimiento falló:', e.message);
+  }
+
+  // ── Paso 6: Auto-verificación de horario cada 60 segundos
+  setInterval(function() {
+    if (_STORE.config.schedule) {
+      var eraAbierto = _STORE.config.isOpen;
+      var ahoraAbierto = aplicarEstadoAbierto();
+      if (eraAbierto !== ahoraAbierto) {
+        console.log('[Horario] Estado cambió automáticamente →', ahoraAbierto ? 'Abierto' : 'Cerrado');
+      }
+    }
+  }, 60000); // cada 60 segundos
+
+  // Aplicar estado abierto/cerrado inmediatamente después de cargar
+  aplicarEstadoAbierto();
+
+  console.log('[SB] ✅ Menú listo. Comercio:', _SLUG, '| ID:', _COMERCIO_ID);
 })();
 
 </script>
