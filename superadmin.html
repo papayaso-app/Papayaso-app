@@ -41,6 +41,20 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .t-logout:hover{background:rgba(255,255,255,.15);color:#fff;}
 
 /* ═══════════ LAYOUT ═══════════ */
+/* Pantalla de carga anti-parpadeo — se desvanece al verificar sesión */
+#auth-loading-screen {
+  position:fixed;inset:0;z-index:99999;background:var(--dark);
+  display:flex;align-items:center;justify-content:center;
+  transition:opacity .25s ease;
+}
+#auth-loading-screen.fade-out { opacity:0;pointer-events:none; }
+.auth-spinner {
+  width:36px;height:36px;border-radius:50%;
+  border:3px solid rgba(255,107,0,.2);border-top-color:var(--brand);
+  animation:auth-spin .7s linear infinite;
+}
+@keyframes auth-spin { to { transform:rotate(360deg); } }
+
 #app{display:block;}
 .page{padding:28px 20px;max-width:1100px;margin:0 auto;}
 
@@ -137,6 +151,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <!-- ══════════════════════════════════════
      PANTALLA LOGIN
 ══════════════════════════════════════ -->
+<!-- ══════════ PANTALLA DE CARGA ANTI-PARPADEO ══════════
+     Cubre la pantalla mientras el guard verifica la sesión.
+     _mostrarApp() la desvanece cuando la sesión es válida.
+══════════════════════════════════════════════════════════ -->
+<div id="auth-loading-screen">
+  <div class="auth-spinner"></div>
+</div>
+
 <!-- ══════════════════════════════════════
      APP PRINCIPAL — el guard redirige a login.html si no hay sesión
 ══════════════════════════════════════ -->
@@ -407,9 +429,16 @@ function _saSetErr(msg)      { console.warn('[SA] Error auth:', msg); }
 function _saSetLoading(on)   { /* sin formulario embebido */ }
 // ── Guardia de acceso — única puerta de entrada ─────────────────────
 function _mostrarApp(session) {
-  // El #app siempre es visible; solo actualizar el email en el topbar
+  // Actualizar el email en el topbar
   var eu = document.getElementById('sa-user-email');
   if (eu && session && session.user) eu.textContent = session.user.email;
+
+  // Desvanecer la pantalla de carga con transición suave (anti-parpadeo)
+  var ls = document.getElementById('auth-loading-screen');
+  if (ls) {
+    ls.classList.add('fade-out');
+    setTimeout(function() { if (ls.parentNode) ls.parentNode.removeChild(ls); }, 280);
+  }
 }
 
 function _mostrarLogin(err) {
@@ -417,7 +446,10 @@ function _mostrarLogin(err) {
   console.log('[SA] Redirigiendo a login.html' + (err ? ' — ' + err : ''));
   _saDetenerAutoRefresh();
   _saLimpiarSesion();
-  window.location.href = 'login.html';
+  // Flag para que login.html no intente auto-redirigir de vuelta
+  try { sessionStorage.setItem('papayaso_logout_flag', '1'); } catch(e) {}
+  // replace() para no ensuciar el historial del móvil
+  window.location.replace('login.html');
 }
 
 // ── Email y roles autorizados para Super Admin ─────────────────────
@@ -453,74 +485,76 @@ async function saLogout() {
       });
     }
   } catch(e) {}
-  _saDetenerAutoRefresh();          // ← cancelar auto-refresh
-  _saLimpiarSesion();               // ← limpiar localStorage
-  // Redirigir al login centralizado
-  window.location.href = 'login.html';
+  _saDetenerAutoRefresh();          // cancelar auto-refresh
+
+  // Borrar TODO el storage para que el móvil no recuerde la sesión.
+  // Esto impide que el botón "atrás" del celular vuelva al superadmin.
+  try { localStorage.clear(); }   catch(e) {}
+  try {
+    // Poner el flag DESPUÉS de clear para que login.html lo detecte
+    sessionStorage.setItem('papayaso_logout_flag', '1');
+  } catch(e) {}
+
+  console.log('[SA] Sesión cerrada — redirigiendo a login.html (replace)');
+  // replace() elimina superadmin.html del historial del navegador
+  window.location.replace('login.html');
 }
 
 // ── GUARDIA DE SESIÓN — única puerta de entrada ─────────────────────
-// Lee la sesión de localStorage. Cualquier condición sin sesión válida
-// redirige SIEMPRE a login.html. No hay formulario embebido aquí.
+// La pantalla de carga (#auth-loading-screen) está visible y cubre el
+// contenido. Este guard verifica la sesión de forma ASYNC antes de
+// decidir. Usa replace() para no ensuciar el historial del móvil.
 (async function saOnLoad() {
-  const s = _saLeerSesion();
 
-  // Sin sesión → redirigir al login
-  if (!s || !s.access_token) {
-    console.log('[SA] Sin sesión en localStorage — redirigiendo a login.html');
+  // Helper: redirigir al login con replace (sin historial)
+  function irAlLogin(motivo) {
+    console.log('[SA]', motivo, '— redirigiendo a login.html');
     _saLimpiarSesion();
-    window.location.href = 'login.html';
-    return;
+    try { sessionStorage.setItem('papayaso_logout_flag', '1'); } catch(e2) {}
+    window.location.replace('login.html');
   }
 
-  // ── Bloqueo de seguridad: solo super_admin ──────────────────────
+  const s = _saLeerSesion();
+
+  // Sin sesión → redirigir
+  if (!s || !s.access_token) { irAlLogin('Sin sesión en localStorage'); return; }
+
+  // Bloqueo de seguridad: solo super_admin
   if (!_esSuperAdmin({ user: s.user })) {
-    console.warn('[SA] Sesión no es super_admin — redirigiendo a login.html');
-    _saLimpiarSesion();
-    window.location.href = 'login.html';
-    return;
+    irAlLogin('Sesión no es super_admin'); return;
   }
 
   const restante = (s.expires_at || 0) - Date.now();
 
-  // ── Token vigente con margen amplio → entrar directamente ─────────
+  // ── Token vigente → entrar directamente ──
   if (restante > SA_REFRESH_MARGEN) {
     console.log('[SA] Sesión activa —', s.user && s.user.email,
       '| expira en:', Math.round(restante / 60000), 'min');
     _saSession = s;
     _saIniciarAutoRefresh();
-    _mostrarApp(s);
+    _mostrarApp(s);   // ← desvanece la pantalla de carga
     cargarComercios();
     return;
   }
 
-  // ── Token próximo a expirar o caducado → renovar primero ──────────
+  // ── Token próximo a expirar → renovar (await) primero ──
   if (s.refresh_token) {
-    console.log('[SA] Token próximo a expirar — renovando en onLoad...');
+    console.log('[SA] Token próximo a expirar — renovando...');
     _saSession = s;
     const ok = await _saRefreshSession();
     if (ok && _saSession) {
       if (!_esSuperAdmin({ user: _saSession.user })) {
-        console.warn('[SA] Sesión renovada no es super_admin — redirigiendo a login.html');
-        _saLimpiarSesion();
-        window.location.href = 'login.html';
-        return;
+        irAlLogin('Sesión renovada no es super_admin'); return;
       }
       console.log('[SA] ✅ Token renovado en onLoad');
       _saIniciarAutoRefresh();
-      _mostrarApp(_saSession);
+      _mostrarApp(_saSession);   // ← desvanece la pantalla de carga
       cargarComercios();
     } else {
-      // refreshSession falló → redirigir al login
-      console.warn('[SA] No se pudo renovar — redirigiendo a login.html');
-      _saLimpiarSesion();
-      window.location.href = 'login.html';
+      irAlLogin('refreshSession falló');
     }
   } else {
-    // Sin refresh_token → redirigir al login
-    console.warn('[SA] Sin refresh_token — redirigiendo a login.html');
-    _saLimpiarSesion();
-    window.location.href = 'login.html';
+    irAlLogin('Sin refresh_token');
   }
 })();
 
