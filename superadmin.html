@@ -309,20 +309,87 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 // ── Constantes ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
-const SA_SESSION_KEY = 'papayaso_superadmin_session';
+// ══════════════════════════════════════════════════════════════════════
+// PERSISTENCIA DE SESIÓN — equivalente a createClient con:
+//   auth: { persistSession: true, autoRefreshToken: true }
+//
+// ▸ localStorage → sesión persiste entre recargas y cierres de tab.
+// ▸ Auto-refresh cada 15 min → autoRefreshToken: true.
+// ▸ Retry en 401 → si un fetch recibe 401, renueva y reintenta.
+// ▸ Token de 86400s (24h) configurado en Supabase.
+// ══════════════════════════════════════════════════════════════════════
+const SA_SESSION_KEY      = 'papayaso_superadmin_session'; // localStorage
+const SA_REFRESH_MARGEN   = 10 * 60 * 1000;  // renovar con 10 min de margen
+const SA_AUTO_REFRESH_MS  = 15 * 60 * 1000;  // polling cada 15 min
 
-// ── Super Admin UIDs autorizados (agrega aquí los UUIDs permitidos) ──
-// IMPORTANTE: reemplaza este array con el UUID de tu cuenta en Supabase Auth
-// Lo encuentras en Supabase → Authentication → Users → tu usuario → User UID
-const SUPER_ADMIN_EMAILS = [
-  // Añade tu email de super admin aquí (o contrólalo con un campo en la BD)
-  // Por ahora, cualquier usuario que haga login verá el panel.
-  // Para mayor seguridad, crea una tabla `super_admins` con los emails autorizados.
-];
+let _saSession          = null;
+let _saAutoRefreshTimer = null;
 
-let _saSession = null;
+// ── Renovar token del superadmin — refreshSession() equivalente ──────
+async function _saRefreshSession() {
+  const session = _saSession || _saLeerSesion();
+  if (!session || !session.refresh_token) {
+    console.warn('[SA] refreshSession: sin refresh_token');
+    return false;
+  }
+  try {
+    console.log('[SA] Renovando token...');
+    const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body:    JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error_description || 'No se pudo renovar');
+    const newSession = {
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token || session.refresh_token,
+      expires_at:    Date.now() + (data.expires_in || 86400) * 1000,
+      user:          data.user || session.user
+    };
+    _saSession = newSession;
+    _saGuardarSesion(newSession);
+    console.log('[SA] ✅ Token renovado. Expira en:', Math.round((newSession.expires_at - Date.now()) / 60000), 'min');
+    return true;
+  } catch(e) {
+    console.error('[SA] Error renovando token:', e.message);
+    return false;
+  }
+}
 
-// ── Cliente Supabase ──────────────────────────────────────────────────
+// ── Auto-refresh periódico ───────────────────────────────────────────
+function _saIniciarAutoRefresh() {
+  if (_saAutoRefreshTimer) clearInterval(_saAutoRefreshTimer);
+  _saAutoRefreshTimer = setInterval(async function() {
+    if (!_saSession) return;
+    const restante = (_saSession.expires_at || 0) - Date.now();
+    if (restante < SA_REFRESH_MARGEN) {
+      console.log('[SA] Auto-refresh: renovando token (expira en', Math.round(restante/60000), 'min)...');
+      await _saRefreshSession();
+    }
+  }, SA_AUTO_REFRESH_MS);
+  console.log('[SA] Auto-refresh iniciado — cada', SA_AUTO_REFRESH_MS / 60000, 'min');
+}
+
+function _saDetenerAutoRefresh() {
+  if (_saAutoRefreshTimer) { clearInterval(_saAutoRefreshTimer); _saAutoRefreshTimer = null; }
+}
+
+// ── localStorage para sesión persistente ────────────────────────────
+function _saGuardarSesion(s) {
+  try { localStorage.setItem(SA_SESSION_KEY, JSON.stringify(s)); } catch(e) {}
+}
+function _saLeerSesion() {
+  try { const r = localStorage.getItem(SA_SESSION_KEY); return r ? JSON.parse(r) : null; } catch(e) { return null; }
+}
+function _saLimpiarSesion() {
+  try { localStorage.removeItem(SA_SESSION_KEY); } catch(e) {}
+  _saSession = null;
+}
+
+// ── Cliente Supabase — con retry automático en 401 ───────────────────
+// Si cualquier llamada REST recibe 401, se llama _saRefreshSession()
+// y se reintenta UNA vez — autoRefreshToken: true equivalente.
 const SB = {
   _h() {
     const tok = (_saSession && _saSession.access_token) ? _saSession.access_token : SUPABASE_KEY;
@@ -333,35 +400,45 @@ const SB = {
       'Prefer':        'return=representation'
     };
   },
+  async _withRetry(fn) {
+    const r = await fn();
+    if (r.status === 401) {
+      console.warn('[SA-SB] 401 detectado — refreshSession() automático...');
+      const ok = await _saRefreshSession();
+      if (ok) { console.log('[SA-SB] Token renovado — reintentando...'); return fn(); }
+      console.error('[SA-SB] refreshSession falló — no se puede reintentar');
+    }
+    return r;
+  },
   async get(table, params = {}) {
     const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
     Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
-    const r = await fetch(url, { headers: this._h() });
+    const r = await this._withRetry(() => fetch(url, { headers: this._h() }));
     if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
     return r.json();
   },
   async post(table, body) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    const r = await this._withRetry(() => fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: 'POST', headers: this._h(), body: JSON.stringify(body)
-    });
+    }));
     if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
     return r.json();
   },
   async patch(table, filter, body) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    const r = await this._withRetry(() => fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: 'PATCH', headers: this._h(), body: JSON.stringify(body)
-    });
+    }));
     if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
     return r.json();
   },
   async del(table, filter) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    const r = await this._withRetry(() => fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: 'DELETE', headers: this._h()
-    });
+    }));
     if (!r.ok) { const e = await r.text(); throw new Error(`${r.status}: ${e}`); }
     return true;
   },
-  // Auth helpers
+  // Auth helpers — sin retry (son llamadas de auth, no de datos)
   async authPost(endpoint, body) {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
       method: 'POST',
@@ -449,11 +526,13 @@ async function saLogin() {
     _saSession = {
       access_token:  data.access_token,
       refresh_token: data.refresh_token,
-      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+      expires_at:    Date.now() + (data.expires_in || 86400) * 1000,  // 86400s = 24h
       user:          data.user
     };
-    try { sessionStorage.setItem(SA_SESSION_KEY, JSON.stringify(_saSession)); } catch(e) {}
-    console.log('[SA] Login exitoso:', _saSession.user.email);
+    _saGuardarSesion(_saSession);   // localStorage — persistSession: true
+    _saIniciarAutoRefresh();         // autoRefreshToken: true
+    console.log('[SA] Login exitoso:', _saSession.user.email,
+      '| expira en:', Math.round((data.expires_in||86400)/3600), 'h');
     _mostrarApp(_saSession);
     await cargarComercios();
   } catch(e) {
@@ -473,34 +552,67 @@ async function saLogout() {
       });
     }
   } catch(e) {}
-  try { sessionStorage.removeItem(SA_SESSION_KEY); } catch(e) {}
-  _saSession = null;
+  _saDetenerAutoRefresh();          // ← cancelar auto-refresh
+  _saLimpiarSesion();               // ← limpiar localStorage
   // Redirigir al login centralizado
   window.location.href = 'login.html';
 }
 
-// Restaurar sesión al cargar
-(function() {
-  try {
-    const raw = sessionStorage.getItem(SA_SESSION_KEY);
-    if (raw) {
-      const s = JSON.parse(raw);
-      if (s && s.access_token && s.expires_at && Date.now() < s.expires_at) {
-        // ── BLOQUEO: verificar que la sesión guardada es de super_admin ──
-        if (!_esSuperAdmin({ user: s.user })) {
-          console.warn('[SA] Sesión guardada no es super_admin — redirigiendo al login');
-          try { sessionStorage.removeItem(SA_SESSION_KEY); } catch(e2) {}
-          _mostrarLogin('⛔ Sin permisos de Super Admin');
-          return;
-        }
-        _saSession = s;
-        _mostrarApp(s);
-        cargarComercios();
+// Restaurar sesión al cargar — persistSession: true equivalente
+(async function saOnLoad() {
+  const s = _saLeerSesion();   // lee de localStorage
+
+  if (!s || !s.access_token) {
+    _mostrarLogin();
+    console.log('[SA] Sin sesión en localStorage — mostrando login');
+    return;
+  }
+
+  // ── Bloqueo de seguridad: solo super_admin ──────────────────────
+  if (!_esSuperAdmin({ user: s.user })) {
+    console.warn('[SA] Sesión guardada no es super_admin — bloqueando acceso');
+    _saLimpiarSesion();
+    _mostrarLogin('⛔ Sin permisos de Super Admin');
+    return;
+  }
+
+  const restante = (s.expires_at || 0) - Date.now();
+
+  // ── Token vigente con margen amplio ──────────────────────────────
+  if (restante > SA_REFRESH_MARGEN) {
+    console.log('[SA] Sesión activa en localStorage —', s.user && s.user.email,
+      '| expira en:', Math.round(restante / 60000), 'min');
+    _saSession = s;
+    _saIniciarAutoRefresh();
+    _mostrarApp(s);
+    cargarComercios();
+    return;
+  }
+
+  // ── Token próximo a expirar o caducado → renovar primero ─────────
+  if (s.refresh_token) {
+    console.log('[SA] Token próximo a expirar — renovando en onLoad...');
+    _saSession = s;  // necesario para que _saRefreshSession() encuentre el refresh_token
+    const ok = await _saRefreshSession();
+    if (ok && _saSession) {
+      if (!_esSuperAdmin({ user: _saSession.user })) {
+        _saLimpiarSesion();
+        _mostrarLogin('⛔ Sin permisos de Super Admin');
         return;
       }
+      console.log('[SA] ✅ Token renovado en onLoad');
+      _saIniciarAutoRefresh();
+      _mostrarApp(_saSession);
+      cargarComercios();
+    } else {
+      console.warn('[SA] No se pudo renovar — pidiendo login de nuevo');
+      _saLimpiarSesion();
+      _mostrarLogin();
     }
-  } catch(e) {}
-  _mostrarLogin();
+  } else {
+    _saLimpiarSesion();
+    _mostrarLogin();
+  }
 })();
 
 // ══════════════════════════════════════════════════════════════════════
