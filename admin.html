@@ -571,7 +571,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <button class="vmenu-item" onclick="goVentas();closeVMenu()">📊 Ventas globales</button>
       <div class="vmenu-divider"></div>
       <button class="vmenu-item" onclick="goConfig();closeVMenu()">⚙️ Configuración</button>
-      <button class="vmenu-item" onclick="goCuenta();closeVMenu()">👤 Mi cuenta</button>
+      <button id="btn-mi-cuenta" class="vmenu-item" onclick="goCuenta();closeVMenu()">👤 Mi cuenta</button>
       <div class="vmenu-divider"></div>
       <button class="vmenu-item" style="color:#ef5350" onclick="authLogout();closeVMenu()">🚪 Cerrar sesión</button>
     </div>
@@ -1271,6 +1271,67 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
   </div>
 </div>
 
+<!-- ══ PANEL: MI CUENTA ══════════════════════════════════════════════
+     Posicionado dentro de div.page para compartir el mismo flujo
+     de layout que todos los demás paneles del admin.
+     La visibilidad la controla showGroup('cuenta').
+════════════════════════════════════════════════════════════════════ -->
+<div id="panel-cuenta" class="panel">
+  <div style="max-width:540px;margin:0 auto;padding:20px 16px">
+
+    <!-- ── Perfil del usuario ────────────────────────────── -->
+    <div style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:18px">
+      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">
+        👤 Perfil del administrador
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px">Sesión activa como:</div>
+      <div id="cuenta-email-actual" style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px">—</div>
+      <div style="font-size:12px;color:var(--muted);background:var(--bg);padding:10px 12px;border-radius:var(--rs);border:1px solid var(--border)">
+        🏪 Comercio: <strong id="cuenta-comercio-nombre">—</strong> &nbsp;·&nbsp;
+        Slug: <code id="cuenta-comercio-slug" style="color:var(--green)">—</code>
+      </div>
+    </div>
+
+    <!-- ── Cambiar correo ────────────────────────────────── -->
+    <div style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:18px">
+      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px">
+        ✉️ Cambiar correo electrónico
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Nuevo correo</label>
+        <input type="email" id="cuenta-new-email" placeholder="nuevo@correo.com" autocomplete="email"
+          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
+      </div>
+      <button id="btn-mi-cuenta-email" class="btn btn-p" style="width:100%">
+        Actualizar correo
+      </button>
+      <div id="cuenta-msg-email" style="margin-top:10px;font-size:12px;font-weight:600;display:none"></div>
+    </div>
+
+    <!-- ── Cambiar contraseña ────────────────────────────── -->
+    <div style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px">
+      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px">
+        🔑 Cambiar contraseña
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Nueva contraseña</label>
+        <input type="password" id="cuenta-new-pass" placeholder="Mínimo 8 caracteres" autocomplete="new-password"
+          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Confirmar nueva contraseña</label>
+        <input type="password" id="cuenta-new-pass2" placeholder="Repite la contraseña" autocomplete="new-password"
+          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
+      </div>
+      <button id="btn-mi-cuenta-pass" class="btn btn-p" style="width:100%">
+        Actualizar contraseña
+      </button>
+      <div id="cuenta-msg-pass" style="margin-top:10px;font-size:12px;font-weight:600;display:none"></div>
+    </div>
+
+  </div>
+</div><!-- #panel-cuenta -->
+
 </div><!-- /.page -->
 <!-- ===== PANEL PEDIDO MANUAL (llamada telefónica) ===== -->
 <div id="manual-view" style="display:none">
@@ -1475,15 +1536,16 @@ function goConfig() {
 }
 
 function goCuenta() {
-  if (curMode === 'pos') switchMode('domicilios');
+  // Si estamos en modo POS o manual, volver a domicilios primero
+  if (typeof curMode !== 'undefined' && curMode === 'pos') switchMode('domicilios');
+  if (typeof curMode !== 'undefined' && curMode === 'manual') {
+    curMode = 'domicilios';
+    if (typeof _hideManualView === 'function') _hideManualView();
+    var mb = document.getElementById('mode-dom');    if (mb) mb.classList.add('active');
+    var mm = document.getElementById('mode-manual'); if (mm) mm.classList.remove('active');
+  }
+  // showGroup → showPanel('cuenta') → loadPanel('cuenta') rellena los datos
   showGroup('cuenta');
-  // Rellenar datos del usuario autenticado en el panel
-  var emailEl  = document.getElementById('cuenta-email-actual');
-  var nombreEl = document.getElementById('cuenta-comercio-nombre');
-  var slugEl   = document.getElementById('cuenta-comercio-slug');
-  if (emailEl  && _authSession && _authSession.user) emailEl.textContent  = _authSession.user.email || '—';
-  if (nombreEl && typeof getStore === 'function')    nombreEl.textContent = getStore().config.name  || '—';
-  if (slugEl)                                          slugEl.textContent   = _SLUG || '—';
 }
 
 // ── Cambiar correo electrónico (supabase.auth.updateUser) ────────────
@@ -1560,32 +1622,34 @@ var curPanel = 'pedidos-todos';
 var curGroup = 'pedidos';
 
 function showGroup(group) {
-  // Asegurar que el panel de cuenta también se controla con showGroup
-  var panelCuenta = document.getElementById('panel-cuenta');
-  if (panelCuenta) panelCuenta.style.display = (group === 'cuenta') ? 'block' : 'none';
-  if (group === 'cuenta') return; // el resto de showGroup no aplica a cuenta
   // Asegurar que manual-view esté oculto cuando navegamos a cualquier panel
   var _mv = document.getElementById('manual-view');
   if (_mv) { _mv.classList.remove('open'); _mv.style.display = 'none'; }
-  var _pg = document.querySelector('.page'); if (_pg) _pg.style.display = '';
-  // Highlight tab
+  // Highlight tab — el panel-cuenta no tiene tab propio, así que
+  // limpiamos todos y no activamos ninguno cuando group === 'cuenta'
   var tabs = document.querySelectorAll('#dom-nav .nav-tab');
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
-  var tab = document.getElementById('tab-' + group);
-  if (tab) tab.classList.add('active');
+  if (group !== 'cuenta') {
+    var tab = document.getElementById('tab-' + group);
+    if (tab) tab.classList.add('active');
+  }
   // Sub-navs
   var subs = document.querySelectorAll('.sub-nav');
   for (var j = 0; j < subs.length; j++) subs[j].classList.remove('visible');
-  var sub = document.getElementById('sub-' + group);
-  if (sub) sub.classList.add('visible');
+  if (group !== 'cuenta') {
+    var sub = document.getElementById('sub-' + group);
+    if (sub) sub.classList.add('visible');
+  }
   curGroup = group;
+  // Mapeo de grupo a panel por defecto
   var defaults = {
-    pedidos: 'pedidos-todos',
-    ventas: 'ventas-hoy',
-    menu: 'menu-prod',
-    info: 'info',
+    pedidos:       'pedidos-todos',
+    ventas:        'ventas-hoy',
+    menu:          'menu-prod',
+    info:          'info',
     'ventas-global': 'ventas-global',
-    'estadisticas': 'estadisticas'
+    estadisticas:  'estadisticas',
+    cuenta:        'cuenta'          // ← nuevo: panel-cuenta
   };
   showPanel(defaults[group] || group);
 }
@@ -1606,6 +1670,16 @@ function setF(val) {
 }
 
 function loadPanel(p) {
+  if (p === 'cuenta') {
+    // Rellenar datos del usuario al mostrar el panel de Mi Cuenta
+    var emailEl  = document.getElementById('cuenta-email-actual');
+    var nombreEl = document.getElementById('cuenta-comercio-nombre');
+    var slugEl   = document.getElementById('cuenta-comercio-slug');
+    if (emailEl  && _authSession && _authSession.user) emailEl.textContent  = _authSession.user.email || '—';
+    if (nombreEl && typeof getStore === 'function')    nombreEl.textContent = (getStore().config && getStore().config.name) || '—';
+    if (slugEl)                                         slugEl.textContent   = (typeof _SLUG !== 'undefined' ? _SLUG : '') || '—';
+    return;
+  }
   if (p === 'pedidos-todos')  { renderOrders(); updateStats(); return; }
   if (p === 'ventas-hoy')     {
     // Recargar historial fresco de SB y luego renderizar
@@ -6718,62 +6792,6 @@ async function sbInit() {
 // sbInit es llamado por el sistema de auth cuando confirma sesión
 
 </script>
-<!-- ══ PANEL: MI CUENTA ══════════════════════════════════════════════ -->
-<div id="panel-cuenta" class="panel" style="display:none">
-  <div class="content-wrap" style="max-width:540px;margin:0 auto;padding:20px 16px">
-
-    <!-- Datos del usuario autenticado -->
-    <div class="card" style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:18px">
-      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">
-        👤 Perfil del administrador
-      </div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:4px">Sesión activa como:</div>
-      <div id="cuenta-email-actual" style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px">—</div>
-      <div style="font-size:12px;color:var(--muted);background:var(--bg);padding:10px 12px;border-radius:var(--rs);border:1px solid var(--border)">
-        🏪 Comercio: <strong id="cuenta-comercio-nombre">—</strong> &nbsp;·&nbsp; Slug: <code id="cuenta-comercio-slug" style="color:var(--green)">—</code>
-      </div>
-    </div>
-
-    <!-- Cambiar correo electrónico -->
-    <div class="card" style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:18px">
-      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px">
-        ✉️ Cambiar correo electrónico
-      </div>
-      <div class="fg" style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Nuevo correo</label>
-        <input type="email" id="cuenta-new-email" placeholder="nuevo@correo.com"
-          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
-      </div>
-      <button class="btn btn-p" onclick="cuentaCambiarEmail()" style="width:100%">
-        Actualizar correo
-      </button>
-      <div id="cuenta-msg-email" style="margin-top:10px;font-size:12px;font-weight:600;display:none"></div>
-    </div>
-
-    <!-- Cambiar contraseña -->
-    <div class="card" style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px">
-      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px">
-        🔑 Cambiar contraseña
-      </div>
-      <div class="fg" style="margin-bottom:12px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Nueva contraseña</label>
-        <input type="password" id="cuenta-new-pass" placeholder="Mínimo 8 caracteres" autocomplete="new-password"
-          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
-      </div>
-      <div class="fg" style="margin-bottom:14px">
-        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Confirmar nueva contraseña</label>
-        <input type="password" id="cuenta-new-pass2" placeholder="Repite la contraseña" autocomplete="new-password"
-          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
-      </div>
-      <button class="btn btn-p" onclick="cuentaCambiarPassword()" style="width:100%">
-        Actualizar contraseña
-      </button>
-      <div id="cuenta-msg-pass" style="margin-top:10px;font-size:12px;font-weight:600;display:none"></div>
-    </div>
-
-  </div>
-</div><!-- #panel-cuenta -->
-
 </div><!-- #admin-content -->
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -6997,6 +7015,7 @@ async function authLogout() {
 
 // ── Tecla Enter en el email va al password ──────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
+  // ── Login: Enter en email → foco a password ──────────────────────
   var emailEl = document.getElementById('login-email');
   if (emailEl) emailEl.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
@@ -7004,6 +7023,63 @@ document.addEventListener('DOMContentLoaded', function() {
       if (p) p.focus();
     }
   });
+
+  // ── Mi Cuenta: EventListeners explícitos ─────────────────────────
+  // Botón principal del menú vertical → abrir panel Mi Cuenta
+  var btnMiCuenta = document.getElementById('btn-mi-cuenta');
+  if (btnMiCuenta) {
+    btnMiCuenta.addEventListener('click', function() {
+      if (typeof closeVMenu === 'function') closeVMenu();
+      if (typeof goCuenta  === 'function') goCuenta();
+    });
+  }
+
+  // Botón "Actualizar correo" dentro del panel Mi Cuenta
+  var btnEmail = document.getElementById('btn-mi-cuenta-email');
+  if (btnEmail) {
+    btnEmail.addEventListener('click', function() {
+      if (typeof cuentaCambiarEmail === 'function') cuentaCambiarEmail();
+    });
+  }
+
+  // Botón "Actualizar contraseña" dentro del panel Mi Cuenta
+  var btnPass = document.getElementById('btn-mi-cuenta-pass');
+  if (btnPass) {
+    btnPass.addEventListener('click', function() {
+      if (typeof cuentaCambiarPassword === 'function') cuentaCambiarPassword();
+    });
+  }
+
+  // Enter en campo nueva contraseña → foco a confirmar contraseña
+  var npPass = document.getElementById('cuenta-new-pass');
+  if (npPass) {
+    npPass.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        var p2 = document.getElementById('cuenta-new-pass2');
+        if (p2) p2.focus();
+      }
+    });
+  }
+
+  // Enter en confirmar contraseña → ejecutar actualización
+  var npPass2 = document.getElementById('cuenta-new-pass2');
+  if (npPass2) {
+    npPass2.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        if (typeof cuentaCambiarPassword === 'function') cuentaCambiarPassword();
+      }
+    });
+  }
+
+  // Enter en campo nuevo email → ejecutar actualización
+  var npEmail = document.getElementById('cuenta-new-email');
+  if (npEmail) {
+    npEmail.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        if (typeof cuentaCambiarEmail === 'function') cuentaCambiarEmail();
+      }
+    });
+  }
 });
 
 </script>
