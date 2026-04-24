@@ -350,9 +350,29 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 @keyframes slideDown{from{transform:translateX(-50%) translateY(-16px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
 
 /* ===== PRINT STYLES ===== */
-/* El admin siempre es visible — el guard de auth redirige a login.html
-   si no hay sesión válida. No hay login embebido en esta página. */
-#admin-content { display: block; }
+/* ── Pantalla de carga anti-parpadeo ────────────────────────────────
+   El admin-content empieza invisible (opacity 0) para evitar el flash
+   blanco mientras el guard verifica la sesión en localStorage.
+   _activarAdmin() lo hace visible con una transición suave.
+   El #auth-loading-screen cubre la pantalla completa durante ese tiempo. */
+#auth-loading-screen {
+  position: fixed; inset: 0; z-index: 99999;
+  background: #111;   /* mismo color que --dark para que no haya contraste */
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .25s ease;
+}
+#auth-loading-screen.fade-out {
+  opacity: 0; pointer-events: none;
+}
+.auth-spinner {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 3px solid rgba(255,107,0,.2);
+  border-top-color: #ff6b00;
+  animation: auth-spin .7s linear infinite;
+}
+@keyframes auth-spin { to { transform: rotate(360deg); } }
+
+#admin-content { display: block; opacity: 1; }
 
 @media print {
   /* ── Tamaño de página: rollo térmico 80mm ─────────────────────── */
@@ -458,12 +478,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 </head>
 <body>
 
-<!-- ══════════ PANTALLA DE LOGIN ══════════ -->
-<!-- ══════════ CONTENIDO DEL ADMIN ══════════
-     El guard de auth en onLoad() redirige a login.html
-     si no hay sesión válida en localStorage.
-     No hay formulario de login embebido en esta página.
-══════════════════════════════════════════ -->
+<!-- ══════════ PANTALLA DE CARGA ANTI-PARPADEO ══════════
+     Cubre toda la pantalla mientras el guard verifica la sesión.
+     _activarAdmin() la desvanece cuando la sesión es válida.
+     Si no hay sesión, el guard redirige a login.html antes de
+     que el usuario vea contenido del admin.
+══════════════════════════════════════════════════════════ -->
+<div id="auth-loading-screen">
+  <div class="auth-spinner"></div>
+</div>
+
+<!-- ══════════ CONTENIDO DEL ADMIN ══════════ -->
 <div id="admin-content">
 
 <!-- TOPBAR -->
@@ -6774,7 +6799,9 @@ function _mostrarLogin(errorMsg) {
   console.log('[Auth] Redirigiendo a login.html' + (errorMsg ? ' — ' + errorMsg : ''));
   _detenerAutoRefresh();
   _limpiarSesion();
-  window.location.href = 'login.html';
+  try { sessionStorage.setItem('papayaso_logout_flag', '1'); } catch(e) {}
+  // replace() para no ensuciar el historial del móvil
+  window.location.replace('login.html');
 }
 
 // Stubs eliminados — ya no hay elementos de login embebido en el DOM.
@@ -6866,12 +6893,22 @@ function _limpiarSesion() {
   _authSession = null;
 }
 
-// ── Activar el admin (llamar sbInit y mostrar UI) ───────────────────
+// ── Activar el admin — desvanecer pantalla de carga y mostrar UI ────
 async function _activarAdmin(session) {
   _authSession = session;
   _guardarSesion(session);
   _mostrarAdmin();
   _iniciarAutoRefresh();   // ← autoRefreshToken: true
+
+  // Desvanecer la pantalla de carga con transición suave (anti-parpadeo)
+  var loadingScreen = document.getElementById('auth-loading-screen');
+  if (loadingScreen) {
+    loadingScreen.classList.add('fade-out');
+    // Quitar del DOM después de la transición (.25s) para no bloquear interacciones
+    setTimeout(function() {
+      if (loadingScreen.parentNode) loadingScreen.parentNode.removeChild(loadingScreen);
+    }, 280);
+  }
 
   // Inicializar el admin solo ahora que el usuario está autenticado
   if (typeof sbInit === 'function') {
@@ -6906,66 +6943,78 @@ async function authLogout() {
     // Continuar con la limpieza local de todas formas
   }
 
-  _detenerAutoRefresh();  // ← cancelar auto-refresh antes de salir
-  _limpiarSesion();
+  _detenerAutoRefresh();   // cancelar auto-refresh antes de salir
+  _limpiarSesion();        // limpiar la clave específica de localStorage
+
   // Limpiar datos en memoria
-  if (typeof _STORE !== 'undefined') {
-    _STORE = null;
-  }
-  console.log('[Auth] Sesión cerrada correctamente — redirigiendo a login');
-  // Redirigir al login centralizado
-  window.location.href = 'login.html';
+  if (typeof _STORE !== 'undefined') { _STORE = null; }
+
+  // Borrar TODO el storage para que el móvil no recuerde ninguna sesión.
+  // Esto impide que el botón "atrás" del celular vuelva al admin autenticado.
+  try { localStorage.clear(); }    catch(e) {}
+  try {
+    // Poner el flag DESPUÉS de clear para que login.html lo detecte
+    sessionStorage.setItem('papayaso_logout_flag', '1');
+  } catch(e) {}
+
+  console.log('[Auth] Sesión cerrada — redirigiendo a login.html (replace)');
+  // replace() elimina el admin del historial del navegador.
+  // El usuario no puede volver con el botón físico del celular.
+  window.location.replace('login.html');
 }
 
 // ── GUARDIA DE SESIÓN — única puerta de entrada ─────────────────────
-// Lee la sesión de localStorage. Si no hay sesión válida en cualquier
-// condición, redirige SIEMPRE a login.html.
-// No hay ningún formulario embebido; login.html es la única entrada.
+// La pantalla de carga (#auth-loading-screen) ya está visible y cubre
+// el contenido del admin. Este guard verifica la sesión de forma ASYNC
+// (await) antes de tomar cualquier decisión. Solo redirige a login.html
+// después de que Supabase responda, usando window.location.replace()
+// para no ensuciar el historial del móvil (evita el botón "atrás" loop).
 (async function onLoad() {
+
+  // Helper: redirigir al login con replace (sin historial)
+  function irAlLogin(motivo) {
+    console.log('[Auth]', motivo, '— redirigiendo a login.html');
+    _limpiarSesion();
+    // Marcar que venimos de un logout/guard para que login.html
+    // no intente auto-redirigir de vuelta al admin
+    try { sessionStorage.setItem('papayaso_logout_flag', '1'); } catch(e2) {}
+    window.location.replace('login.html');
+  }
+
   const session = _leerSesion();
 
-  // Sin sesión → redirigir al login
+  // Sin sesión → redirigir (replace, sin historial)
   if (!session || !session.access_token) {
-    console.log('[Auth] Sin sesión en localStorage — redirigiendo a login.html');
-    _limpiarSesion();
-    window.location.href = 'login.html';
+    irAlLogin('Sin sesión en localStorage');
     return;
   }
 
   const tiempoRestante = (session.expires_at || 0) - Date.now();
 
-  // ── Caso 1: token vigente con margen amplio → entrar directamente ──
+  // ── Caso 1: token vigente → activar directamente ──
   if (session.expires_at && tiempoRestante > REFRESH_MARGEN_MS) {
-    console.log('[Auth] Sesión activa en localStorage —', session.user && session.user.email,
+    console.log('[Auth] Sesión activa —', session.user && session.user.email,
       '| expira en:', Math.round(tiempoRestante / 60000), 'min');
     await _activarAdmin(session);
     return;
   }
 
-  // ── Caso 2: token próximo a expirar o ya expirado → renovar primero ──
+  // ── Caso 2: token próximo a expirar → renovar (await) primero ──
   if (session.refresh_token) {
     try {
-      console.log('[Auth] Token próximo a expirar — renovando antes de entrar...');
+      console.log('[Auth] Token próximo a expirar — renovando...');
       const ok = await _refreshSession();
       if (ok && _authSession) {
-        console.log('[Auth] ✅ Token renovado en onLoad — activando admin');
+        console.log('[Auth] ✅ Token renovado — activando admin');
         await _activarAdmin(_authSession);
       } else {
-        // refreshSession falló → redirigir al login
-        console.warn('[Auth] refreshSession devolvió false — redirigiendo a login.html');
-        _limpiarSesion();
-        window.location.href = 'login.html';
+        irAlLogin('refreshSession devolvió false');
       }
     } catch(e) {
-      console.warn('[Auth] Error renovando sesión en onLoad:', e.message, '— redirigiendo a login.html');
-      _limpiarSesion();
-      window.location.href = 'login.html';
+      irAlLogin('Error renovando sesión: ' + e.message);
     }
   } else {
-    // Sin refresh_token → redirigir al login
-    console.warn('[Auth] Sesión sin refresh_token — redirigiendo a login.html');
-    _limpiarSesion();
-    window.location.href = 'login.html';
+    irAlLogin('Sin refresh_token');
   }
 })();
 
