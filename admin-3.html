@@ -2537,33 +2537,67 @@ function addGlobalExtra() {
   if (!catName) { showToast('Selecciona una categoría');         return; }
 
   var s = getStore();
-  // Buscar la fila de esa categoría en _categorias
+  // Buscar la fila de esa categoría en _categorias (para la UI en memoria)
   var catRow = (s._categorias || []).find(function(c) { return c.nombre === catName; });
   if (!catRow) { showToast('Categoría no encontrada'); return; }
 
-  // Construir el nuevo array de extras para esa categoría
-  var existentes = Array.isArray(catRow.extras_categoria) ? catRow.extras_categoria.slice() : [];
-  existentes.push({ nombre: name, precio: price });
+  // Construir el nuevo array de extras para esa categoría en memoria
+  // Formato [{name, price}] — consistente con opciones_extras en tabla productos
+  var existentes = Array.isArray(catRow.extras_categoria)
+    ? catRow.extras_categoria.map(function(e) {
+        return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
+      })
+    : [];
+  existentes.push({ name: name, price: price });
 
   // Limpiar formulario
   if (nameEl)  nameEl.value  = '';
   if (priceEl) priceEl.value = '';
   if (catEl)   catEl.value   = '';
 
-  // Persistir en Supabase: PATCH solo la fila de esa categoría
+  // CORRECCIÓN ARQUITECTURAL: PATCH en tabla PRODUCTOS columna opciones_extras
+  // (NO en tabla categorias). Se actualizan TODOS los productos de esa categoría.
   (async function() {
     try {
-      await SB.patch('categorias', 'id=eq.' + catRow.id, { extras_categoria: existentes });
-      // Actualizar _categorias en memoria
+      // Obtener todos los productos de esta categoría en este comercio
+      const prods = await SB.get('productos', {
+        select: 'id,opciones_extras',
+        'comercio_id': 'eq.' + _COMERCIO_ID,
+        'categoria':   'eq.' + encodeURIComponent(catName)
+      });
+
+      let actualizados = 0;
+      for (let k = 0; k < (prods || []).length; k++) {
+        // Leer opciones_extras actuales del producto y añadir el nuevo extra
+        var opActuales = [];
+        if (Array.isArray(prods[k].opciones_extras)) {
+          opActuales = prods[k].opciones_extras.map(function(e) {
+            return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
+          });
+        } else if (prods[k].opciones_extras) {
+          try { opActuales = JSON.parse(prods[k].opciones_extras); } catch(ex) {}
+        }
+        // Evitar duplicados: solo añadir si no existe ya
+        var yaExiste = opActuales.some(function(e) { return e.name === name; });
+        if (!yaExiste) opActuales.push({ name: name, price: price });
+
+        await SB.patch('productos', 'id=eq.' + prods[k].id, {
+          opciones_extras: opActuales
+        });
+        actualizados++;
+      }
+
+      // Actualizar _categorias en memoria (para que renderGlobalExtras funcione)
       upd(function(s2) {
         var cat = (s2._categorias || []).find(function(c) { return c.id === catRow.id; });
         if (cat) cat.extras_categoria = existentes;
       });
       renderGlobalExtras();
       showToast('Extra "' + name + '" agregado a ' + catName + ' ✓');
-      console.log('[SB] extras_categoria actualizado para', catName, ':', existentes.length);
+      console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
+        '| extra:', name, '| categoría:', catName, '| productos actualizados:', actualizados);
     } catch(e) {
-      console.error('[SB] Error guardando extra:', e.message);
+      console.error('[SB] Error guardando extra en tabla productos:', e.message);
       alert('❌ Error al guardar el extra:\n' + e.message);
     }
   })();
@@ -2576,25 +2610,59 @@ function delGlobalExtra(i) {
 
   if (!confirm('¿Eliminar el extra "' + ge.nombre + '" de la categoría "' + ge.categoria + '"?')) return;
 
-  // Encontrar la fila de la categoría y quitar ese extra
+  // Encontrar la fila de la categoría en memoria para actualizar la UI
   var catRow = (s._categorias || []).find(function(c) { return c.nombre === ge.categoria; });
   if (!catRow) { showToast('Categoría no encontrada'); return; }
 
+  // Calcular el array nuevo (sin el extra eliminado) para la UI en memoria
   var nuevos = (Array.isArray(catRow.extras_categoria) ? catRow.extras_categoria : [])
     .filter(function(e) { return (e.nombre || e.name) !== ge.nombre; });
 
+  // CORRECCIÓN ARQUITECTURAL: quitar el extra de opciones_extras en tabla PRODUCTOS
+  // Se actualizan TODOS los productos de esa categoría.
   (async function() {
     try {
-      await SB.patch('categorias', 'id=eq.' + catRow.id, { extras_categoria: nuevos });
+      // Obtener todos los productos de esta categoría en este comercio
+      const prods = await SB.get('productos', {
+        select: 'id,opciones_extras',
+        'comercio_id': 'eq.' + _COMERCIO_ID,
+        'categoria':   'eq.' + encodeURIComponent(ge.categoria)
+      });
+
+      let actualizados = 0;
+      for (let k = 0; k < (prods || []).length; k++) {
+        // Leer opciones_extras actuales y quitar el extra eliminado
+        var opActuales = [];
+        if (Array.isArray(prods[k].opciones_extras)) {
+          opActuales = prods[k].opciones_extras.map(function(e) {
+            return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
+          });
+        } else if (prods[k].opciones_extras) {
+          try { opActuales = JSON.parse(prods[k].opciones_extras); } catch(ex) {}
+        }
+        // Filtrar fuera el extra eliminado
+        var opNuevos = opActuales.filter(function(e) {
+          return (e.name || e.nombre) !== ge.nombre;
+        });
+
+        await SB.patch('productos', 'id=eq.' + prods[k].id, {
+          opciones_extras: opNuevos
+        });
+        actualizados++;
+      }
+
+      // Actualizar _categorias en memoria (para que renderGlobalExtras funcione)
       upd(function(s2) {
         var cat = (s2._categorias || []).find(function(c) { return c.id === catRow.id; });
         if (cat) cat.extras_categoria = nuevos;
       });
       renderGlobalExtras();
       showToast('Extra eliminado');
-      console.log('[SB] Extra eliminado de', ge.categoria, '— quedan:', nuevos.length);
+      console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
+        '| extra eliminado:', ge.nombre, '| categoría:', ge.categoria,
+        '| productos actualizados:', actualizados);
     } catch(e) {
-      console.error('[SB] Error eliminando extra:', e.message);
+      console.error('[SB] Error eliminando extra en tabla productos:', e.message);
       alert('❌ Error al eliminar el extra:\n' + e.message);
     }
   })();
@@ -4816,58 +4884,73 @@ function addAddonOption(){
 // Cada grupo de adiciones se guarda en la fila de su categoría,
 // en la columna 'adiciones' (JSONB).
 async function _persistAddonsSB() {
+  // CORRECCIÓN ARQUITECTURAL: las adiciones se guardan en la tabla PRODUCTOS,
+  // columna opciones_sabores — NO en la tabla categorias.
+  // Por cada grupo de adiciones se obtienen todos los productos de esa categoría
+  // y se hace PATCH con opciones_sabores = [{name, price}].
   try {
     const addons = getStore()._catAddons || [];
 
-    // Agrupar opciones por categoría → strings simples para adiciones_categoria
-    // Formato final en BD: ["Salsa especial", "mayonesa"]
+    // Agrupar opciones por categoría → [{name, price}] para opciones_sabores
+    // Formato en BD: [{"name": "Salsa especial", "price": 0}, ...]
     const byCat = {};
     addons.forEach(function(addon) {
       if (!byCat[addon.cat]) byCat[addon.cat] = [];
       (addon.options || []).forEach(function(opt) {
-        if (opt.name && opt.name.trim()) byCat[addon.cat].push(opt.name.trim());
+        if (opt.name && opt.name.trim()) {
+          byCat[addon.cat].push({ name: opt.name.trim(), price: parseInt(opt.price) || 0 });
+        }
       });
     });
 
-    // PATCH adiciones_categoria en la fila de cada categoría
+    // Para cada categoría con adiciones: obtener sus productos y actualizar opciones_sabores
     const catNombres = Object.keys(byCat);
+    let totalProductosActualizados = 0;
     for (let i = 0; i < catNombres.length; i++) {
       const catNombre = catNombres[i];
-      const catRows = await SB.get('categorias', {
+      const nuevasAdiciones = byCat[catNombre]; // [{name, price}]
+
+      // GET todos los productos de esta categoría para este comercio
+      const prods = await SB.get('productos', {
         select: 'id',
         'comercio_id': 'eq.' + _COMERCIO_ID,
-        'nombre': 'eq.' + encodeURIComponent(catNombre),
-        limit: 1
+        'categoria':   'eq.' + encodeURIComponent(catNombre)
       });
-      if (catRows && catRows[0]) {
-        await SB.patch('categorias', 'id=eq.' + catRows[0].id, {
-          adiciones_categoria: byCat[catNombre]   // ["Salsa especial", "mayonesa"]
+
+      // PATCH opciones_sabores en cada producto de la categoría
+      for (let k = 0; k < (prods || []).length; k++) {
+        await SB.patch('productos', 'id=eq.' + prods[k].id, {
+          opciones_sabores: nuevasAdiciones
         });
-        console.log('[SB] adiciones_categoria ->', catNombre, ':', byCat[catNombre].length);
+        totalProductosActualizados++;
       }
+      console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
+        '| categoría:', catNombre, '| productos actualizados:', (prods || []).length,
+        '| adiciones:', nuevasAdiciones.length);
     }
 
-    // Categorías sin adiciones → vaciar adiciones_categoria (evitar datos fantasma)
+    // Categorías sin adiciones → vaciar opciones_sabores en sus productos
     const allCats = getStore().categories || [];
     for (let j = 0; j < allCats.length; j++) {
       if (!byCat[allCats[j]]) {
-        const rows2 = await SB.get('categorias', {
-          select: 'id,adiciones_categoria',
+        const prodsVacios = await SB.get('productos', {
+          select: 'id,opciones_sabores',
           'comercio_id': 'eq.' + _COMERCIO_ID,
-          'nombre': 'eq.' + encodeURIComponent(allCats[j]),
-          limit: 1
+          'categoria':   'eq.' + encodeURIComponent(allCats[j])
         });
-        if (rows2 && rows2[0] &&
-            Array.isArray(rows2[0].adiciones_categoria) &&
-            rows2[0].adiciones_categoria.length > 0) {
-          await SB.patch('categorias', 'id=eq.' + rows2[0].id, { adiciones_categoria: [] });
+        for (let m = 0; m < (prodsVacios || []).length; m++) {
+          const pv = prodsVacios[m];
+          if (Array.isArray(pv.opciones_sabores) && pv.opciones_sabores.length > 0) {
+            await SB.patch('productos', 'id=eq.' + pv.id, { opciones_sabores: [] });
+          }
         }
       }
     }
 
-    console.log('[SB] adiciones_categoria persistidas en tabla categorias');
+    console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
+      '| Total productos con adiciones actualizados:', totalProductosActualizados);
   } catch(e) {
-    console.error('[SB] Error guardando adiciones_categoria:', e.message);
+    console.error('[SB] Error guardando adiciones en tabla productos:', e.message);
   }
 }
 
@@ -6005,8 +6088,11 @@ function fillAllCatSelects() {
 async function sbLoadCategorias() {
   if (!_COMERCIO_ID) return;
   try {
+    // CORRECCIÓN ARQUITECTURAL: extras y adiciones ya no se guardan en categorias.
+    // Se guardan en tabla productos (columnas opciones_extras y opciones_sabores).
+    // El select solo pide id, nombre y orden — sin columnas que ya no usamos aquí.
     const cats = await SB.get('categorias', {
-      select:        'id,nombre,orden,extras_categoria,adiciones_categoria',
+      select:        'id,nombre,orden',
       'comercio_id': 'eq.' + _COMERCIO_ID,
       order:         'orden.asc,nombre.asc'
     });
@@ -6014,27 +6100,18 @@ async function sbLoadCategorias() {
     upd(function(s) {
       var reales = (cats || []).filter(function(c) { return c.nombre !== '__extras_globales__'; });
       s.categories  = reales.map(function(c) { return c.nombre; });
-      s._categorias = reales;
+      // Guardamos _categorias sin las columnas obsoletas — solo id, nombre, orden
+      // extras_categoria: [] vacío para que renderGlobalExtras pueda funcionar en UI
+      s._categorias = reales.map(function(c) {
+        return { id: c.id, nombre: c.nombre, orden: c.orden, extras_categoria: [] };
+      });
 
       if (!s.globalExtras) s.globalExtras = [];
 
-      var allAddons = [];
-      reales.forEach(function(cat) {
-        var arr = Array.isArray(cat.adiciones_categoria) ? cat.adiciones_categoria : [];
-        if (!arr.length) return;
-        allAddons.push({
-          id:      'addon_' + cat.id,
-          name:    'Adiciones — ' + cat.nombre,
-          cat:     cat.nombre,
-          type:    'optional',
-          min:     0,
-          options: arr.map(function(item, idx) {
-            var nombreOpt = typeof item === 'string' ? item : (item.nombre || '');
-            return { id: 'opt_' + cat.id + '_' + idx, name: nombreOpt, price: 0, available: true };
-          })
-        });
-      });
-      s._catAddons = allAddons;
+      // _catAddons se construye desde los propios productos en sbLoadProductos
+      // (leen opciones_sabores de la tabla productos). Aquí dejamos array vacío
+      // para evitar conflictos con la nueva arquitectura.
+      if (!s._catAddons) s._catAddons = [];
     });
 
     if (typeof renderCats         === 'function') renderCats();
@@ -6066,11 +6143,10 @@ async function sbAddCat(nombre) {
 
   try {
     await SB.post('categorias', {
-      comercio_id:         _COMERCIO_ID,    // ← AISLAMIENTO MULTI-TENANT
-      nombre:              nombre,
-      orden:               (getStore().categories || []).length,
-      extras_categoria:    [],
-      adiciones_categoria: []
+      comercio_id: _COMERCIO_ID,    // ← AISLAMIENTO MULTI-TENANT
+      nombre:      nombre,
+      orden:       (getStore().categories || []).length
+      // extras y adiciones se guardan en tabla productos, NO aquí
     });
     await sbLoadCategorias();
     showToast('Categoría creada ✓');
