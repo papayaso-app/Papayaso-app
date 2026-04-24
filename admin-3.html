@@ -571,6 +571,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <button class="vmenu-item" onclick="goVentas();closeVMenu()">📊 Ventas globales</button>
       <div class="vmenu-divider"></div>
       <button class="vmenu-item" onclick="goConfig();closeVMenu()">⚙️ Configuración</button>
+      <button class="vmenu-item" onclick="goCuenta();closeVMenu()">👤 Mi cuenta</button>
       <div class="vmenu-divider"></div>
       <button class="vmenu-item" style="color:#ef5350" onclick="authLogout();closeVMenu()">🚪 Cerrar sesión</button>
     </div>
@@ -1473,11 +1474,96 @@ function goConfig() {
   showGroup('info');
 }
 
+function goCuenta() {
+  if (curMode === 'pos') switchMode('domicilios');
+  showGroup('cuenta');
+  // Rellenar datos del usuario autenticado en el panel
+  var emailEl  = document.getElementById('cuenta-email-actual');
+  var nombreEl = document.getElementById('cuenta-comercio-nombre');
+  var slugEl   = document.getElementById('cuenta-comercio-slug');
+  if (emailEl  && _authSession && _authSession.user) emailEl.textContent  = _authSession.user.email || '—';
+  if (nombreEl && typeof getStore === 'function')    nombreEl.textContent = getStore().config.name  || '—';
+  if (slugEl)                                          slugEl.textContent   = _SLUG || '—';
+}
+
+// ── Cambiar correo electrónico (supabase.auth.updateUser) ────────────
+async function cuentaCambiarEmail() {
+  var newEmail = (document.getElementById('cuenta-new-email') || {}).value || '';
+  var msgEl    = document.getElementById('cuenta-msg-email');
+  function _setMsg(txt, ok) {
+    if (!msgEl) return;
+    msgEl.style.display = txt ? 'block' : 'none';
+    msgEl.style.color   = ok ? 'var(--ok)' : 'var(--danger)';
+    msgEl.textContent   = txt;
+  }
+  _setMsg('');
+  if (!newEmail || !newEmail.includes('@')) { _setMsg('Ingresa un correo válido.', false); return; }
+  if (!_authSession || !_authSession.access_token) { _setMsg('Sin sesión activa.', false); return; }
+  try {
+    var r = await fetch(AUTH_URL + '/auth/v1/user', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY, 'Authorization': 'Bearer ' + _authSession.access_token },
+      body: JSON.stringify({ email: newEmail.trim() })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error');
+    _setMsg('✅ Correo actualizado. Es posible que necesites confirmar el nuevo correo en tu bandeja.', true);
+    console.log('[Cuenta] Correo actualizado:', newEmail);
+    var inp = document.getElementById('cuenta-new-email');
+    if (inp) inp.value = '';
+    var emailEl2 = document.getElementById('cuenta-email-actual');
+    if (emailEl2) emailEl2.textContent = newEmail;
+    if (_authSession.user) _authSession.user.email = newEmail;
+  } catch(e) {
+    console.error('[Cuenta] Error cambiando email:', e.message);
+    _setMsg('Error: ' + e.message, false);
+  }
+}
+
+// ── Cambiar contraseña (supabase.auth.updateUser) ────────────────────
+async function cuentaCambiarPassword() {
+  var pass1 = (document.getElementById('cuenta-new-pass')  || {}).value || '';
+  var pass2 = (document.getElementById('cuenta-new-pass2') || {}).value || '';
+  var msgEl = document.getElementById('cuenta-msg-pass');
+  function _setMsg(txt, ok) {
+    if (!msgEl) return;
+    msgEl.style.display = txt ? 'block' : 'none';
+    msgEl.style.color   = ok ? 'var(--ok)' : 'var(--danger)';
+    msgEl.textContent   = txt;
+  }
+  _setMsg('');
+  if (!pass1 || pass1.length < 8) { _setMsg('La contraseña debe tener al menos 8 caracteres.', false); return; }
+  if (pass1 !== pass2)            { _setMsg('Las contraseñas no coinciden.', false); return; }
+  if (!_authSession || !_authSession.access_token) { _setMsg('Sin sesión activa.', false); return; }
+  try {
+    var r = await fetch(AUTH_URL + '/auth/v1/user', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY, 'Authorization': 'Bearer ' + _authSession.access_token },
+      body: JSON.stringify({ password: pass1 })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error');
+    _setMsg('✅ Contraseña actualizada correctamente.', true);
+    console.log('[Cuenta] Contraseña actualizada para:', _authSession.user && _authSession.user.email);
+    var p1 = document.getElementById('cuenta-new-pass');
+    var p2 = document.getElementById('cuenta-new-pass2');
+    if (p1) p1.value = '';
+    if (p2) p2.value = '';
+  } catch(e) {
+    console.error('[Cuenta] Error cambiando contraseña:', e.message);
+    _setMsg('Error: ' + e.message, false);
+  }
+}
+
 // ---- NAV ----
 var curPanel = 'pedidos-todos';
 var curGroup = 'pedidos';
 
 function showGroup(group) {
+  // Asegurar que el panel de cuenta también se controla con showGroup
+  var panelCuenta = document.getElementById('panel-cuenta');
+  if (panelCuenta) panelCuenta.style.display = (group === 'cuenta') ? 'block' : 'none';
+  if (group === 'cuenta') return; // el resto de showGroup no aplica a cuenta
   // Asegurar que manual-view esté oculto cuando navegamos a cualquier panel
   var _mv = document.getElementById('manual-view');
   if (_mv) { _mv.classList.remove('open'); _mv.style.display = 'none'; }
@@ -6632,6 +6718,62 @@ async function sbInit() {
 // sbInit es llamado por el sistema de auth cuando confirma sesión
 
 </script>
+<!-- ══ PANEL: MI CUENTA ══════════════════════════════════════════════ -->
+<div id="panel-cuenta" class="panel" style="display:none">
+  <div class="content-wrap" style="max-width:540px;margin:0 auto;padding:20px 16px">
+
+    <!-- Datos del usuario autenticado -->
+    <div class="card" style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:18px">
+      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">
+        👤 Perfil del administrador
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px">Sesión activa como:</div>
+      <div id="cuenta-email-actual" style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px">—</div>
+      <div style="font-size:12px;color:var(--muted);background:var(--bg);padding:10px 12px;border-radius:var(--rs);border:1px solid var(--border)">
+        🏪 Comercio: <strong id="cuenta-comercio-nombre">—</strong> &nbsp;·&nbsp; Slug: <code id="cuenta-comercio-slug" style="color:var(--green)">—</code>
+      </div>
+    </div>
+
+    <!-- Cambiar correo electrónico -->
+    <div class="card" style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px;margin-bottom:18px">
+      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px">
+        ✉️ Cambiar correo electrónico
+      </div>
+      <div class="fg" style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Nuevo correo</label>
+        <input type="email" id="cuenta-new-email" placeholder="nuevo@correo.com"
+          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
+      </div>
+      <button class="btn btn-p" onclick="cuentaCambiarEmail()" style="width:100%">
+        Actualizar correo
+      </button>
+      <div id="cuenta-msg-email" style="margin-top:10px;font-size:12px;font-weight:600;display:none"></div>
+    </div>
+
+    <!-- Cambiar contraseña -->
+    <div class="card" style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:22px">
+      <div style="font-family:'Montserrat',sans-serif;font-size:13px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px">
+        🔑 Cambiar contraseña
+      </div>
+      <div class="fg" style="margin-bottom:12px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Nueva contraseña</label>
+        <input type="password" id="cuenta-new-pass" placeholder="Mínimo 8 caracteres" autocomplete="new-password"
+          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
+      </div>
+      <div class="fg" style="margin-bottom:14px">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Confirmar nueva contraseña</label>
+        <input type="password" id="cuenta-new-pass2" placeholder="Repite la contraseña" autocomplete="new-password"
+          style="width:100%;padding:10px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--rs);font-family:inherit;font-size:13px;color:var(--text)">
+      </div>
+      <button class="btn btn-p" onclick="cuentaCambiarPassword()" style="width:100%">
+        Actualizar contraseña
+      </button>
+      <div id="cuenta-msg-pass" style="margin-top:10px;font-size:12px;font-weight:600;display:none"></div>
+    </div>
+
+  </div>
+</div><!-- #panel-cuenta -->
+
 </div><!-- #admin-content -->
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -6802,9 +6944,9 @@ async function authLogout() {
   if (typeof _STORE !== 'undefined') {
     _STORE = null;
   }
-  // Redirigir a login
-  _mostrarLogin('Sesión cerrada');
-  console.log('[Auth] Sesión cerrada correctamente');
+  console.log('[Auth] Sesión cerrada correctamente — redirigiendo a login');
+  // Redirigir al login centralizado
+  window.location.href = 'login.html';
 }
 
 // ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
