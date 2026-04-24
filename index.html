@@ -943,76 +943,71 @@ function openProd(id) {
   var pq = document.getElementById('pm-qty'); if (pq) pq.textContent = 1;
   var pnote = document.getElementById('pm-note'); if (pnote) pnote.value = '';
 
-  // ── EXTRAS Y ADICIONES DEL PRODUCTO ──────────────────────────────────
+  // ── EXTRAS, ADICIONES Y EXTRAS GLOBALES DEL PRODUCTO ──────────────────
+  // Tres secciones separadas según las tres columnas de la tabla productos:
+  //   extras          → opciones propias del producto (columna extras)
+  //   adiciones       → columna opciones_sabores
+  //   extras_globales → columna opciones_extras
   var ex = document.getElementById('pm-extras');
   if (ex) {
     var xh = '';
 
-    // 1. Extras propios del producto (productos.extras — JSONB [{name,price}])
-    //    Estos son extras específicos de ESTE producto
+    // ── Sección 1: Extras propios (columna extras) ────────────────────────
     var prodExtras = Array.isArray(p.extras) ? p.extras.filter(function(e) { return e && e.name; }) : [];
     if (prodExtras.length) {
       xh += '<div class="xtl">Extras</div>';
       for (var xi = 0; xi < prodExtras.length; xi++) {
         var e = prodExtras[xi];
-        xh += '<div class="xrow" id="xr' + xi + '" onclick="togX(' + xi + ')">'
-          + '<div class="xchk" id="xc' + xi + '"></div>'
+        xh += '<div class="xrow" id="xr_e_' + xi + '" onclick="togExtraSec(this)" data-grupo="e" data-idx="' + xi + '">'
+          + '<div class="xchk"></div>'
           + '<span class="xname">' + e.name + '</span>'
           + '<span class="xprice-lbl">' + (e.price > 0 ? '+' + fp(e.price) : 'Incluido') + '</span>'
           + '</div>';
       }
     }
 
-    // 2. Extras de categoría (categorias.extras_categoria — [{nombre, precio}])
-    //    Aplican a TODOS los productos de esa categoría
-    var catMapa   = (_STORE._categoriasMapa || {})[p.cat] || {};
-    var catExtras = catMapa.extras || [];   // [{name, price}] ya normalizados
-    var catAdicOffset = prodExtras.length;  // índice base para no colisionar con prodExtras
-
-    if (catExtras.length) {
-      xh += '<div class="xtl"' + (prodExtras.length ? ' style="margin-top:10px"' : '') + '>Extras de la categoría</div>';
-      for (var cxi = 0; cxi < catExtras.length; cxi++) {
-        var ce = catExtras[cxi];
-        var realIdx = catAdicOffset + cxi;  // índice global para togX
-        xh += '<div class="xrow" id="xr' + realIdx + '" onclick="togX(' + realIdx + ')">'
-          + '<div class="xchk" id="xc' + realIdx + '"></div>'
-          + '<span class="xname">' + ce.name + '</span>'
-          + '<span class="xprice-lbl">' + (ce.price > 0 ? '+' + fp(ce.price) : 'Incluido') + '</span>'
+    // ── Sección 2: Adiciones (columna opciones_sabores) ───────────────────
+    var prodAdiciones = Array.isArray(p.adiciones) ? p.adiciones.filter(function(e) { return e && e.name; }) : [];
+    if (prodAdiciones.length) {
+      xh += '<div class="xtl" style="margin-top:' + (prodExtras.length ? '10px' : '0') + '">Adiciones'
+        + ' <span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;'
+        + 'padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span></div>';
+      for (var ai = 0; ai < prodAdiciones.length; ai++) {
+        var ad = prodAdiciones[ai];
+        xh += '<div class="xrow" id="xr_a_' + ai + '" onclick="togExtraSec(this)" data-grupo="a" data-idx="' + ai + '">'
+          + '<div class="xchk"></div>'
+          + '<span class="xname">' + ad.name + '</span>'
+          + '<span class="xprice-lbl">' + (ad.price > 0 ? '+' + fp(ad.price) : 'Incluido') + '</span>'
           + '</div>';
       }
     }
 
-    // curProd.extras ahora incluye TANTO los del producto COMO los de la categoría,
-    // para que togX() y updT() puedan acceder por índice sin cambios adicionales
-    curProd._allExtras = prodExtras.concat(catExtras);
-
-    // 3. Adiciones de categoría (categorias.adiciones_categoria — ["string"...])
-    //    Se muestran como grupo de opciones tipo check (selección múltiple, precio 0)
-    var catAdiciones = catMapa.adiciones || [];  // [{name, price:0}] ya normalizados
-
-    if (catAdiciones.length) {
-      xh += '<div class="xtl" style="margin-top:10px">Adiciones'
-        + ' <span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>'
-        + '</div>';
-      for (var dai = 0; dai < catAdiciones.length; dai++) {
-        var da = catAdiciones[dai];
-        xh += '<div class="xrow" id="xr_adc_' + dai + '" onclick="togAdicCat(this,' + dai + ')"'
-          + ' data-adic-idx="' + dai + '">'
-          + '<div class="xchk" id="xc_adc_' + dai + '"></div>'
-          + '<span class="xname">' + da.name + '</span>'
-          + '<span class="xprice-lbl">Incluido</span>'
+    // ── Sección 3: Extras globales (columna opciones_extras) ─────────────
+    var prodExtrasGlob = Array.isArray(p.extras_globales) ? p.extras_globales.filter(function(e) { return e && e.name; }) : [];
+    if (prodExtrasGlob.length) {
+      var hasAbove = prodExtras.length || prodAdiciones.length;
+      xh += '<div class="xtl" style="margin-top:' + (hasAbove ? '10px' : '0') + '">Extras globales</div>';
+      for (var gi = 0; gi < prodExtrasGlob.length; gi++) {
+        var eg = prodExtrasGlob[gi];
+        xh += '<div class="xrow" id="xr_g_' + gi + '" onclick="togExtraSec(this)" data-grupo="g" data-idx="' + gi + '">'
+          + '<div class="xchk"></div>'
+          + '<span class="xname">' + eg.name + '</span>'
+          + '<span class="xprice-lbl">' + (eg.price > 0 ? '+' + fp(eg.price) : 'Incluido') + '</span>'
           + '</div>';
       }
     }
 
-    // Guardar referencia de adiciones de categoría para addToCart()
-    curProd._catAdiciones = catAdiciones;
+    // Guardar referencias en curProd para que addToCart() y updT() las usen
+    curProd._extras      = prodExtras;
+    curProd._adiciones   = prodAdiciones;
+    curProd._extrasGlob  = prodExtrasGlob;
+    // _allExtras unificado en orden: extras → adiciones → extras globales
+    // togX() e updT() usan el índice global de este array
+    curProd._allExtras   = prodExtras.concat(prodAdiciones).concat(prodExtrasGlob);
+    // mantener compatibilidad con código legacy
+    curProd._catAddons   = [];
+    curProd._catAdiciones = [];
 
-    // NOTA: _catAddons sigue siendo compatible para adiciones complejas del admin
-    var legacyAddons = (_STORE._catAddons || []).filter(function(ad) { return ad.cat === p.cat; });
-    curProd._catAddons = legacyAddons;
-
-    // Si no hay nada que mostrar, ocultar el contenedor
     ex.innerHTML = xh || '';
     ex.style.display = xh ? '' : 'none';
   }
@@ -1057,6 +1052,36 @@ function togX(i) {
   var active = selX.indexOf(i) >= 0;
   if (row) { if (active) row.classList.add('sel'); else row.classList.remove('sel'); }
   if (chk) chk.textContent = active ? '✓' : '';
+  updT();
+}
+
+// togExtraSec — manejador unificado para las tres secciones de extras.
+// Usa data-grupo (e=extras, a=adiciones, g=extrasGlobales) y data-idx
+// para identificar cada opción dentro de su sección.
+// Registra la selección en selX usando el índice global de _allExtras
+// (orden: extras → adiciones → extras_globales) para que updT() calcule
+// el precio sumando solo las opciones que tienen price > 0.
+function togExtraSec(row) {
+  var grupo = row.getAttribute('data-grupo');
+  var idx   = parseInt(row.getAttribute('data-idx'));
+  if (!curProd) return;
+
+  // Calcular el índice global dentro de _allExtras
+  var globalIdx = idx;
+  if (grupo === 'a') globalIdx = (curProd._extras || []).length + idx;
+  if (grupo === 'g') globalIdx = (curProd._extras || []).length + (curProd._adiciones || []).length + idx;
+
+  var chk = row.querySelector('.xchk');
+  var pos = selX.indexOf(globalIdx);
+  if (pos >= 0) {
+    selX.splice(pos, 1);
+    row.classList.remove('sel');
+    if (chk) chk.textContent = '';
+  } else {
+    selX.push(globalIdx);
+    row.classList.add('sel');
+    if (chk) chk.textContent = '✓';
+  }
   updT();
 }
 
@@ -1117,10 +1142,15 @@ function addToCart() {
   if (!curProd) return;
   var extras = [];
 
-  // 1. Extras seleccionados (productos.extras + categorias.extras_categoria unificados)
-  var allExtras = curProd._allExtras || curProd.extras || [];
+  // Recoger todas las opciones seleccionadas de las tres secciones.
+  // selX contiene índices globales de curProd._allExtras
+  // (orden: extras propios → adiciones → extras globales)
+  var allExtras = curProd._allExtras || [];
   for (var i = 0; i < selX.length; i++) {
-    if (allExtras[selX[i]]) extras.push(allExtras[selX[i]]);
+    if (allExtras[selX[i]]) extras.push({
+      name:  allExtras[selX[i]].name,
+      price: allExtras[selX[i]].price || 0
+    });
   }
 
   // 2. Adiciones simples de categoría seleccionadas (strings, precio 0)
@@ -2349,70 +2379,46 @@ async function sbCargarProductos() {
     if (!prods || !prods.length) { console.warn('[SB] Sin productos para comercio:', _COMERCIO_ID); return; }
 
     _STORE.products = prods.map(function(p) {
-      // extras JSONB: [{name:"Queso extra", price:2000}, ...]
-      let extras = [];
-      if (Array.isArray(p.extras)) {
-        extras = p.extras.filter(e => e && e.name);
-      } else if (p.extras) {
-        try { extras = JSON.parse(p.extras); } catch(e) {}
+      // ── Función auxiliar para normalizar un array de extras/adiciones
+      // Acepta [{name,price}], [{nombre,precio}], ["string"] o string JSON
+      function normalizarOpciones(raw) {
+        var arr = raw;
+        if (!arr) return [];
+        if (typeof arr === 'string') {
+          try { arr = JSON.parse(arr); } catch(e) { return []; }
+        }
+        if (!Array.isArray(arr)) return [];
+        return arr.map(function(e) {
+          if (typeof e === 'string') return { name: e.trim(), price: 0 };
+          return {
+            name:  String(e.name || e.nombre || '').trim(),
+            price: parseInt(e.price !== undefined ? e.price : (e.precio || 0)) || 0
+          };
+        }).filter(function(e) { return e.name; });
       }
 
-      // opciones_extras JSONB: [{name, price}] o strings — extras adicionales del producto
-      if (Array.isArray(p.opciones_extras) && p.opciones_extras.length) {
-        p.opciones_extras.forEach(function(e) {
-          if (!e) return;
-          if (typeof e === 'string' && e.trim()) {
-            extras.push({ name: e.trim(), price: 0, tipo: 'extra' });
-          } else if (e.name || e.nombre) {
-            extras.push({
-              name:  e.name || e.nombre || '',
-              price: parseInt(e.price !== undefined ? e.price : (e.precio || 0)) || 0,
-              tipo:  'extra'
-            });
-          }
-        });
-      } else if (p.opciones_extras && typeof p.opciones_extras === 'string') {
-        try {
-          const arrE = JSON.parse(p.opciones_extras);
-          arrE.forEach(function(e) {
-            if (typeof e === 'string' && e.trim()) {
-              extras.push({ name: e.trim(), price: 0, tipo: 'extra' });
-            } else if (e && (e.name || e.nombre)) {
-              extras.push({
-                name:  e.name || e.nombre || '',
-                price: parseInt(e.price !== undefined ? e.price : (e.precio || 0)) || 0,
-                tipo:  'extra'
-              });
-            }
-          });
-        } catch(e) {}
-      }
+      // columna extras → opciones propias de este producto [{name, price}]
+      var extras = normalizarOpciones(p.extras);
 
-      // opciones_sabores JSONB: ["Vainilla","Chocolate"] — precio 0
-      if (Array.isArray(p.opciones_sabores) && p.opciones_sabores.length) {
-        p.opciones_sabores.forEach(function(s) {
-          if (s && s.trim()) extras.unshift({ name: s.trim(), price: 0, tipo: 'sabor' });
-        });
-      } else if (p.opciones_sabores && typeof p.opciones_sabores === 'string') {
-        try {
-          const arr = JSON.parse(p.opciones_sabores);
-          arr.forEach(function(s) {
-            if (s && s.trim()) extras.unshift({ name: s.trim(), price: 0, tipo: 'sabor' });
-          });
-        } catch(e) {}
-      }
+      // columna opciones_sabores → adiciones del producto [{name, price}]
+      var adiciones = normalizarOpciones(p.opciones_sabores);
+
+      // columna opciones_extras → extras globales del producto [{name, price}]
+      var extrasGlobales = normalizarOpciones(p.opciones_extras);
 
       return {
-        id:        p.id,
-        sb_id:     p.id,
-        name:      p.nombre      || '',
-        cat:       p.categoria   || 'General',
-        price:     parseInt(p.precio) || 0,
-        desc:      p.descripcion || '',
-        photo:     p.imagen_url  || '',
-        emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
-        available: p.disponible !== false,
-        extras:    extras
+        id:              p.id,
+        sb_id:           p.id,
+        name:            p.nombre      || '',
+        cat:             p.categoria   || 'General',
+        price:           parseInt(p.precio) || 0,
+        desc:            p.descripcion || '',
+        photo:           p.imagen_url  || '',
+        emoji:           (p.nombre||'P').charAt(0).toUpperCase(),
+        available:       p.disponible !== false,
+        extras:          extras,           // columna extras: opciones propias
+        adiciones:       adiciones,        // columna opciones_sabores: adiciones
+        extras_globales: extrasGlobales    // columna opciones_extras: extras globales
       };
     });
 
