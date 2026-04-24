@@ -2355,6 +2355,37 @@ async function sbCargarProductos() {
         try { extras = JSON.parse(p.extras); } catch(e) {}
       }
 
+      // opciones_extras JSONB: [{name, price}] o strings — extras adicionales del producto
+      if (Array.isArray(p.opciones_extras) && p.opciones_extras.length) {
+        p.opciones_extras.forEach(function(e) {
+          if (!e) return;
+          if (typeof e === 'string' && e.trim()) {
+            extras.push({ name: e.trim(), price: 0, tipo: 'extra' });
+          } else if (e.name || e.nombre) {
+            extras.push({
+              name:  e.name || e.nombre || '',
+              price: parseInt(e.price !== undefined ? e.price : (e.precio || 0)) || 0,
+              tipo:  'extra'
+            });
+          }
+        });
+      } else if (p.opciones_extras && typeof p.opciones_extras === 'string') {
+        try {
+          const arrE = JSON.parse(p.opciones_extras);
+          arrE.forEach(function(e) {
+            if (typeof e === 'string' && e.trim()) {
+              extras.push({ name: e.trim(), price: 0, tipo: 'extra' });
+            } else if (e && (e.name || e.nombre)) {
+              extras.push({
+                name:  e.name || e.nombre || '',
+                price: parseInt(e.price !== undefined ? e.price : (e.precio || 0)) || 0,
+                tipo:  'extra'
+              });
+            }
+          });
+        } catch(e) {}
+      }
+
       // opciones_sabores JSONB: ["Vainilla","Chocolate"] — precio 0
       if (Array.isArray(p.opciones_sabores) && p.opciones_sabores.length) {
         p.opciones_sabores.forEach(function(s) {
@@ -2398,50 +2429,28 @@ async function sbCargarProductos() {
 async function sbCargarCategorias() {
   if (!_COMERCIO_ID) return;
   try {
+    // CORRECCIÓN: pos_categorias solo tiene id, nombre, orden y comercio_id.
+    // Las columnas extras_categoria y adiciones_categoria NO existen en esa tabla.
+    // Los extras se leen directamente de cada producto desde las columnas
+    // extras, opciones_extras y opciones_sabores en pos_productos.
     const cats = await SB.get('pos_categorias', {
-      select:        'nombre,extras_categoria,adiciones_categoria',
+      select:        'id,nombre',
       'comercio_id': 'eq.' + _COMERCIO_ID,
       order:         'orden.asc,nombre.asc'
     });
 
-    // Construir mapa indexado por nombre: { "Hamburguesas": { extras: [], adiciones: [] }, ... }
+    // Construir mapa indexado por nombre con extras y adiciones vacíos.
+    // Los extras reales viven en cada producto, no en la categoría.
     const mapa = {};
     (cats || []).forEach(function(cat) {
       if (!cat.nombre || cat.nombre === '__extras_globales__') return;
-
-      // extras_categoria: [{nombre, precio}] — con precio sumable
-      var extras = [];
-      if (Array.isArray(cat.extras_categoria)) {
-        extras = cat.extras_categoria.filter(function(e) {
-          return e && (e.nombre || e.name);
-        }).map(function(e) {
-          return {
-            name:  e.nombre || e.name || '',
-            price: parseInt(e.precio !== undefined ? e.precio : (e.price || 0)) || 0
-          };
-        });
-      }
-
-      // adiciones_categoria: ["Salsa especial", "Mayonesa"] — strings simples, precio 0
-      var adiciones = [];
-      if (Array.isArray(cat.adiciones_categoria)) {
-        adiciones = cat.adiciones_categoria.filter(function(a) {
-          return a && String(a).trim();
-        }).map(function(a) {
-          return { name: String(a).trim(), price: 0 };
-        });
-      }
-
-      mapa[cat.nombre] = { extras: extras, adiciones: adiciones };
+      mapa[cat.nombre] = { extras: [], adiciones: [] };
     });
 
     _STORE._categoriasMapa = mapa;
-    console.log('[SB] Categorías cargadas para menú:', Object.keys(mapa).length,
-      '— con extras/adiciones:', Object.values(mapa).filter(function(c) {
-        return c.extras.length || c.adiciones.length;
-      }).length);
+    console.log('[SB] Categorías cargadas para menú:', Object.keys(mapa).length);
   } catch(e) {
-    // Sin datos de categorías el menú sigue funcionando — simplemente no habrá extras de categoría
+    // Sin datos de categorías el menú sigue funcionando
     _STORE._categoriasMapa = {};
     console.warn('[SB] No se pudieron cargar categorías:', e.message);
   }
