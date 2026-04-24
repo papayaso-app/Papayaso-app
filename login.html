@@ -535,20 +535,25 @@ async function doLogin() {
 
     console.log('[Auth] Login OK:', user.email, '| role:', role || '(sin role)');
 
-    // Guardar sesión en sessionStorage para que admin/superadmin la lean
+    // Guardar sesión en localStorage (persistSession: true)
+    // Admin y superadmin leen de localStorage en su onLoad.
     var session = {
       access_token:  data.access_token,
       refresh_token: data.refresh_token,
-      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+      expires_at:    Date.now() + (data.expires_in || 86400) * 1000,  // 86400s = 24h
       user:          user
     };
 
+    // Limpiar el flag de logout antes de redirigir al admin
+    try { sessionStorage.removeItem('papayaso_logout_flag'); } catch(e) {}
+
     // ── Redirigir según role ────────────────────────────────────────
     if (role === 'super_admin' || email.trim() === 'escobardiego1992@hotmail.com') {
-      // Super admin → superadmin.html
-      try { sessionStorage.setItem('papayaso_superadmin_session', JSON.stringify(session)); } catch(e) {}
+      // Super admin → guardar en localStorage y redirigir
+      try { localStorage.setItem('papayaso_superadmin_session', JSON.stringify(session)); } catch(e) {}
       console.log('[Auth] Redirigiendo a Super Admin...');
-      window.location.href = 'superadmin.html';
+      // replace() para que el login no quede en el historial del móvil
+      window.location.replace('superadmin.html');
       return;
     }
 
@@ -556,15 +561,16 @@ async function doLogin() {
     // y redirigir a admin.html?rest=slug
     var slug = await _buscarSlugComercio(user, data.access_token);
 
-    try { sessionStorage.setItem('papayaso_admin_session', JSON.stringify(session)); } catch(e) {}
+    // Guardar sesión de admin en localStorage antes de redirigir
+    try { localStorage.setItem('papayaso_admin_session', JSON.stringify(session)); } catch(e) {}
 
     if (slug) {
       console.log('[Auth] Redirigiendo a Admin slug:', slug);
-      window.location.href = 'admin.html?rest=' + encodeURIComponent(slug);
+      window.location.replace('admin.html?rest=' + encodeURIComponent(slug));
     } else {
       // Sin slug conocido → ir al admin sin slug (el admin mostrará el error de comercio)
       console.warn('[Auth] Sin slug en comercios — redirigiendo a admin sin ?rest=');
-      window.location.href = 'admin.html';
+      window.location.replace('admin.html');
     }
 
   } catch(e) {
@@ -732,51 +738,90 @@ async function doNewPass() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ARRANQUE: detectar si el usuario ya tiene sesión activa
-// o si viene desde un enlace de recuperación
+// ARRANQUE: guardia del login — evitar bucles de redirección
 // ══════════════════════════════════════════════════════════════
 (function init() {
-  // 1. Detectar hash de recuperación en la URL (prioridad máxima)
+  // ── Paso 1: hash de recuperación de contraseña (prioridad máxima) ──
   if (detectarHashRecovery()) return;
 
-  // 2. Si ya hay sesión de super admin guardada y es válida → redirigir
+  // ── Paso 2: verificar si venimos de un logout o del guard de auth ──
+  // El guard de admin.html/superadmin.html pone este flag con
+  // sessionStorage.setItem('papayaso_logout_flag', '1') justo antes
+  // de llamar a window.location.replace('login.html').
+  // Si el flag existe, limpiarlo y NO auto-redirigir al admin aunque
+  // haya algo en localStorage (el storage ya fue limpiado con clear()).
+  // Esto rompe el bucle: logout → login → admin → login → ...
+  var logoutFlag = false;
   try {
-    var saRaw = sessionStorage.getItem('papayaso_superadmin_session');
-    if (saRaw) {
-      var saSession = JSON.parse(saRaw);
-      if (saSession && saSession.access_token && Date.now() < (saSession.expires_at || 0)) {
-        console.log('[Auth] Sesión de super admin activa detectada — redirigiendo...');
-        window.location.href = 'superadmin.html';
-        return;
-      }
+    logoutFlag = !!sessionStorage.getItem('papayaso_logout_flag');
+    if (logoutFlag) {
+      sessionStorage.removeItem('papayaso_logout_flag');
+      console.log('[Login] Flag de logout detectado — mostrando login sin auto-redirigir');
     }
   } catch(e) {}
 
-  // 3. Si ya hay sesión de admin guardada y es válida → buscar slug y redirigir
+  if (logoutFlag) {
+    // Limpiar cualquier rastro restante en localStorage por si acaso
+    try {
+      localStorage.removeItem('papayaso_admin_session');
+      localStorage.removeItem('papayaso_superadmin_session');
+    } catch(e) {}
+    // Mostrar el login directamente sin verificar sesiones
+    setTimeout(function() {
+      var el = document.getElementById('login-email');
+      if (el) el.focus();
+    }, 100);
+    return;
+  }
+
+  // ── Paso 3: verificar sesión activa en localStorage ────────────────
+  // Admin y superadmin guardan en localStorage (persistSession: true).
+  // Solo redirigir automáticamente si el token es válido Y no venimos
+  // de un logout (paso 2 ya lo garantiza aquí).
+
+  // Verificar sesión de super admin
   try {
-    var admRaw = sessionStorage.getItem('papayaso_admin_session');
+    var saRaw = localStorage.getItem('papayaso_superadmin_session');
+    if (saRaw) {
+      var saSession = JSON.parse(saRaw);
+      if (saSession && saSession.access_token && Date.now() < (saSession.expires_at || 0)) {
+        console.log('[Login] Sesión de super admin activa en localStorage — redirigiendo...');
+        window.location.replace('superadmin.html');
+        return;
+      }
+      // Sesión caducada → limpiarla
+      localStorage.removeItem('papayaso_superadmin_session');
+    }
+  } catch(e) {}
+
+  // Verificar sesión de admin
+  try {
+    var admRaw = localStorage.getItem('papayaso_admin_session');
     if (admRaw) {
       var admSession = JSON.parse(admRaw);
       if (admSession && admSession.access_token && Date.now() < (admSession.expires_at || 0)) {
         var user = admSession.user || {};
         var meta = user.user_metadata || {};
-        var role = meta.role || (user.app_metadata || {}).role || '';
-        if (role === 'super_admin' || (user.email === 'escobardiego1992@hotmail.com')) {
-          window.location.href = 'superadmin.html';
+        var appM = user.app_metadata  || {};
+        var role = meta.role || appM.role || '';
+        if (role === 'super_admin' || user.email === 'escobardiego1992@hotmail.com') {
+          // Tiene rol super_admin pero la sesión guardada es de admin —
+          // redirigir al superadmin donde el guard hará la verificación
+          console.log('[Login] Sesión de admin con rol super_admin — redirigiendo a superadmin...');
+          window.location.replace('superadmin.html');
           return;
         }
-        // Redirigir al admin — el admin.html leerá la sesión de sessionStorage
-        console.log('[Auth] Sesión de admin activa detectada — redirigiendo...');
-        window.location.href = 'admin.html';
+        console.log('[Login] Sesión de admin activa en localStorage — redirigiendo...');
+        window.location.replace('admin.html');
         return;
       }
+      // Sesión caducada → limpiarla
+      localStorage.removeItem('papayaso_admin_session');
     }
   } catch(e) {}
 
-  // 4. Sin sesión → mostrar el panel de login (ya es el default)
-  console.log('[Auth] Sin sesión activa — mostrando login');
-
-  // Focus automático en el campo de email
+  // ── Paso 4: sin sesión válida → mostrar el formulario de login ─────
+  console.log('[Login] Sin sesión activa — mostrando formulario de login');
   setTimeout(function() {
     var el = document.getElementById('login-email');
     if (el) el.focus();
