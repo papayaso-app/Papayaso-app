@@ -1382,9 +1382,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 // ── ESTADO EN MEMORIA — localStorage eliminado ──────────────────────
 // La fuente de verdad es Supabase. Este objeto se rellena al arrancar.
 var _STORE = null;
-window._ADMIN_COMERCIO_ID     = null;
-window._ADMIN_COMERCIO_SLUG   = null;
-window._ADMIN_COMERCIO_NOMBRE = null;
 
 function getStore() {
   if (!_STORE) _STORE = seed();
@@ -3135,10 +3132,8 @@ function posCheckout(payMethod) {
 // ══════════════════════════════════════════════════════════════
 async function sbPosLoadProductos() {
   try {
-    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB-POS] sin ID'); return; }
     var prods = await SB.get('pos_productos', {
-      select: '*', order: 'categoria.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      select: '*', order: 'categoria.asc,nombre.asc'
     });
     updPos(function(s) {
       s.products = (prods || []).map(function(p) {
@@ -3170,10 +3165,8 @@ async function sbPosLoadProductos() {
 
 async function sbPosLoadCategorias() {
   try {
-    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB-POS] sin ID'); return; }
     var cats = await SB.get('pos_categorias', {
-      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
+      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc'
     });
     updPos(function(s) {
       s.categories = (cats || []).map(function(c) { return c.nombre; });
@@ -3220,11 +3213,13 @@ async function sbPosLoadVentas(fechaDesde, fechaHasta) {
 
     // PostgREST no admite el mismo param dos veces con Object.entries/set.
     // Usamos el filtro 'and' en un solo parámetro para el rango de fechas.
-    var _vP = { select: '*', 'origen': 'eq.pos',
-      'and': '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
-      order: 'created_at.desc', limit: 500 };
-    if (window._ADMIN_COMERCIO_ID) _vP['comercio_id'] = 'eq.' + window._ADMIN_COMERCIO_ID;
-    var rows = await SB.get('pedidos', _vP);
+    var rows = await SB.get('pedidos', {
+      select: '*',
+      'origen': 'eq.pos',
+      'and':    '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
+      order:    'created_at.desc',
+      limit:    500
+    });
 
     // Normalizar al formato que usa renderPosSales
     var sales = (rows || []).map(function(p) {
@@ -3641,8 +3636,7 @@ function savePosProd() {
         result = await SB.patch('pos_productos', 'id=eq.' + posEditId, body);
         console.log('[SB-POS] Producto actualizado:', posEditId);
       } else {
-        body.comercio_id = window._ADMIN_COMERCIO_ID;
-      result = await SB.post('pos_productos', body);
+        result = await SB.post('pos_productos', body);
         console.log('[SB-POS] Producto creado:', result && result[0] && result[0].id);
       }
       closePosProdModal();
@@ -3727,7 +3721,7 @@ function addPosCat() {
   if (s.categories.indexOf(v) >= 0) { showToast('Ya existe esa categoría'); return; }
   (async function() {
     try {
-      await SB.post('pos_categorias', { nombre: v, orden: s.categories.length, comercio_id: window._ADMIN_COMERCIO_ID });
+      await SB.post('pos_categorias', { nombre: v, orden: s.categories.length });
       if (inp) inp.value = '';
       await sbPosLoadCategorias();
       showToast('Categoría POS creada ✓');
@@ -5253,33 +5247,36 @@ function dailyCleanup() {
 
 
 
-<!-- ===== SUPABASE — 100% sin localStorage ===== -->
+
+<!-- ===== SUPABASE MULTI-TENANT — ADMIN ===== -->
 <script>
 /* =============================================================
-   CAPA SUPABASE — ADMIN  (100% Supabase, 0% localStorage)
-   Fuente de verdad: Supabase
-   Estado en memoria: _STORE / _POS_STORE
+   CAPA SUPABASE — ADMIN  Multi-Tenant (100% Supabase, 0% localStorage)
+   Identificación por ?rest=slug → tabla comercios → comercio_id
+   Todas las queries operativas filtran por comercio_id
    ============================================================= */
+
+// ══════════════════════════════════════════════════════════════
+// MULTI-TENANT — Detectar comercio desde ?rest=slug
+// ══════════════════════════════════════════════════════════════
+const _urlParams    = new URLSearchParams(window.location.search);
+const _SLUG         = (_urlParams.get('rest') || '').trim().toLowerCase();
+let   _COMERCIO_ID  = null;  // UUID del comercio activo
+let   _COMERCIO_ROW = null;  // Fila completa de comercios
 
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
 // ── Cliente fetch directo (sin CDN) ─────────────────────────────────
-// Los headers se calculan en cada llamada para inyectar el token de sesión
-// activo. Cuando el usuario está autenticado, _authSession.access_token
-// reemplaza al token anónimo — esto es lo que la RLS necesita para
-// reconocer al usuario como 'authenticated' y permitir INSERT/UPDATE/DELETE.
 const SB = {
   _headers() {
-    // _authSession está definido en el script de auth (más abajo en el HTML).
-    // Si aún no existe (primera carga) usamos el token anónimo.
     const token = (typeof _authSession !== 'undefined' && _authSession && _authSession.access_token)
       ? _authSession.access_token
       : SUPABASE_KEY;
     return {
       'Content-Type':  'application/json',
-      'apikey':        SUPABASE_KEY,          // siempre el anon key como identificador del proyecto
-      'Authorization': 'Bearer ' + token,    // cambia según sesión activa
+      'apikey':        SUPABASE_KEY,
+      'Authorization': 'Bearer ' + token,
       'Prefer':        'return=representation'
     };
   },
@@ -5360,54 +5357,95 @@ const LOCAL_TO_SB = {};
 Object.entries(SB_TO_LOCAL).forEach(([k,v]) => LOCAL_TO_SB[v] = k);
 
 // ══════════════════════════════════════════════════════════════════════
-// CONFIGURACIÓN
+// CARGAR COMERCIO — primer paso antes de cargar config
+// Lee la tabla maestra 'comercios' por slug de URL
 // ══════════════════════════════════════════════════════════════════════
-async function sbLoadConfig() {
+async function sbCargarComercio() {
+  if (!_SLUG) {
+    console.error('[SB] No se especificó ?rest=slug en la URL');
+    return false;
+  }
   try {
-    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadConfig: ID null'); return; }
     const rows = await SB.get('comercios', {
-      select: 'nombre,nombre_negocio,whatsapp,telefono_local,direccion,descripcion,nit,mensaje_bienvenida,url_menu,url_repartidor,pin_repartidor,tiempo_entrega_min,tiempo_entrega_max,esta_abierto,horario_semanal,logo_url,cover_url',
-      'id': 'eq.' + window._ADMIN_COMERCIO_ID,
+      select: 'id,nombre,slug,whatsapp,telefono,nit,direccion,descripcion,logo_url,cover_url,esta_abierto,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal,mensaje_bienvenida',
+      'slug': 'eq.' + _SLUG,
       limit: 1
     });
-    if (!rows || !rows.length) { console.warn('[SB] Sin datos en comercios id:', window._ADMIN_COMERCIO_ID); return; }
+    if (!rows || !rows.length) {
+      console.error('[SB] Comercio no encontrado para slug:', _SLUG);
+      alert('❌ Comercio "' + _SLUG + '" no encontrado en la base de datos.\n\nVerifica el parámetro ?rest= en la URL.');
+      return false;
+    }
+    _COMERCIO_ROW = rows[0];
+    _COMERCIO_ID  = rows[0].id;
+    console.log('[SB] Comercio cargado:', rows[0].nombre, '| id:', _COMERCIO_ID);
+    return true;
+  } catch(e) {
+    console.error('[SB] Error cargando comercio:', e.message);
+    return false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN — lee de tabla comercios (columnas logo_url, cover_url)
+// ══════════════════════════════════════════════════════════════════════
+async function sbLoadConfig() {
+  if (!_COMERCIO_ID) return;
+  try {
+    // Re-leer la fila del comercio para tener datos frescos
+    const rows = await SB.get('comercios', {
+      select: 'nombre,whatsapp,telefono,nit,direccion,descripcion,logo_url,cover_url,esta_abierto,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal,mensaje_bienvenida',
+      'id': 'eq.' + _COMERCIO_ID,
+      limit: 1
+    });
+    if (!rows || !rows.length) { console.warn('[SB] Sin fila en comercios para id:', _COMERCIO_ID); return; }
     const c = rows[0];
-    if (c.nombre) window._ADMIN_COMERCIO_NOMBRE = c.nombre;
 
     upd(function(s) {
-      s.config.name       = c.nombre            || c.nombre_negocio || s.config.name;
-      s.config.whatsapp   = c.whatsapp           || s.config.whatsapp   || '';
-      s.config.address    = c.direccion          || s.config.address    || '';
-      s.config.desc       = c.descripcion        || s.config.desc       || '';
-      s.config.nit        = c.nit                || s.config.nit        || '';
-      s.config.phone      = c.telefono_local      || s.config.phone      || '';
-      s.config.welcome    = c.mensaje_bienvenida  || s.config.welcome    || '';
-      s.config.menuUrl    = c.url_menu             || s.config.menuUrl    || 'menu.html';
-      s.config.riderUrl   = c.url_repartidor       || s.config.riderUrl   || 'repartidor.html';
-      s.config.riderPin   = c.pin_repartidor        || s.config.riderPin   || '1234';
+      s.config.name       = c.nombre               || s.config.name;
+      s.config.whatsapp   = c.whatsapp || c.telefono|| s.config.whatsapp;
+      s.config.address    = c.direccion             || s.config.address  || '';
+      s.config.desc       = c.descripcion           || s.config.desc     || '';
+      s.config.nit        = c.nit                   || s.config.nit      || '';
+      s.config.phone      = c.telefono              || s.config.phone    || '';
+      s.config.welcome    = c.mensaje_bienvenida    || s.config.welcome  || '';
+      s.config.menuUrl    = c.url_menu              || s.config.menuUrl  || 'menu.html';
+      s.config.riderUrl   = c.url_repartidor        || s.config.riderUrl || 'repartidor.html';
+      s.config.riderPin   = c.pin_repartidor        || s.config.riderPin || '1234';
       s.config.deliveryMin= String(c.tiempo_entrega_min || s.config.deliveryMin || 30);
       s.config.deliveryMax= String(c.tiempo_entrega_max || s.config.deliveryMax || 60);
       s.config.isOpen     = c.esta_abierto !== false;
-      if (c.logo_url  && c.logo_url.trim())  s.config.logo  = c.logo_url.trim()  + (c.logo_url.includes('?v=')  ? '' : '?v=' + Date.now());
-      if (c.cover_url && c.cover_url.trim()) s.config.cover = c.cover_url.trim() + (c.cover_url.includes('?v=') ? '' : '?v=' + Date.now());
-      if (c.horario_semanal && typeof c.horario_semanal === 'object') s.config.schedule = c.horario_semanal;
+
+      // Columnas específicas de la tabla comercios: logo_url y cover_url
+      if (c.logo_url  && c.logo_url.trim())  s.config.logo  = c.logo_url.trim();
+      if (c.cover_url && c.cover_url.trim()) s.config.cover = c.cover_url.trim();
+
+      // Cargar horario semanal
+      if (c.horario_semanal && typeof c.horario_semanal === 'object') {
+        s.config.schedule = c.horario_semanal;
+      }
     });
 
+    // ── Actualizar topbar ────────────────────────────────────────────────
     const cfg = getStore().config;
-    const nombre = window._ADMIN_COMERCIO_NOMBRE || cfg.name || 'Admin';
-    const tn = document.getElementById('t-name'); if (tn) tn.textContent = nombre;
-    document.title = 'Admin — ' + nombre;
-    const tog = document.getElementById('open-tog'); if (tog) tog.className = 'tog ' + (cfg.isOpen ? 'on' : 'off');
-    const lbl = document.getElementById('open-lbl'); if (lbl) lbl.textContent = cfg.isOpen ? 'Abierto' : 'Cerrado';
+    const tn = document.getElementById('t-name'); if (tn) tn.textContent = cfg.name;
+    document.title = 'Admin - ' + cfg.name;
+    const tog = document.getElementById('open-tog');
+    if (tog) tog.className = 'tog ' + (cfg.isOpen ? 'on' : 'off');
+    const lbl = document.getElementById('open-lbl');
+    if (lbl) lbl.textContent = cfg.isOpen ? 'Abierto' : 'Cerrado';
+
     if (cfg.logo  && typeof _updateLogoUI  === 'function') _updateLogoUI(cfg.logo);
     if (cfg.cover && typeof _updateCoverUI === 'function') _updateCoverUI(cfg.cover);
-    console.log('[SB] comercios cargado — nombre:', nombre, '| logo_url:', c.logo_url || '(vacío)');
+
+    console.log('[SB] Config cargada — logo:', cfg.logo || '(sin url)', '| portada:', cfg.cover || '(sin url)');
   } catch(e) {
     console.error('[SB] Error cargando configuración:', e.message);
   }
 }
 
 async function sbSaveConfig() {
+  if (!_COMERCIO_ID) return;
   const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   // Leer horario
   const days = ['lun','mar','mie','jue','vie','sab','dom'];
@@ -5423,41 +5461,33 @@ async function sbSaveConfig() {
     };
   });
 
+  // REGLA DE ORO: actualizar la tabla comercios filtrada por id del comercio actual
   const body = {
-    nombre_negocio:     gv('cfg-name')         || 'Papayaso',
-    telefono_whatsapp:  gv('cfg-wa').replace(/\D/g,''),
-    direccion:          gv('cfg-address'),
-    descripcion:        gv('cfg-desc'),
-    nit:                gv('cfg-nit'),
-    telefono_local:     gv('cfg-phone'),
-    mensaje_bienvenida: gv('cfg-welcome'),
-    url_menu:           gv('cfg-menu-url')      || 'menu.html',
-    url_repartidor:     gv('cfg-rider-url')     || 'repartidor.html',
-    pin_repartidor:     gv('cfg-rider-pin')     || '1234',
-    tiempo_entrega_min: parseInt(gv('cfg-delivery-min')) || 30,
-    tiempo_entrega_max: parseInt(gv('cfg-delivery-max')) || 60,
-    // Guardar horario semanal como JSONB — el menú lo lee para calcular isOpen automáticamente
-    // Formato: { lun:{open:true,from:"11:00 AM",to:"9:00 PM"}, mar:{...}, ... }
-    horario_semanal:    sched
+    nombre:              gv('cfg-name')         || 'Papayaso',
+    whatsapp:            gv('cfg-wa').replace(/\D/g,''),
+    direccion:           gv('cfg-address'),
+    descripcion:         gv('cfg-desc'),
+    nit:                 gv('cfg-nit'),
+    telefono:            gv('cfg-phone'),
+    mensaje_bienvenida:  gv('cfg-welcome'),
+    url_menu:            gv('cfg-menu-url')      || 'menu.html',
+    url_repartidor:      gv('cfg-rider-url')     || 'repartidor.html',
+    pin_repartidor:      gv('cfg-rider-pin')     || '1234',
+    tiempo_entrega_min:  parseInt(gv('cfg-delivery-min')) || 30,
+    tiempo_entrega_max:  parseInt(gv('cfg-delivery-max')) || 60,
+    horario_semanal:     sched
   };
 
   try {
-    if (!window._ADMIN_COMERCIO_ID) { showToast('Sin comercio activo'); return; }
-    const bodyC = { nombre: body.nombre_negocio||'', nombre_negocio: body.nombre_negocio||'',
-      whatsapp: body.telefono_whatsapp||'', direccion: body.direccion, descripcion: body.descripcion,
-      nit: body.nit, telefono_local: body.telefono_local, mensaje_bienvenida: body.mensaje_bienvenida,
-      url_menu: body.url_menu, url_repartidor: body.url_repartidor, pin_repartidor: body.pin_repartidor,
-      tiempo_entrega_min: body.tiempo_entrega_min, tiempo_entrega_max: body.tiempo_entrega_max,
-      horario_semanal: body.horario_semanal };
-    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, bodyC);
+    await SB.patch('comercios', `id=eq.${_COMERCIO_ID}`, body);
     // Actualizar memoria
     upd(function(s) {
-      s.config.name       = body.nombre_negocio;
-      s.config.whatsapp   = body.telefono_whatsapp || body.whatsapp || '';
+      s.config.name       = body.nombre;
+      s.config.whatsapp   = body.whatsapp;
       s.config.address    = body.direccion;
       s.config.desc       = body.descripcion;
       s.config.nit        = body.nit;
-      s.config.phone      = body.telefono_local;
+      s.config.phone      = body.telefono;
       s.config.welcome    = body.mensaje_bienvenida;
       s.config.menuUrl    = body.url_menu;
       s.config.riderUrl   = body.url_repartidor;
@@ -5468,25 +5498,25 @@ async function sbSaveConfig() {
       s.config.hours      = (typeof getScheduleText === 'function') ? getScheduleText(sched) : '';
     });
     const tn = document.getElementById('t-name');
-    if (tn) tn.textContent = body.nombre_negocio;
-    document.title = 'Admin - ' + body.nombre_negocio;
+    if (tn) tn.textContent = body.nombre;
+    document.title = 'Admin - ' + body.nombre;
     const su = document.getElementById('share-url-txt'); if (su) su.textContent = body.url_menu;
     const ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = body.url_repartidor;
     showToast('Configuración guardada ✓');
-    console.log('[SB] Config guardada en Supabase');
+    console.log('[SB] Config guardada en comercios, id:', _COMERCIO_ID);
   } catch(e) {
     console.error('[SB] Error guardando config:', e);
     alert('❌ Error al guardar configuración:\n' + e.message);
   }
 }
 
-// Toggle abierto/cerrado → Supabase
+// Toggle abierto/cerrado → tabla comercios
 async function sbToggleOpen() {
+  if (!_COMERCIO_ID) return;
   const s = getStore();
   const nuevoEstado = !s.config.isOpen;
   try {
-    if (!window._ADMIN_COMERCIO_ID) { showToast('Sin comercio activo'); return; }
-    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { esta_abierto: nuevoEstado });
+    await SB.patch('comercios', `id=eq.${_COMERCIO_ID}`, { esta_abierto: nuevoEstado });
     upd(function(s2) { s2.config.isOpen = nuevoEstado; });
     const tog = document.getElementById('open-tog');
     if (tog) tog.className = 'tog ' + (nuevoEstado ? 'on' : 'off');
@@ -5500,357 +5530,40 @@ async function sbToggleOpen() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// PRODUCTOS
-// ══════════════════════════════════════════════════════════════════════
-async function sbLoadProductos() {
-  try {
-    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadProductos: ID null'); return; }
-    const prods = await SB.get('productos', {
-      select: '*', order: 'categoria.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
-    });
-    upd(function(s) {
-      s.products = (prods || []).map(function(p) {
-        // extras: JSONB [{name,price}] directo desde Supabase
-        let extras = [];
-        if (Array.isArray(p.extras)) {
-          extras = p.extras;
-        } else if (p.extras) {
-          try { extras = JSON.parse(p.extras); } catch(e) {}
-        }
-        // opciones_sabores: JSONB array de strings
-        let sabores = [];
-        if (Array.isArray(p.opciones_sabores)) {
-          sabores = p.opciones_sabores;
-        } else if (p.opciones_sabores) {
-          try { sabores = JSON.parse(p.opciones_sabores); } catch(e) {}
-        }
-        return {
-          id:        p.id,
-          sb_id:     p.id,
-          name:      p.nombre     || '',
-          cat:       p.categoria  || 'General',
-          price:     parseInt(p.precio) || 0,
-          desc:      p.descripcion|| '',
-          photo:     p.imagen_url || '',
-          emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
-          available: p.disponible !== false,
-          extras:    extras,
-          sabores:   sabores
-        };
-      });
-      // NO sobreescribir s.categories aquí.
-      // La lista autoritativa de categorías viene de sbLoadCategorias()
-      // (que lee la tabla categorias completa, incluyendo las que aún no tienen productos).
-      // Sobreescribirla aquí causaría que categorías sin productos desaparezcan del select.
-      // Solo añadimos categorías de productos que no estén ya en la lista (datos huérfanos).
-      const catsDeProductos = [...new Set((prods||[]).map(p => p.categoria).filter(Boolean))];
-      const catsActuales = s.categories || [];
-      catsDeProductos.forEach(function(c) {
-        if (catsActuales.indexOf(c) < 0) catsActuales.push(c);
-      });
-      s.categories = catsActuales;
-    });
-    if (typeof renderEditor === 'function') renderEditor();
-    if (typeof renderCats   === 'function') renderCats();
-    console.log('[SB] Productos cargados:', (prods||[]).length);
-  } catch(e) {
-    console.error('[SB] Error cargando productos:', e.message);
-    showToast('Error cargando productos');
-  }
-}
-
-async function sbSaveProd() {
-  // Lee los campos del formulario modal de producto
-  const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-  const name  = gv('ped-name');
-  const price = parseInt(gv('ped-price')) || 0;
-  const desc  = gv('ped-desc');
-  const cat   = gv('ped-cat');
-  const avEl  = document.getElementById('ped-avail');
-  const avail = avEl ? avEl.value === '1' : true;
-
-  if (!name)  { alert('⚠️ Ingresa el nombre del producto'); return; }
-  if (!price) { alert('⚠️ Ingresa un precio mayor a 0');    return; }
-  if (!cat)   { alert('⚠️ Selecciona una categoría');       return; }
-
-  // editExtras viene de la lógica local ya existente
-  const extras = (typeof editExtras !== 'undefined' ? editExtras : [])
-    .filter(e => e.name && e.name.trim());
-
-  const body = {
-    nombre:      name,
-    precio:      price,
-    descripcion: desc,
-    categoria:   cat,
-    disponible:  avail,
-    extras:      extras  // JSONB directo
-  };
-
-  // Si hay foto nueva en editPhoto (base64) → subir a Storage primero
-  if (typeof editPhoto !== 'undefined' && editPhoto && editPhoto.startsWith('data:')) {
-    try {
-      const blob = await (await fetch(editPhoto)).blob();
-      const ext  = blob.type.split('/')[1] || 'jpg';
-      const path = `productos/${Date.now()}.${ext}`;
-      const url  = await SB.uploadFile('imagenes', path, blob);
-      body.imagen_url = url;
-    } catch(e) {
-      console.warn('[SB] Error subiendo imagen, se guarda sin foto:', e.message);
-    }
-  } else if (typeof editPhoto !== 'undefined' && editPhoto && !editPhoto.startsWith('data:')) {
-    body.imagen_url = editPhoto; // ya es URL de Supabase
-  }
-
-  try {
-    let result;
-    if (typeof editId !== 'undefined' && editId) {
-      // UPDATE
-      result = await SB.patch('productos', `id=eq.${editId}`, body);
-      console.log('[SB] Producto actualizado:', editId);
-    } else {
-      // INSERT
-      body.comercio_id = window._ADMIN_COMERCIO_ID;
-      result = await SB.post('productos', body);
-      console.log('[SB] Producto creado:', result && result[0] && result[0].id);
-    }
-    if (typeof closeProdModal === 'function') closeProdModal();
-    await sbLoadProductos();
-    showToast(editId ? 'Producto actualizado ✓' : 'Producto creado ✓');
-  } catch(e) {
-    console.error('[SB] Error guardando producto:', e);
-    alert('❌ Error al guardar producto:\n\n' + e.message +
-      '\n\nVerifica:\n1. RLS: ¿tienes política INSERT/UPDATE en productos?\n2. ¿La categoría existe en la tabla categorias?');
-  }
-}
-
-async function sbToggleAvail(sbId, currentAvail) {
-  try {
-    await SB.patch('productos', `id=eq.${sbId}`, { disponible: !currentAvail });
-    await sbLoadProductos();
-    showToast(!currentAvail ? 'Producto disponible' : 'Producto no disponible');
-  } catch(e) {
-    console.error('[SB] Error toggling disponible:', e.message);
-    alert('❌ Error al actualizar disponibilidad:\n' + e.message);
-  }
-}
-
-async function sbDelProd(sbId, name) {
-  if (!confirm('¿Eliminar "' + name + '"?\nEsta acción no se puede deshacer.')) return;
-  try {
-    await SB.del('productos', `id=eq.${sbId}`);
-    await sbLoadProductos();
-    showToast('Producto eliminado');
-  } catch(e) {
-    console.error('[SB] Error eliminando producto:', e.message);
-    alert('❌ Error al eliminar producto:\n' + e.message);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// CATEGORÍAS
-// ══════════════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════════════
-// fillAllCatSelects — rellena TODOS los <select> de categorías con la
-// lista completa de s.categories (viene de la tabla categorias, sin filtrar).
-// Se llama tras sbLoadCategorias() y tras sbAddCat() exitoso.
-// No depende de que las categorías tengan productos asignados.
-// ══════════════════════════════════════════════════════════════════════
-function fillAllCatSelects() {
-  var cats = getStore().categories || [];
-
-  // 1. Modal "Nuevo/Editar Producto" del menú (ped-cat)
-  var pedCat = document.getElementById('ped-cat');
-  if (pedCat) {
-    var current = pedCat.value; // preservar selección actual
-    pedCat.innerHTML = cats.map(function(c) {
-      return '<option value="' + c + '"' + (c === current ? ' selected' : '') + '>' + c + '</option>';
-    }).join('');
-    // Si solo hay una opción y el select está vacío, seleccionarla
-    if (cats.length === 1) pedCat.value = cats[0];
-  }
-
-  // 2. Filtro de categoría en el editor de productos (ed-cat)
-  var edCat = document.getElementById('ed-cat');
-  if (edCat) {
-    var edCurrent = edCat.value;
-    var edHtml = '<option value="all">Todas las categorias</option>';
-    cats.forEach(function(c) {
-      edHtml += '<option value="' + c + '"' + (c === edCurrent ? ' selected' : '') + '>' + c + '</option>';
-    });
-    edCat.innerHTML = edHtml;
-    if (edCurrent && edCurrent !== 'all' && cats.indexOf(edCurrent) >= 0) edCat.value = edCurrent;
-  }
-
-  // 3. Modal de adiciones — selector de categoría (addon-cat)
-  var addonCat = document.getElementById('addon-cat');
-  if (addonCat) {
-    var adCurrent = addonCat.value;
-    addonCat.innerHTML = cats.map(function(c) {
-      return '<option value="' + c + '"' + (c === adCurrent ? ' selected' : '') + '>' + c + '</option>';
-    }).join('');
-  }
-
-  // 4. Modal "Nuevo/Editar Producto POS" (pos-ped-cat)
-  var posPedCat = document.getElementById('pos-ped-cat');
-  if (posPedCat) {
-    var posCats = getPosStore().categories || [];
-    // El POS tiene sus propias categorías — solo rellenar si está vacío
-    if (posCats.length === 0) {
-      // Fallback: usar las categorías del menú si el POS no tiene las suyas
-      var posCurrent = posPedCat.value;
-      posPedCat.innerHTML = cats.map(function(c) {
-        return '<option value="' + c + '"' + (c === posCurrent ? ' selected' : '') + '>' + c + '</option>';
-      }).join('');
-    }
-  }
-
-  console.log('[UI] fillAllCatSelects — categorías disponibles:', cats.length, cats);
-}
-
-async function sbLoadCategorias() {
-  try {
-    // Pedir las dos columnas correctas: extras_categoria y adiciones_categoria
-    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadCategorias: ID null'); return; }
-    const cats = await SB.get('categorias', {
-      select: 'id,nombre,orden,extras_categoria,adiciones_categoria',
-      order: 'orden.asc,nombre.asc',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID
-    });
-
-    upd(function(s) {
-      // Todas las categorías reales (ya no existe la fila __extras_globales__)
-      var reales = (cats || []).filter(function(c) { return c.nombre !== '__extras_globales__'; });
-      s.categories  = reales.map(function(c) { return c.nombre; });
-      s._categorias = reales;   // conservar el objeto completo con extras_categoria y adiciones_categoria
-
-      // globalExtras se reconstruye en renderGlobalExtras() leyendo _categorias
-      // No inicializar aquí para evitar que se muestre vacío mientras renderGlobalExtras corre
-      if (!s.globalExtras) s.globalExtras = [];
-
-      // ── Adiciones por categoría desde adiciones_categoria ──────────
-      // Formato en BD: ["Salsa especial", "mayonesa"]
-      // Formato en memoria: grupos con options para el modal de adiciones
-      var allAddons = [];
-      reales.forEach(function(cat) {
-        var arr = Array.isArray(cat.adiciones_categoria) ? cat.adiciones_categoria : [];
-        if (!arr.length) return;
-        allAddons.push({
-          id:      'addon_' + cat.id,
-          name:    'Adiciones — ' + cat.nombre,
-          cat:     cat.nombre,
-          type:    'optional',
-          min:     0,
-          options: arr.map(function(item, idx) {
-            var nombreOpt = typeof item === 'string' ? item : (item.nombre || '');
-            return { id: 'opt_' + cat.id + '_' + idx, name: nombreOpt, price: 0, available: true };
-          })
-        });
-      });
-      s._catAddons = allAddons;
-    });
-
-    if (typeof renderCats         === 'function') renderCats();
-    if (typeof renderAddons       === 'function') renderAddons();
-    if (typeof renderGlobalExtras === 'function') renderGlobalExtras();
-    fillAllCatSelects();   // actualizar todos los <select> de categoría sin recargar
-
-    const st = getStore();
-    console.log('[SB] Categorías:', (cats||[]).length,
-      '| extras_globales:', (st.globalExtras||[]).length,
-      '| grupos adiciones:', (st._catAddons||[]).length);
-  } catch(e) {
-    console.error('[SB] Error cargando categorías:', e.message);
-  }
-}
-
-async function sbAddCat(nombre) {
-  if (!nombre || !nombre.trim()) { showToast('Escribe el nombre de la categoría'); return; }
-  nombre = nombre.trim();
-
-  // Anti-409: deshabilitar el botón ANTES del POST para evitar doble envío
-  const btn = document.querySelector('#add-cat-row button');
-  const btnTxt = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
-
-  // Verificar duplicado en memoria antes de ir a Supabase
-  if ((getStore().categories || []).indexOf(nombre) >= 0) {
-    showToast('Ya existe esa categoría');
-    if (btn) { btn.disabled = false; btn.textContent = btnTxt; }
-    return;
-  }
-
-  try {
-    await SB.post('categorias', {
-      nombre:              nombre,
-      orden:               (getStore().categories || []).length,
-      extras_categoria:    [],
-      adiciones_categoria: [],
-      comercio_id:         window._ADMIN_COMERCIO_ID
-    });
-    await sbLoadCategorias();
-    showToast('Categoría creada ✓');
-  } catch(e) {
-    console.error('[SB] Error creando categoría:', e.message);
-    if (e.message.includes('409') || e.message.includes('duplicate') || e.message.includes('unique')) {
-      showToast('Ya existe esa categoría en Supabase');
-    } else {
-      alert('❌ Error al crear categoría:\n' + e.message);
-    }
-  } finally {
-    // Siempre rehabilitar el botón, haya éxito o fallo
-    if (btn) { btn.disabled = false; btn.textContent = btnTxt; }
-  }
-}
-
-async function sbDelCat(nombre) {
-  // Verificar que no haya productos en esa categoría
-  const s = getStore();
-  const hasProd = s.products.some(p => p.cat === nombre);
-  if (hasProd) { showToast('Hay productos en esa categoría'); return; }
-  if (!confirm('¿Eliminar categoría "' + nombre + '"?')) return;
-  try {
-    await SB.del('categorias', `nombre=eq.${encodeURIComponent(nombre)}`);
-    await sbLoadCategorias();
-    showToast('Categoría eliminada');
-  } catch(e) {
-    console.error('[SB] Error eliminando categoría:', e.message);
-    alert('❌ Error al eliminar categoría:\n' + e.message);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// IMÁGENES (Storage)
+// IMÁGENES — Storage + actualiza comercios con logo_url / cover_url
 // ══════════════════════════════════════════════════════════════════════
 async function sbHandleLogoUpload(inp) {
+  if (!_COMERCIO_ID) return;
   const f = inp.files[0]; if (!f) return;
   if (f.size > 3*1024*1024) { showToast('Logo muy grande (máx 3MB)'); return; }
   showToast('Subiendo logo...');
   try {
     const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `config/logo.${ext}`;
+    const path = `logos/${_SLUG}/logo.${ext}`;
     const url  = await SB.uploadFile('imagenes', path, f);
-    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { logo_url: url });
+    // REGLA DE ORO: actualizar la tabla comercios con logo_url
+    await SB.patch('comercios', `id=eq.${_COMERCIO_ID}`, { logo_url: url });
     upd(function(s){ s.config.logo = url; });
     if (typeof _updateLogoUI === 'function') _updateLogoUI(url);
     showToast('Logo guardado ✓');
     console.log('[SB] Logo subido:', url);
   } catch(e) {
     console.error('[SB] Error subiendo logo:', e);
-    alert('❌ Error al subir logo:\n' + e.message +
-      '\n\nVerifica que el bucket "imagenes" existe y tiene política INSERT.');
+    alert('❌ Error al subir logo:\n' + e.message);
   }
 }
 
 async function sbHandleCoverUpload(inp) {
+  if (!_COMERCIO_ID) return;
   const f = inp.files[0]; if (!f) return;
   if (f.size > 5*1024*1024) { showToast('Portada muy grande (máx 5MB)'); return; }
   showToast('Subiendo portada...');
   try {
     const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `config/portada.${ext}`;
+    const path = `portadas/${_SLUG}/portada.${ext}`;
     const url  = await SB.uploadFile('imagenes', path, f);
-    await SB.patch('comercios', 'id=eq.' + window._ADMIN_COMERCIO_ID, { cover_url: url });
+    // REGLA DE ORO: actualizar la tabla comercios con cover_url
+    await SB.patch('comercios', `id=eq.${_COMERCIO_ID}`, { cover_url: url });
     upd(function(s){ s.config.cover = url; });
     if (typeof _updateCoverUI === 'function') _updateCoverUI(url);
     showToast('Portada guardada ✓');
@@ -5862,14 +5575,14 @@ async function sbHandleCoverUpload(inp) {
 }
 
 async function sbHandleProdPhotoUpload(inp) {
+  if (!_COMERCIO_ID) return;
   const f = inp.files[0]; if (!f) return;
   if (f.size > 3*1024*1024) { showToast('Imagen muy grande (máx 3MB)'); return; }
   showToast('Subiendo imagen...');
   try {
     const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `productos/${Date.now()}.${ext}`;
+    const path = `productos/${_SLUG}/${Date.now()}.${ext}`;
     const url  = await SB.uploadFile('imagenes', path, f);
-    // editPhoto es una variable global usada por saveProd
     if (typeof window !== 'undefined') window.editPhoto = url;
     if (typeof _updateProdPhotoUI === 'function') _updateProdPhotoUI(url);
     showToast('Imagen lista ✓');
@@ -5881,22 +5594,22 @@ async function sbHandleProdPhotoUpload(inp) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// PEDIDOS — SOLO PEDIDOS DE HOY
+// PEDIDOS — filtro por comercio_id obligatorio
 // ══════════════════════════════════════════════════════════════════════
 async function sbLoadPedidos() {
+  if (!_COMERCIO_ID) return;
   const hoy = new Date();
-  // Inicio del día en hora local → ISO
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
 
   try {
-    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbLoadPedidos: ID null'); return; }
+    // REGLA DE ORO: filtro comercio_id en TODOS los GET de pedidos
     const pedidos = await SB.get('pedidos', {
-      select: '*',
-      'created_at': `gte.${inicioHoy}`,
-      'origen': 'neq.pos',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
-      order: 'created_at.desc',
-      limit: 200
+      select:        '*',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      'created_at':  `gte.${inicioHoy}`,
+      'origen':      'neq.pos',
+      order:         'created_at.desc',
+      limit:         200
     });
 
     upd(function(s) {
@@ -5908,7 +5621,6 @@ async function sbLoadPedidos() {
             : JSON.parse(p.detalles_pedido || '[]');
         } catch(e) {}
 
-        // Normalizar campos de items para que renderOrders funcione
         items = items.map(function(it) {
           return {
             pid:    it.pid    || it.id || 0,
@@ -5950,8 +5662,9 @@ async function sbLoadPedidos() {
   }
 }
 
-// Guardar pedido manual en Supabase
+// Guardar pedido manual en Supabase — incluye comercio_id
 async function sbSavePedidoManual(order) {
+  if (!_COMERCIO_ID) return false;
   const detalles = (order.items || []).map(it => ({
     nombre:          it.name,
     cantidad:        it.qty || 1,
@@ -5961,21 +5674,19 @@ async function sbSavePedidoManual(order) {
   }));
 
   const body = {
+    comercio_id:     _COMERCIO_ID,    // ← AISLAMIENTO MULTI-TENANT
     cliente:         order.client,
     telefono:        order.phone   || '',
     direccion:       order.address || '',
     referencia:      order.ref     || '',
-    detalles_pedido: detalles,       // JSONB directo
+    detalles_pedido: detalles,
     total:           parseFloat(order.total) || 0,
     estado:          'Pendiente',
     metodo_pago:     order.payment || 'Efectivo',
     cambio:          order.cambio  || '',
     notas:           order.notes   || '',
-    origen:          'manual',
-    comercio_id:     window._ADMIN_COMERCIO_ID
+    origen:          'manual'
   };
-
-  console.log('[SB] Guardando pedido manual:', body);
 
   try {
     const result = await SB.post('pedidos', body);
@@ -5992,9 +5703,290 @@ async function sbSavePedidoManual(order) {
     return true;
   } catch(e) {
     console.error('[SB] Error guardando pedido manual:', e);
-    alert('❌ Pedido guardado localmente pero FALLÓ en Supabase:\n\n' + e.message +
-      '\n\nCausas comunes:\n• RLS: falta política INSERT en pedidos\n• Campo total no numérico\n• Columna faltante');
+    alert('❌ Pedido guardado localmente pero FALLÓ en Supabase:\n\n' + e.message);
     return false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PRODUCTOS DEL MENÚ — filtro por comercio_id
+// ══════════════════════════════════════════════════════════════════════
+async function sbLoadProductos() {
+  if (!_COMERCIO_ID) return;
+  try {
+    const prods = await SB.get('productos', {
+      select:        '*',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      order:         'categoria.asc,nombre.asc'
+    });
+    upd(function(s) {
+      s.products = (prods || []).map(function(p) {
+        let extras = [];
+        if (Array.isArray(p.extras)) {
+          extras = p.extras;
+        } else if (p.extras) {
+          try { extras = JSON.parse(p.extras); } catch(e) {}
+        }
+        let sabores = [];
+        if (Array.isArray(p.opciones_sabores)) {
+          sabores = p.opciones_sabores;
+        } else if (p.opciones_sabores) {
+          try { sabores = JSON.parse(p.opciones_sabores); } catch(e) {}
+        }
+        return {
+          id:        p.id,
+          sb_id:     p.id,
+          name:      p.nombre     || '',
+          cat:       p.categoria  || 'General',
+          price:     parseInt(p.precio) || 0,
+          desc:      p.descripcion|| '',
+          photo:     p.imagen_url || '',
+          emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
+          available: p.disponible !== false,
+          extras:    extras,
+          sabores:   sabores
+        };
+      });
+      const catsDeProductos = [...new Set((prods||[]).map(p => p.categoria).filter(Boolean))];
+      const catsActuales = s.categories || [];
+      catsDeProductos.forEach(function(c) {
+        if (catsActuales.indexOf(c) < 0) catsActuales.push(c);
+      });
+      s.categories = catsActuales;
+    });
+    if (typeof renderEditor === 'function') renderEditor();
+    if (typeof renderCats   === 'function') renderCats();
+    console.log('[SB] Productos cargados:', (prods||[]).length);
+  } catch(e) {
+    console.error('[SB] Error cargando productos:', e.message);
+    showToast('Error cargando productos');
+  }
+}
+
+async function sbSaveProd() {
+  if (!_COMERCIO_ID) return;
+  const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const name  = gv('ped-name');
+  const price = parseInt(gv('ped-price')) || 0;
+  const desc  = gv('ped-desc');
+  const cat   = gv('ped-cat');
+  const avEl  = document.getElementById('ped-avail');
+  const avail = avEl ? avEl.value === '1' : true;
+
+  if (!name)  { alert('⚠️ Ingresa el nombre del producto'); return; }
+  if (!price) { alert('⚠️ Ingresa un precio mayor a 0');    return; }
+  if (!cat)   { alert('⚠️ Selecciona una categoría');       return; }
+
+  const extras = (typeof editExtras !== 'undefined' ? editExtras : [])
+    .filter(e => e.name && e.name.trim());
+
+  const body = {
+    comercio_id: _COMERCIO_ID,    // ← AISLAMIENTO MULTI-TENANT
+    nombre:      name,
+    precio:      price,
+    descripcion: desc,
+    categoria:   cat,
+    disponible:  avail,
+    extras:      extras
+  };
+
+  if (typeof editPhoto !== 'undefined' && editPhoto && editPhoto.startsWith('data:')) {
+    try {
+      const blob = await (await fetch(editPhoto)).blob();
+      const ext  = blob.type.split('/')[1] || 'jpg';
+      const path = `productos/${_SLUG}/${Date.now()}.${ext}`;
+      const url  = await SB.uploadFile('imagenes', path, blob);
+      body.imagen_url = url;
+    } catch(e) {
+      console.warn('[SB] Error subiendo imagen, se guarda sin foto:', e.message);
+    }
+  } else if (typeof editPhoto !== 'undefined' && editPhoto && !editPhoto.startsWith('data:')) {
+    body.imagen_url = editPhoto;
+  }
+
+  try {
+    let result;
+    if (typeof editId !== 'undefined' && editId) {
+      result = await SB.patch('productos', `id=eq.${editId}`, body);
+      console.log('[SB] Producto actualizado:', editId);
+    } else {
+      result = await SB.post('productos', body);
+      console.log('[SB] Producto creado:', result && result[0] && result[0].id);
+    }
+    if (typeof closeProdModal === 'function') closeProdModal();
+    await sbLoadProductos();
+    showToast(editId ? 'Producto actualizado ✓' : 'Producto creado ✓');
+  } catch(e) {
+    console.error('[SB] Error guardando producto:', e);
+    alert('❌ Error al guardar producto:\n\n' + e.message);
+  }
+}
+
+async function sbToggleAvail(sbId, currentAvail) {
+  try {
+    await SB.patch('productos', `id=eq.${sbId}`, { disponible: !currentAvail });
+    await sbLoadProductos();
+    showToast(!currentAvail ? 'Producto disponible' : 'Producto no disponible');
+  } catch(e) {
+    alert('❌ Error al actualizar disponibilidad:\n' + e.message);
+  }
+}
+
+async function sbDelProd(sbId, name) {
+  if (!confirm('¿Eliminar "' + name + '"?\nEsta acción no se puede deshacer.')) return;
+  try {
+    await SB.del('productos', `id=eq.${sbId}`);
+    await sbLoadProductos();
+    showToast('Producto eliminado');
+  } catch(e) {
+    alert('❌ Error al eliminar producto:\n' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// CATEGORÍAS DEL MENÚ — filtro por comercio_id
+// ══════════════════════════════════════════════════════════════════════
+function fillAllCatSelects() {
+  var cats = getStore().categories || [];
+
+  var pedCat = document.getElementById('ped-cat');
+  if (pedCat) {
+    var current = pedCat.value;
+    pedCat.innerHTML = cats.map(function(c) {
+      return '<option value="' + c + '"' + (c === current ? ' selected' : '') + '>' + c + '</option>';
+    }).join('');
+    if (cats.length === 1) pedCat.value = cats[0];
+  }
+
+  var edCat = document.getElementById('ed-cat');
+  if (edCat) {
+    var edCurrent = edCat.value;
+    var edHtml = '<option value="all">Todas las categorias</option>';
+    cats.forEach(function(c) {
+      edHtml += '<option value="' + c + '"' + (c === edCurrent ? ' selected' : '') + '>' + c + '</option>';
+    });
+    edCat.innerHTML = edHtml;
+    if (edCurrent && edCurrent !== 'all' && cats.indexOf(edCurrent) >= 0) edCat.value = edCurrent;
+  }
+
+  var addonCat = document.getElementById('addon-cat');
+  if (addonCat) {
+    var adCurrent = addonCat.value;
+    addonCat.innerHTML = cats.map(function(c) {
+      return '<option value="' + c + '"' + (c === adCurrent ? ' selected' : '') + '>' + c + '</option>';
+    }).join('');
+  }
+
+  var posPedCat = document.getElementById('pos-ped-cat');
+  if (posPedCat) {
+    var posCats = getPosStore().categories || [];
+    if (posCats.length === 0) {
+      var posCurrent = posPedCat.value;
+      posPedCat.innerHTML = cats.map(function(c) {
+        return '<option value="' + c + '"' + (c === posCurrent ? ' selected' : '') + '>' + c + '</option>';
+      }).join('');
+    }
+  }
+
+  console.log('[UI] fillAllCatSelects — categorías disponibles:', cats.length, cats);
+}
+
+async function sbLoadCategorias() {
+  if (!_COMERCIO_ID) return;
+  try {
+    const cats = await SB.get('categorias', {
+      select:        'id,nombre,orden,extras_categoria,adiciones_categoria',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      order:         'orden.asc,nombre.asc'
+    });
+
+    upd(function(s) {
+      var reales = (cats || []).filter(function(c) { return c.nombre !== '__extras_globales__'; });
+      s.categories  = reales.map(function(c) { return c.nombre; });
+      s._categorias = reales;
+
+      if (!s.globalExtras) s.globalExtras = [];
+
+      var allAddons = [];
+      reales.forEach(function(cat) {
+        var arr = Array.isArray(cat.adiciones_categoria) ? cat.adiciones_categoria : [];
+        if (!arr.length) return;
+        allAddons.push({
+          id:      'addon_' + cat.id,
+          name:    'Adiciones — ' + cat.nombre,
+          cat:     cat.nombre,
+          type:    'optional',
+          min:     0,
+          options: arr.map(function(item, idx) {
+            var nombreOpt = typeof item === 'string' ? item : (item.nombre || '');
+            return { id: 'opt_' + cat.id + '_' + idx, name: nombreOpt, price: 0, available: true };
+          })
+        });
+      });
+      s._catAddons = allAddons;
+    });
+
+    if (typeof renderCats         === 'function') renderCats();
+    if (typeof renderAddons       === 'function') renderAddons();
+    if (typeof renderGlobalExtras === 'function') renderGlobalExtras();
+    fillAllCatSelects();
+
+    const st = getStore();
+    console.log('[SB] Categorías:', (cats||[]).length);
+  } catch(e) {
+    console.error('[SB] Error cargando categorías:', e.message);
+  }
+}
+
+async function sbAddCat(nombre) {
+  if (!_COMERCIO_ID) return;
+  if (!nombre || !nombre.trim()) { showToast('Escribe el nombre de la categoría'); return; }
+  nombre = nombre.trim();
+
+  const btn = document.querySelector('#add-cat-row button');
+  const btnTxt = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  if ((getStore().categories || []).indexOf(nombre) >= 0) {
+    showToast('Ya existe esa categoría');
+    if (btn) { btn.disabled = false; btn.textContent = btnTxt; }
+    return;
+  }
+
+  try {
+    await SB.post('categorias', {
+      comercio_id:         _COMERCIO_ID,    // ← AISLAMIENTO MULTI-TENANT
+      nombre:              nombre,
+      orden:               (getStore().categories || []).length,
+      extras_categoria:    [],
+      adiciones_categoria: []
+    });
+    await sbLoadCategorias();
+    showToast('Categoría creada ✓');
+  } catch(e) {
+    console.error('[SB] Error creando categoría:', e.message);
+    if (e.message.includes('409') || e.message.includes('duplicate') || e.message.includes('unique')) {
+      showToast('Ya existe esa categoría en Supabase');
+    } else {
+      alert('❌ Error al crear categoría:\n' + e.message);
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btnTxt; }
+  }
+}
+
+async function sbDelCat(nombre) {
+  const s = getStore();
+  const hasProd = s.products.some(p => p.cat === nombre);
+  if (hasProd) { showToast('Hay productos en esa categoría'); return; }
+  if (!confirm('¿Eliminar categoría "' + nombre + '"?')) return;
+  try {
+    await SB.del('categorias', `nombre=eq.${encodeURIComponent(nombre)}&comercio_id=eq.${_COMERCIO_ID}`);
+    await sbLoadCategorias();
+    showToast('Categoría eliminada');
+  } catch(e) {
+    console.error('[SB] Error eliminando categoría:', e.message);
+    alert('❌ Error al eliminar categoría:\n' + e.message);
   }
 }
 
@@ -6004,10 +5996,8 @@ async function sbSavePedidoManual(order) {
 (function patchChStatus() {
   const _orig = window.chStatus;
   window.chStatus = async function(id, st) {
-    // 1. Actualizar en memoria inmediatamente (UI rápida)
     if (typeof _orig === 'function') _orig(id, st);
 
-    // 2. Actualizar en Supabase
     const s = getStore();
     const order = (s.orders || []).find(o => String(o.id) === String(id) || String(o.sb_id) === String(id));
     const sbId  = order ? (order.sb_id || order.id) : id;
@@ -6024,7 +6014,7 @@ async function sbSavePedidoManual(order) {
 })();
 
 // ══════════════════════════════════════════════════════════════════════
-// TOGGLE ABIERTO — intercepta toggleOpen
+// TOGGLE ABIERTO — intercepta toggleOpen → actualiza tabla comercios
 // ══════════════════════════════════════════════════════════════════════
 (function patchToggleOpen() {
   const _orig = window.toggleOpen;
@@ -6076,11 +6066,9 @@ async function sbSavePedidoManual(order) {
 })();
 
 // ══════════════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════════════
-// CATEGORÍAS — intercepta addCat / delCat + delegación de eventos
+// CATEGORÍAS — intercepta addCat / delCat
 // ══════════════════════════════════════════════════════════════════════
 (function patchCats() {
-  // addCat: lee de id="new-category-input" (id canónico en HTML y en esta función)
   window.addCat = async function() {
     const el = document.getElementById('new-category-input');
     const v  = el ? el.value.trim() : '';
@@ -6096,10 +6084,7 @@ async function sbSavePedidoManual(order) {
     await sbDelCat(nombre);
   };
 
-  // Delegación de eventos en el contenedor padre del input de categoría.
-  // Funciona aunque el DOM sea re-renderizado después de agregar.
   document.addEventListener('click', function(e) {
-    // Si el clic fue en el botón de agregar dentro del panel de categorías
     if (e.target && e.target.closest && e.target.closest('#add-cat-row')) {
       const btn = e.target.closest('button');
       if (btn && btn.textContent.trim() === 'Agregar') {
@@ -6111,12 +6096,11 @@ async function sbSavePedidoManual(order) {
 })();
 
 // ══════════════════════════════════════════════════════════════════════
-// SUBIDA DE IMÁGENES — intercepta los handlers de imagen
+// SUBIDA DE IMÁGENES — intercepta handlers
 // ══════════════════════════════════════════════════════════════════════
 (function patchUploads() {
   window.handleLogoUpload  = function(inp) { sbHandleLogoUpload(inp);  };
   window.handleCoverUpload = function(inp) { sbHandleCoverUpload(inp); };
-  // Fotos de productos del editor de menú
   window.handleProdPhoto   = function(inp) { sbHandleProdPhotoUpload(inp); };
 })();
 
@@ -6126,7 +6110,6 @@ async function sbSavePedidoManual(order) {
 (function patchMoConfirm() {
   const _orig = window.moConfirm;
   window.moConfirm = async function() {
-    // Validaciones y construcción del objeto order (igual que antes)
     if (typeof moValidate === 'function' && !moValidate()) return;
 
     const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
@@ -6170,10 +6153,8 @@ async function sbSavePedidoManual(order) {
       source:  'manual'
     };
 
-    // Agregar a memoria para que la UI responda de inmediato
     upd(function(s) { s.orders.unshift(order); });
 
-    // Guardar en Supabase
     const ok = await sbSavePedidoManual(order);
     if (ok) {
       showToast('✅ Pedido manual registrado');
@@ -6188,16 +6169,17 @@ async function sbSavePedidoManual(order) {
 })();
 
 // ══════════════════════════════════════════════════════════════════════
-// POLLING: nuevos pedidos cada 8s
+// POLLING: nuevos pedidos cada 8s — filtro por comercio_id
 // ══════════════════════════════════════════════════════════════════════
 let _sbLastId = 0;
 async function sbPollNuevos() {
+  if (!_COMERCIO_ID) return;
   try {
-    if (!window._ADMIN_COMERCIO_ID) return;
     const r = await SB.get('pedidos', {
-      select: 'id,cliente,total,estado',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
-      order: 'id.desc', limit: 1
+      select:        'id,cliente,total,estado',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      order:         'id.desc',
+      limit:         1
     });
     if (!r || !r.length) return;
     const newest = r[0];
@@ -6214,50 +6196,19 @@ async function sbPollNuevos() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// ESTADÍSTICAS desde Supabase
-// ══════════════════════════════════════════════════════════════════════
-async function sbGetStats() {
-  // Esta función ya no se usa directamente — sbCargarHistorialCompleto la reemplaza
-  const hoy = new Date().toISOString().slice(0,10);
-  const mes  = new Date().toISOString().slice(0,7);
-  try {
-    const _sp = { select: 'total,created_at,estado', 'estado': 'neq.Cancelado' };
-    if (window._ADMIN_COMERCIO_ID) _sp['comercio_id'] = 'eq.' + window._ADMIN_COMERCIO_ID;
-    const all = await SB.get('pedidos', _sp);
-    let totalHoy = 0, totalMes = 0, totalGlobal = 0;
-    (all||[]).forEach(p => {
-      const t = parseFloat(p.total)||0;
-      totalGlobal += t;
-      if (p.created_at.startsWith(hoy)) totalHoy += t;
-      if (p.created_at.startsWith(mes)) totalMes += t;
-    });
-    return { totalHoy, totalMes, totalGlobal };
-  } catch(e) { return null; }
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// HISTORIAL COMPLETO — separa dos responsabilidades:
-//
-//   A) s.orders  → solo pedidos ACTIVOS de hoy (panel Pedidos)
-//   B) _globalSales → TODOS los pedidos históricos (panel Ventas)
-//
-// De esta forma el panel de Pedidos solo muestra los de hoy
-// y las Estadísticas y Ventas muestran el acumulado total.
+// HISTORIAL COMPLETO — ventas de ESTE comercio (filtro comercio_id)
 // ══════════════════════════════════════════════════════════════════════
 async function sbCargarHistorialCompleto() {
+  if (!_COMERCIO_ID) return null;
   try {
-    // Traer TODOS los pedidos (sin límite de fecha) no cancelados
-    // para las estadísticas y el panel de ventas
-    if (!window._ADMIN_COMERCIO_ID) { console.error('[SB] sbCargarHistorial: ID null'); return null; }
     const todos = await SB.get('pedidos', {
-      select: 'id,total,created_at,estado,metodo_pago,origen,cliente,telefono',
-      'estado': 'neq.Cancelado',
-      'comercio_id': 'eq.' + window._ADMIN_COMERCIO_ID,
-      order: 'created_at.desc',
-      limit: 5000
+      select:        'id,total,created_at,estado,metodo_pago,origen,cliente,telefono',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      'estado':      'neq.Cancelado',
+      order:         'created_at.desc',
+      limit:         5000
     });
 
-    // Convertir al formato que usa getAllSalesData / _renderGlobalSales
     const sales = (todos||[]).map(p => ({
       id:      p.id,
       num:     '#' + p.id,
@@ -6269,13 +6220,11 @@ async function sbCargarHistorialCompleto() {
       items:   'Pedido #' + p.id
     }));
 
-    // Inyectar en el store — getAllSalesData() los leerá desde aquí
     upd(function(s) { s._globalSales = sales; });
     window.getAllSalesData = function() {
       return getStore()._globalSales || [];
     };
 
-    // ── Calcular y actualizar las tarjetas de estadísticas globales ──
     const hoy = new Date().toISOString().slice(0, 10);
     const mes  = new Date().toISOString().slice(0, 7);
     let totalHoy = 0, totalMes = 0, totalGlobal = 0;
@@ -6285,22 +6234,19 @@ async function sbCargarHistorialCompleto() {
       if (v.time && v.time.startsWith(mes))  totalMes  += v.total;
     });
 
-    // Tarjetas resumen de estadísticas (si el panel de estadísticas las muestra)
     var statsCards = [
-      { id: 'stat-total-global', val: fp(totalGlobal), lbl: 'Total histórico' },
-      { id: 'stat-total-mes',    val: fp(totalMes),    lbl: 'Este mes' },
-      { id: 'stat-total-hoy',    val: fp(totalHoy),    lbl: 'Hoy' },
-      { id: 'stat-num-ventas',   val: sales.length,    lbl: 'Ventas totales' }
+      { id: 'stat-total-global', val: fp(totalGlobal) },
+      { id: 'stat-total-mes',    val: fp(totalMes)    },
+      { id: 'stat-total-hoy',    val: fp(totalHoy)    },
+      { id: 'stat-num-ventas',   val: sales.length    }
     ];
     statsCards.forEach(function(c) {
       var el = document.getElementById(c.id);
       if (el) el.textContent = c.val;
     });
 
-    console.log('[SB] Historial cargado — total registros:', sales.length,
-      '| hoy:', fp(totalHoy), '| mes:', fp(totalMes), '| global:', fp(totalGlobal));
+    console.log('[SB] Historial cargado:', sales.length, 'registros para comercio:', _SLUG);
 
-    // Si el panel de ventas globales ya está visible, re-renderizarlo
     if (typeof _renderGlobalSales === 'function') _renderGlobalSales();
 
     return { totalHoy, totalMes, totalGlobal, count: sales.length };
@@ -6310,49 +6256,185 @@ async function sbCargarHistorialCompleto() {
   }
 }
 
-// Alias para compatibilidad con código anterior
 async function sbCargarVentasGlobales() {
   return sbCargarHistorialCompleto();
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// ARRANQUE — reemplaza el INIT original
+// POS — Supabase: pos_productos y pos_categorias filtradas por comercio_id
+// ══════════════════════════════════════════════════════════════════════
+async function sbPosLoadProductos() {
+  if (!_COMERCIO_ID) return;
+  try {
+    var prods = await SB.get('pos_productos', {
+      select:        '*',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      order:         'categoria.asc,nombre.asc'
+    });
+    updPos(function(s) {
+      s.products = (prods || []).map(function(p) {
+        return {
+          id:        p.id,
+          sb_id:     p.id,
+          name:      p.nombre      || '',
+          cat:       p.categoria   || '',
+          price:     parseInt(p.precio) || 0,
+          desc:      p.descripcion || '',
+          photo:     p.imagen_url  || '',
+          emoji:     (p.nombre||'P').charAt(0).toUpperCase(),
+          available: p.disponible !== false
+        };
+      });
+    });
+    if (typeof renderPosEditor === 'function') renderPosEditor();
+    if (typeof renderPosCats   === 'function') renderPosCats();
+    if (typeof renderPosGrid   === 'function') renderPosGrid('all');
+    console.log('[SB-POS] Productos cargados:', (prods||[]).length);
+  } catch(e) {
+    console.error('[SB-POS] Error cargando pos_productos:', e.message);
+    if (e.message.indexOf('42P01') >= 0 || e.message.indexOf('does not exist') >= 0) {
+      console.warn('[SB-POS] La tabla pos_productos no existe. Créala con el SQL del README.');
+    }
+  }
+}
+
+async function sbPosLoadCategorias() {
+  if (!_COMERCIO_ID) return;
+  try {
+    var cats = await SB.get('pos_categorias', {
+      select:        'id,nombre,orden',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      order:         'orden.asc,nombre.asc'
+    });
+    updPos(function(s) {
+      s.categories = (cats || []).map(function(c) { return c.nombre; });
+      s._cats_raw  = cats || [];
+    });
+    if (typeof renderPosCatsList === 'function') renderPosCatsList();
+    var sel = document.getElementById('pos-ped-cat');
+    if (sel) {
+      var s = getPosStore();
+      sel.innerHTML = s.categories.map(function(c) {
+        return '<option value="' + c + '">' + c + '</option>';
+      }).join('');
+    }
+    console.log('[SB-POS] Categorías cargadas:', (cats||[]).length);
+  } catch(e) {
+    console.error('[SB-POS] Error cargando pos_categorias:', e.message);
+    if (e.message.indexOf('42P01') >= 0 || e.message.indexOf('does not exist') >= 0) {
+      console.warn('[SB-POS] La tabla pos_categorias no existe. Créala con el SQL del README.');
+    }
+  }
+}
+
+async function sbPosInit() {
+  await sbPosLoadCategorias();
+  await sbPosLoadProductos();
+  await sbPosLoadVentas();
+  console.log('[SB-POS] ✅ POS listo desde Supabase');
+}
+
+// Ventas POS — filtro por comercio_id
+async function sbPosLoadVentas(fechaDesde, fechaHasta) {
+  if (!_COMERCIO_ID) return [];
+  try {
+    var hoy   = new Date();
+    var inicio = fechaDesde
+      ? new Date(fechaDesde).toISOString()
+      : new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).toISOString();
+    var fin = fechaHasta
+      ? new Date(fechaHasta + 'T23:59:59').toISOString()
+      : new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1).toISOString();
+
+    var rows = await SB.get('pedidos', {
+      select:        '*',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      'origen':      'eq.pos',
+      'and':         '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
+      order:         'created_at.desc',
+      limit:         500
+    });
+
+    var sales = (rows || []).map(function(p) {
+      var items = [];
+      try {
+        items = Array.isArray(p.detalles_pedido)
+          ? p.detalles_pedido
+          : JSON.parse(p.detalles_pedido || '[]');
+      } catch(e) {}
+      items = items.map(function(it) {
+        return {
+          name:  it.nombre || it.name  || '',
+          qty:   it.cantidad || it.qty || 1,
+          price: it.precio_unitario || it.price || 0,
+          total: it.total || 0
+        };
+      });
+      return {
+        id:      p.id,
+        num:     'POS-' + p.id,
+        items:   items,
+        total:   parseFloat(p.total) || 0,
+        payment: p.metodo_pago || 'Efectivo',
+        time:    p.created_at  || new Date().toISOString()
+      };
+    });
+
+    updPos(function(s) { s.sales = sales; });
+    console.log('[SB-POS] Ventas POS cargadas:', sales.length);
+    return sales;
+  } catch(e) {
+    console.error('[SB-POS] Error cargando ventas POS:', e.message);
+    return [];
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ARRANQUE — primero detectar comercio, luego sbInit
 // ══════════════════════════════════════════════════════════════════════
 async function sbInit() {
-  console.log('[SB] 🚀 Iniciando Papayaso Admin...');
+  console.log('[SB] 🚀 Iniciando Admin multi-tenant... slug:', _SLUG);
+
+  // Paso 0: DETECTAR COMERCIO (obligatorio)
+  const ok = await sbCargarComercio();
+  if (!ok) {
+    alert('❌ No se pudo identificar el comercio "' + _SLUG + '".\n\nVerifica el parámetro ?rest= en la URL.');
+    return;
+  }
+
   try {
-    // 1. Cargar configuración primero (nombre, logo, isOpen)
+    // 1. Cargar configuración (desde tabla comercios)
     await sbLoadConfig();
 
-    // 2. Cargar categorías y productos
+    // 2. Cargar categorías y productos (filtrados por comercio_id)
     await sbLoadCategorias();
     await sbLoadProductos();
 
-    // 3. Cargar pedidos ACTIVOS de hoy (panel Pedidos)
+    // 3. Cargar pedidos ACTIVOS de hoy (filtrados por comercio_id)
     await sbLoadPedidos();
 
-    // 4. Cargar historial COMPLETO para estadísticas y ventas globales
+    // 4. Cargar historial COMPLETO para estadísticas
     sbCargarHistorialCompleto(); // async sin await — no bloquea el render inicial
 
-    // 5. Cargar datos del POS desde sus propias tablas
+    // 5. Cargar datos del POS
     await sbPosInit();
 
-    // 5. Mostrar en UI
+    // 6. Mostrar en UI
     const subPed = document.getElementById('sub-pedidos'); if (subPed) subPed.classList.add('visible');
     const pedTab = document.getElementById('tab-pedidos'); if (pedTab) pedTab.classList.add('active');
     if (typeof renderOrders === 'function') renderOrders();
     if (typeof updateStats  === 'function') updateStats();
 
-    // 5. Polling cada 8s para nuevos pedidos
+    // 7. Polling cada 8s para nuevos pedidos
     setInterval(sbPollNuevos, 8000);
 
-    // 6. Audio (primer clic del usuario)
+    // 8. Audio (primer clic del usuario)
     if (typeof _initAudio === 'function') {
       document.addEventListener('click',      _initAudio, { once: true });
       document.addEventListener('touchstart', _initAudio, { once: true });
     }
 
-    console.log('[SB] ✅ Admin listo. localStorage = 0 usos.');
+    console.log('[SB] ✅ Admin listo. Comercio:', _SLUG, '| ID:', _COMERCIO_ID);
   } catch(e) {
     console.error('[SB] Error en arranque:', e);
     alert('❌ Error al conectar con Supabase:\n\n' + e.message +
@@ -6360,10 +6442,9 @@ async function sbInit() {
   }
 }
 
-// sbInit ya NO se llama aquí — lo llama el sistema de auth cuando confirma sesión
+// sbInit es llamado por el sistema de auth cuando confirma sesión
 
 </script>
-
 </div><!-- #admin-content -->
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -6378,84 +6459,92 @@ const AUTH_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
 // Clave para guardar la sesión en sessionStorage (no localStorage — se borra al cerrar tab)
-// SESSION_KEY por slug — aísla sesiones de distintos comercios en el mismo navegador
-function _sessionKey() {
-  return 'admin_s_' + (new URLSearchParams(window.location.search).get('rest') || 'default');
-}
+const SESSION_KEY = 'papayaso_admin_session';
 
-let _authSession = null;
+// ── Estado de sesión ────────────────────────────────────────────────
+let _authSession = null;   // { access_token, refresh_token, expires_at, user }
 
+// ── Mostrar / ocultar capas ─────────────────────────────────────────
 function _mostrarAdmin() {
-  const l = document.getElementById('login-container'), a = document.getElementById('admin-content');
-  if (l) l.classList.add('hidden'); if (a) a.classList.add('visible');
+  const login = document.getElementById('login-container');
+  const admin = document.getElementById('admin-content');
+  if (login) login.classList.add('hidden');
+  if (admin) admin.classList.add('visible');
 }
-function _mostrarLogin(msg) {
-  const l = document.getElementById('login-container'), a = document.getElementById('admin-content');
-  if (l) l.classList.remove('hidden'); if (a) a.classList.remove('visible');
-  if (msg) _setLoginError(msg);
+
+function _mostrarLogin(errorMsg) {
+  const login = document.getElementById('login-container');
+  const admin = document.getElementById('admin-content');
+  if (login) login.classList.remove('hidden');
+  if (admin) admin.classList.remove('visible');
+  if (errorMsg) _setLoginError(errorMsg);
 }
-function _setLoginError(msg) { const el = document.getElementById('login-error'); if (el) el.textContent = msg||''; }
+
+function _setLoginError(msg) {
+  const el = document.getElementById('login-error');
+  if (el) el.textContent = msg || '';
+}
+
 function _setLoginLoading(on) {
-  const btn = document.getElementById('login-btn'), load = document.getElementById('login-loading');
-  if (btn)  { btn.disabled = on; btn.textContent = on ? 'Verificando...' : 'Entrar →'; }
+  const btn  = document.getElementById('login-btn');
+  const load = document.getElementById('login-loading');
+  if (btn)  { btn.disabled  = on; btn.textContent = on ? 'Verificando...' : 'Entrar →'; }
   if (load) { load.style.display = on ? 'block' : 'none'; }
 }
 
-function _guardarSesion(s) { try { sessionStorage.setItem(_sessionKey(), JSON.stringify(s)); } catch(e) {} }
+// ── Llamada directa a Supabase Auth ────────────────────────────────
+async function _authFetch(endpoint, body) {
+  const r = await fetch(AUTH_URL + '/auth/v1/' + endpoint, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey':       AUTH_KEY
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error de autenticación');
+  return data;
+}
+
+async function _authRefreshFetch(refreshToken) {
+  const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error_description || 'Sesión expirada');
+  return data;
+}
+
+// ── Guardar / leer / limpiar sesión en sessionStorage ──────────────
+function _guardarSesion(session) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e) {}
+}
+
 function _leerSesion() {
-  try { const r = sessionStorage.getItem(_sessionKey()); return r ? JSON.parse(r) : null; } catch(e) { return null; }
-}
-function _limpiarSesion() { try { sessionStorage.removeItem(_sessionKey()); } catch(e) {} _authSession = null; }
-
-// ── _resolverComercio: asigna _ADMIN_COMERCIO_ID ANTES de sbInit ─────
-// Prioridad 1: slug en ?rest= de la URL
-// Prioridad 2: user_id del usuario autenticado
-async function _resolverComercio(userId) {
-  const slugUrl = (new URLSearchParams(window.location.search).get('rest') || '').trim();
-  const token   = (_authSession && _authSession.access_token) || AUTH_KEY;
-  const buscar  = async (filtro) => {
-    const url = new URL(AUTH_URL + '/rest/v1/comercios');
-    url.searchParams.set('select', 'id,nombre,slug,logo_url,cover_url,whatsapp,activo');
-    Object.entries(filtro).forEach(([k,v]) => url.searchParams.set(k, String(v)));
-    url.searchParams.set('activo', 'eq.true'); url.searchParams.set('limit', '1');
-    const r = await fetch(url, { headers: { 'Content-Type':'application/json', 'apikey':AUTH_KEY, 'Authorization':'Bearer '+token } });
-    if (!r.ok) throw new Error('HTTP '+r.status+': '+await r.text());
-    return r.json();
-  };
-  let rows = [];
-  if (slugUrl) { rows = await buscar({ slug: 'eq.'+slugUrl }); }
-  if (!rows.length && userId) { rows = await buscar({ user_id: 'eq.'+userId }); }
-  if (!rows || !rows.length) {
-    _mostrarLogin('Tu cuenta no tiene un restaurante asignado. Abre el admin con ?rest=tu-slug');
-    _limpiarSesion(); return false;
-  }
-  const c = rows[0];
-  window._ADMIN_COMERCIO_ID     = c.id;
-  window._ADMIN_COMERCIO_SLUG   = c.slug;
-  window._ADMIN_COMERCIO_NOMBRE = c.nombre;
-  if (typeof upd === 'function') {
-    upd(function(s) {
-      s.config.name = c.nombre;
-      if (c.logo_url)  s.config.logo  = c.logo_url  + '?v=' + Date.now();
-      if (c.cover_url) s.config.cover = c.cover_url + '?v=' + Date.now();
-      if (c.whatsapp)  s.config.whatsapp = c.whatsapp;
-    });
-  }
-  const tn = document.getElementById('t-name'); if (tn) tn.textContent = c.nombre;
-  document.title = 'Admin — ' + c.nombre;
-  console.log('[ID-CHECK] Slug detectado:', c.slug, '| ID asignado:', c.id);
-  return true;
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
 }
 
-// ── _activarAdmin: resolver comercio ANTES de sbInit ──────────────────
+function _limpiarSesion() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {}
+  _authSession = null;
+}
+
+// ── Activar el admin (llamar sbInit y mostrar UI) ───────────────────
 async function _activarAdmin(session) {
   _authSession = session;
   _guardarSesion(session);
   _mostrarAdmin();
-  if (!session || !session.user || !session.user.id) { _mostrarLogin('Sesión inválida'); return; }
-  const ok = await _resolverComercio(session.user.id);
-  if (!ok) return;
-  if (typeof sbInit === 'function') await sbInit();
+
+  // Inicializar el admin solo ahora que el usuario está autenticado
+  if (typeof sbInit === 'function') {
+    await sbInit();
+  }
 }
 
 // ── LOGIN ───────────────────────────────────────────────────────────
@@ -6522,38 +6611,59 @@ async function authLogout() {
   }
 
   _limpiarSesion();
-  window._ADMIN_COMERCIO_ID = null; window._ADMIN_COMERCIO_SLUG = null; window._ADMIN_COMERCIO_NOMBRE = null;
-  if (typeof _STORE !== 'undefined') _STORE = null;
+  // Limpiar datos en memoria
+  if (typeof _STORE !== 'undefined') {
+    _STORE = null;
+  }
+  // Redirigir a login
   _mostrarLogin('Sesión cerrada');
-  console.log('[Auth] Sesión cerrada');
+  console.log('[Auth] Sesión cerrada correctamente');
 }
 
 // ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
 // Verificar al cargar si hay sesión guardada; si expiró, intentar renovar.
 (async function onLoad() {
-  const session = _leerSesion();  // usa _sessionKey() → aislado por slug
-  if (!session || !session.access_token) { _mostrarLogin(); return; }
-  const ahora = Date.now(), margen = 5*60*1000;
-  if (session.expires_at && ahora < session.expires_at - margen) {
-    console.log('[Auth] Sesión activa —', session.user && session.user.email);
-    await _activarAdmin(session); return;
+  const session = _leerSesion();
+
+  if (!session || !session.access_token) {
+    // Sin sesión → mostrar login
+    _mostrarLogin();
+    console.log('[Auth] Sin sesión activa — mostrando login');
+    return;
   }
+
+  const ahoraMs = Date.now();
+  const margenMs = 5 * 60 * 1000; // renovar si expira en menos de 5 min
+
+  if (session.expires_at && ahoraMs < session.expires_at - margenMs) {
+    // Sesión válida → entrar directamente
+    console.log('[Auth] Sesión activa encontrada —', session.user && session.user.email);
+    await _activarAdmin(session);
+    return;
+  }
+
+  // Sesión expirada — intentar renovar con refresh_token
   if (session.refresh_token) {
     try {
       console.log('[Auth] Renovando sesión...');
-      const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=refresh_token', {
-        method: 'POST', headers: { 'Content-Type':'application/json', 'apikey':AUTH_KEY },
-        body: JSON.stringify({ refresh_token: session.refresh_token })
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error_description || 'No se pudo renovar');
-      console.log('[Auth] ✅ Sesión renovada');
-      await _activarAdmin({ access_token: data.access_token,
+      const data = await _authRefreshFetch(session.refresh_token);
+      const newSession = {
+        access_token:  data.access_token,
         refresh_token: data.refresh_token || session.refresh_token,
-        expires_at: Date.now() + (data.expires_in||3600)*1000,
-        user: data.user || session.user });
-    } catch(e) { console.warn('[Auth] No se pudo renovar:', e.message); _limpiarSesion(); _mostrarLogin(); }
-  } else { _limpiarSesion(); _mostrarLogin(); }
+        expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+        user:          data.user || session.user
+      };
+      console.log('[Auth] ✅ Sesión renovada');
+      await _activarAdmin(newSession);
+    } catch(e) {
+      console.warn('[Auth] No se pudo renovar la sesión:', e.message);
+      _limpiarSesion();
+      _mostrarLogin();
+    }
+  } else {
+    _limpiarSesion();
+    _mostrarLogin();
+  }
 })();
 
 // ── Tecla Enter en el email va al password ──────────────────────────
