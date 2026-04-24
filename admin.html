@@ -350,71 +350,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 @keyframes slideDown{from{transform:translateX(-50%) translateY(-16px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
 
 /* ===== PRINT STYLES ===== */
-/* ═══════════════════════════════════════════════════════════
-   LOGIN — pantalla de autenticación
-   ═══════════════════════════════════════════════════════════ */
-#login-container {
-  position: fixed; inset: 0;
-  background: var(--dark);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9999; padding: 20px;
-}
-#login-container.hidden { display: none; }
-
-.login-box {
-  background: #1a1a1a;
-  border-radius: 20px;
-  padding: 40px 32px 36px;
-  max-width: 360px; width: 100%;
-  text-align: center;
-  box-shadow: 0 24px 64px rgba(0,0,0,.5);
-}
-.login-logo {
-  font-family: 'Montserrat', sans-serif;
-  font-size: 28px; font-weight: 900;
-  color: var(--gold); letter-spacing: -1px;
-  margin-bottom: 4px;
-}
-.login-sub {
-  font-size: 13px; color: rgba(255,255,255,.4);
-  margin-bottom: 28px;
-}
-.login-field {
-  width: 100%; padding: 14px 16px;
-  background: rgba(255,255,255,.07);
-  border: 1.5px solid rgba(255,255,255,.12);
-  border-radius: 10px;
-  font-family: inherit; font-size: 14px;
-  color: #fff; margin-bottom: 12px;
-  transition: border-color .2s;
-}
-.login-field:focus {
-  outline: none;
-  border-color: var(--green);
-}
-.login-field::placeholder { color: rgba(255,255,255,.3); }
-.login-btn {
-  width: 100%; padding: 15px;
-  background: var(--green); color: #fff;
-  border: none; border-radius: 10px;
-  font-family: inherit; font-size: 15px; font-weight: 800;
-  cursor: pointer; margin-top: 4px;
-  transition: opacity .15s;
-}
-.login-btn:hover { opacity: .9; }
-.login-btn:disabled { opacity: .5; cursor: not-allowed; }
-.login-error {
-  color: #ef5350; font-size: 13px; font-weight: 600;
-  margin-top: 12px; min-height: 20px;
-}
-.login-loading {
-  color: rgba(255,255,255,.4); font-size: 13px;
-  margin-top: 10px; display: none;
-}
-
-/* Admin content: oculto por defecto, el auth lo muestra */
-#admin-content { display: none; }
-#admin-content.visible { display: block; }
+/* El admin siempre es visible — el guard de auth redirige a login.html
+   si no hay sesión válida. No hay login embebido en esta página. */
+#admin-content { display: block; }
 
 @media print {
   /* ── Tamaño de página: rollo térmico 80mm ─────────────────────── */
@@ -521,34 +459,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <body>
 
 <!-- ══════════ PANTALLA DE LOGIN ══════════ -->
-<div id="login-container">
-  <div class="login-box">
-    <div class="login-logo">🍔 Papayaso</div>
-    <div class="login-sub">Panel de administración</div>
-
-    <input
-      class="login-field" id="login-email"
-      type="email" placeholder="Correo electrónico"
-      autocomplete="username"
-      onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"
-    >
-    <input
-      class="login-field" id="login-pass"
-      type="password" placeholder="Contraseña"
-      autocomplete="current-password"
-      onkeydown="if(event.key==='Enter')authLogin()"
-    >
-
-    <button class="login-btn" id="login-btn" onclick="authLogin()">
-      Entrar →
-    </button>
-
-    <div class="login-loading" id="login-loading">Verificando...</div>
-    <div class="login-error"  id="login-error"></div>
-  </div>
-</div>
-
-<!-- ══════════ CONTENIDO DEL ADMIN (oculto hasta autenticación) ══════════ -->
+<!-- ══════════ CONTENIDO DEL ADMIN ══════════
+     El guard de auth en onLoad() redirige a login.html
+     si no hay sesión válida en localStorage.
+     No hay formulario de login embebido en esta página.
+══════════════════════════════════════════ -->
 <div id="admin-content">
 
 <!-- TOPBAR -->
@@ -6844,47 +6759,27 @@ let _authSession       = null;   // { access_token, refresh_token, expires_at, u
 let _autoRefreshTimer  = null;   // setInterval handle para el auto-refresh
 
 // ── Mostrar / ocultar capas ─────────────────────────────────────────
+// ── Guardia de acceso — única puerta de entrada ─────────────────────
+// No hay formulario de login en esta página. Cualquier condición que
+// antes mostraba el login embebido ahora redirige a login.html.
 function _mostrarAdmin() {
-  const login = document.getElementById('login-container');
+  // El admin siempre es visible; esta función se mantiene por compatibilidad
+  // con cualquier llamada existente en el código.
   const admin = document.getElementById('admin-content');
-  if (login) login.classList.add('hidden');
-  if (admin) admin.classList.add('visible');
+  if (admin) admin.style.display = '';
 }
 
 function _mostrarLogin(errorMsg) {
-  const login = document.getElementById('login-container');
-  const admin = document.getElementById('admin-content');
-  if (login) login.classList.remove('hidden');
-  if (admin) admin.classList.remove('visible');
-  if (errorMsg) _setLoginError(errorMsg);
+  // GUARDIA: redirigir a login.html — NO pintar formulario en esta página.
+  console.log('[Auth] Redirigiendo a login.html' + (errorMsg ? ' — ' + errorMsg : ''));
+  _detenerAutoRefresh();
+  _limpiarSesion();
+  window.location.href = 'login.html';
 }
 
-function _setLoginError(msg) {
-  const el = document.getElementById('login-error');
-  if (el) el.textContent = msg || '';
-}
-
-function _setLoginLoading(on) {
-  const btn  = document.getElementById('login-btn');
-  const load = document.getElementById('login-loading');
-  if (btn)  { btn.disabled  = on; btn.textContent = on ? 'Verificando...' : 'Entrar →'; }
-  if (load) { load.style.display = on ? 'block' : 'none'; }
-}
-
-// ── Llamada directa a Supabase Auth ────────────────────────────────
-async function _authFetch(endpoint, body) {
-  const r = await fetch(AUTH_URL + '/auth/v1/' + endpoint, {
-    method:  'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey':       AUTH_KEY
-    },
-    body: JSON.stringify(body)
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error de autenticación');
-  return data;
-}
+// Stubs eliminados — ya no hay elementos de login embebido en el DOM.
+function _setLoginError(msg)      { /* sin formulario embebido */ }
+function _setLoginLoading(on)     { /* sin formulario embebido */ }
 
 // ── Renovar token con refresh_token ─────────────────────────────────
 // Equivalente a supabase.auth.refreshSession()
@@ -6984,48 +6879,11 @@ async function _activarAdmin(session) {
   }
 }
 
-// ── LOGIN ───────────────────────────────────────────────────────────
-async function authLogin() {
-  const emailEl = document.getElementById('login-email');
-  const passEl  = document.getElementById('login-pass');
-  const email   = emailEl ? emailEl.value.trim() : '';
-  const pass    = passEl  ? passEl.value         : '';
-
-  _setLoginError('');
-
-  if (!email || !pass) {
-    _setLoginError('Ingresa tu correo y contraseña');
-    return;
-  }
-
-  _setLoginLoading(true);
-
-  try {
-    const data = await _authFetch('token?grant_type=password', {
-      email:    email,
-      password: pass
-    });
-
-    if (!data.access_token) throw new Error('Respuesta inesperada del servidor');
-
-    const session = {
-      access_token:  data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at:    Date.now() + (data.expires_in || 86400) * 1000,  // 86400s = 24h
-      user:          data.user
-    };
-
-    console.log('[Auth] ✅ Login exitoso:', session.user.email,
-      '| expira en:', Math.round((data.expires_in || 86400) / 3600), 'h');
-    await _activarAdmin(session);
-
-  } catch(e) {
-    console.error('[Auth] Error de login:', e.message);
-    _setLoginError('Acceso denegado — ' + (e.message.includes('Invalid') ? 'correo o contraseña incorrectos' : e.message));
-    _setLoginLoading(false);
-    // Vibrar el campo de contraseña como feedback
-    if (passEl) { passEl.value = ''; passEl.focus(); }
-  }
+// ── authLogin eliminado — el login lo gestiona login.html ──────────
+// Si por algún código heredado se llama authLogin(), redirigir al login.
+function authLogin() {
+  console.warn('[Auth] authLogin() llamado en admin.html — redirigiendo a login.html');
+  window.location.href = 'login.html';
 }
 
 // ── LOGOUT ──────────────────────────────────────────────────────────
@@ -7059,23 +6917,24 @@ async function authLogout() {
   window.location.href = 'login.html';
 }
 
-// ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
-// Lee de localStorage (persistSession: true) y renueva si es necesario.
-// Con token de 86400s (24h) y auto-refresh cada 15 min, el panel
-// funciona todo el día sin interrupciones ni avisos rojos.
+// ── GUARDIA DE SESIÓN — única puerta de entrada ─────────────────────
+// Lee la sesión de localStorage. Si no hay sesión válida en cualquier
+// condición, redirige SIEMPRE a login.html.
+// No hay ningún formulario embebido; login.html es la única entrada.
 (async function onLoad() {
   const session = _leerSesion();
 
+  // Sin sesión → redirigir al login
   if (!session || !session.access_token) {
-    _mostrarLogin();
-    console.log('[Auth] Sin sesión en localStorage — mostrando login');
+    console.log('[Auth] Sin sesión en localStorage — redirigiendo a login.html');
+    _limpiarSesion();
+    window.location.href = 'login.html';
     return;
   }
 
-  const ahoraMs     = Date.now();
-  const tiempoRestante = (session.expires_at || 0) - ahoraMs;
+  const tiempoRestante = (session.expires_at || 0) - Date.now();
 
-  // ── Caso 1: token vigente con margen amplio → entrar sin renovar ──
+  // ── Caso 1: token vigente con margen amplio → entrar directamente ──
   if (session.expires_at && tiempoRestante > REFRESH_MARGEN_MS) {
     console.log('[Auth] Sesión activa en localStorage —', session.user && session.user.email,
       '| expira en:', Math.round(tiempoRestante / 60000), 'min');
@@ -7086,40 +6945,32 @@ async function authLogout() {
   // ── Caso 2: token próximo a expirar o ya expirado → renovar primero ──
   if (session.refresh_token) {
     try {
-      console.log('[Auth] Token próximo a expirar o caducado — renovando antes de entrar...');
+      console.log('[Auth] Token próximo a expirar — renovando antes de entrar...');
       const ok = await _refreshSession();
       if (ok && _authSession) {
         console.log('[Auth] ✅ Token renovado en onLoad — activando admin');
         await _activarAdmin(_authSession);
       } else {
-        console.warn('[Auth] refreshSession devolvió false en onLoad');
+        // refreshSession falló → redirigir al login
+        console.warn('[Auth] refreshSession devolvió false — redirigiendo a login.html');
         _limpiarSesion();
-        _mostrarLogin();
+        window.location.href = 'login.html';
       }
     } catch(e) {
-      console.warn('[Auth] No se pudo renovar la sesión en onLoad:', e.message);
+      console.warn('[Auth] Error renovando sesión en onLoad:', e.message, '— redirigiendo a login.html');
       _limpiarSesion();
-      _mostrarLogin();
+      window.location.href = 'login.html';
     }
   } else {
-    // Sin refresh_token → no hay forma de renovar, pedir login
-    console.warn('[Auth] Sesión sin refresh_token — pidiendo login de nuevo');
+    // Sin refresh_token → redirigir al login
+    console.warn('[Auth] Sesión sin refresh_token — redirigiendo a login.html');
     _limpiarSesion();
-    _mostrarLogin();
+    window.location.href = 'login.html';
   }
 })();
 
 // ── Tecla Enter en el email va al password ──────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-  // ── Login: Enter en email → foco a password ──────────────────────
-  var emailEl = document.getElementById('login-email');
-  if (emailEl) emailEl.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      var p = document.getElementById('login-pass');
-      if (p) p.focus();
-    }
-  });
-
   // ── Mi Cuenta: EventListeners explícitos ─────────────────────────
   // Botón principal del menú vertical → abrir panel Mi Cuenta
   var btnMiCuenta = document.getElementById('btn-mi-cuenta');
