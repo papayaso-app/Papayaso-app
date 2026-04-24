@@ -720,16 +720,15 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
 // ── ESTADO EN MEMORIA (0 localStorage) ──────────────────────────────
 var _STORE = {
   config: {
-    name: '', whatsapp: '', address: '', hours: '', desc: '', welcome: '',
-    isOpen: true, logo: '', cover: '', deliveryMin: '30', deliveryMax: '60'
+    name: 'Papayaso', whatsapp: '3001234567',
+    address: '', hours: '', desc: '', welcome: '',
+    isOpen: true, logo: '', cover: '',
+    deliveryMin: '30', deliveryMax: '60'
   },
   categories: [], products: []
 };
 // ID del último pedido en Supabase (para tracking)
 var _lastSbPedidoId = 0;
-// Comercio activo — se asignan en sbResolverComercio() al arrancar
-var _COMERCIO_ID   = null;
-var _COMERCIO_SLUG = null;
 // Datos del cliente guardados en sesión (no persisten al cerrar tab)
 var _clientData = { name:'', phone:'', address:'', ref:'' };
 
@@ -2096,13 +2095,22 @@ init();
 </div>
 
 
-<!-- ===== SUPABASE — SaaS Multitenant ===== -->
+
+<!-- ===== SUPABASE MULTI-TENANT — 100% sin localStorage ===== -->
 <script>
 /* =============================================================
-   MENÚ CLIENTE — Supabase 100% — SaaS Multitenant
-   Detecta el comercio por ?rest=slug y aísla completamente los
-   datos entre restaurantes usando comercio_id en todas las queries.
+   MENÚ CLIENTE — Supabase Multi-Tenant
+   Identificación por ?rest=slug → tabla comercios → comercio_id
+   Todas las queries filtran por comercio_id
    ============================================================= */
+
+// ══════════════════════════════════════════════════════════════
+// MULTI-TENANT — Detectar comercio desde ?rest=slug
+// ══════════════════════════════════════════════════════════════
+const _urlParams   = new URLSearchParams(window.location.search);
+const _SLUG        = (_urlParams.get('rest') || '').trim().toLowerCase();
+let   _COMERCIO_ID = null;   // UUID del comercio, se llena en sbCargarComercio()
+
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
@@ -2135,134 +2143,110 @@ const SB_TO_LOCAL = {
 };
 
 // ══════════════════════════════════════════════════════════════
-// PASO 0 — sbResolverComercio()
-// Lee ?rest=slug de la URL y busca en la tabla 'comercios'.
-// • Limpia imágenes viejas del slug anterior (punto 4 del requerimiento)
-// • Aplica nombre, logo_url y cover_url al DOM de INMEDIATO
-// • Guarda _COMERCIO_ID para filtrar todas las queries siguientes
-// • Si el slug no existe → muestra pantalla "no encontrado"
+// 0. CARGAR COMERCIO — primer paso obligatorio antes de todo
+// Lee la tabla maestra 'comercios' por slug de URL.
+// Devuelve true si tuvo éxito, false si no encontró el comercio.
 // ══════════════════════════════════════════════════════════════
-async function sbResolverComercio() {
-  const params  = new URLSearchParams(window.location.search);
-  const urlSlug = (params.get('rest') || params.get('slug') || '').trim();
-  // Detectar cambio de slug → limpiar caché vieja para no mostrar datos del anterior
-  var storedSlug = '';
-  try { storedSlug = localStorage.getItem('menu_slug') || ''; } catch(e) {}
-  if (urlSlug && storedSlug && urlSlug !== storedSlug) {
-    console.log('[SaaS] Cambio de slug detectado:', storedSlug, '→', urlSlug, '— limpiando caché');
-    _STORE = null;  // limpiar memoria del restaurante anterior
-    // Limpiar imágenes del restaurante anterior
-    var heroLogo  = document.getElementById('hero-logo-img');
-    var heroCover = document.getElementById('hero-bg-el');
-    if (heroLogo)  { heroLogo.src = ''; heroLogo.style.display = 'none'; }
-    if (heroCover) { heroCover.style.backgroundImage = 'none'; }
+async function sbCargarComercio() {
+  if (!_SLUG) {
+    console.error('[SB] No se especificó ?rest=slug en la URL');
+    return false;
   }
-  const slug = urlSlug || storedSlug || 'papayaso';
-  _COMERCIO_SLUG = slug;
-  try { localStorage.setItem('menu_slug', slug); } catch(e) {}
-
-  console.log('[SaaS] Detectando comercio con slug:', slug);
   try {
     const rows = await SB.get('comercios', {
-      select: 'id,nombre,slug,whatsapp,logo_url,cover_url,activo',
-      'slug': 'eq.' + slug, 'activo': 'eq.true', limit: 1
+      select: 'id,nombre,slug,telefono,logo_url,cover_url',
+      'slug': 'eq.' + _SLUG,
+      limit: 1
     });
     if (!rows || !rows.length) {
-      document.body.innerHTML = '<div style="min-height:100vh;display:flex;flex-direction:column;'
-        + 'align-items:center;justify-content:center;font-family:Inter,sans-serif;'
-        + 'background:#f5f5f5;padding:32px;text-align:center">'
-        + '<div style="font-size:64px;margin-bottom:20px">🍽️</div>'
-        + '<h1 style="font-family:Montserrat,sans-serif;font-size:24px;font-weight:900;'
-        + 'color:#111;margin-bottom:10px">Restaurante no encontrado</h1>'
-        + '<p style="font-size:15px;color:#666;max-width:340px;line-height:1.6">'
-        + 'No existe un restaurante con el identificador '
-        + '<strong style="color:#ff6b00">' + slug + '</strong>.</p></div>';
-      return null;
+      console.error('[SB] Comercio no encontrado para slug:', _SLUG);
+      return false;
     }
-    const c = rows[0];
-    _COMERCIO_ID = c.id;
-    try { localStorage.setItem('papayaso_comercio_id', c.id); } catch(e) {}
-    console.log('[SaaS] ✅ Comercio:', c.nombre, '| ID:', c.id);
+    _COMERCIO_ID = rows[0].id;
 
-    // Inyectar nombre en el DOM INMEDIATAMENTE
-    _STORE = _STORE || { config:{}, products:[], categories:[], orders:[] };
-    _STORE.config = _STORE.config || {};
-    _STORE.config.name = c.nombre;
-    var heroName = document.getElementById('hero-name');
-    if (heroName) heroName.textContent = c.nombre;
-    document.title = c.nombre + ' — Menú';
+    // Pre-poblar config con datos básicos del comercio
+    // (sbCargarConfig leerá el resto desde la misma fila)
+    _STORE.config.name  = rows[0].nombre || _STORE.config.name;
+    _STORE.config.logo  = rows[0].logo_url  || _STORE.config.logo  || '';
+    _STORE.config.cover = rows[0].cover_url || _STORE.config.cover || '';
+    _STORE.config.phone = rows[0].telefono  || _STORE.config.phone || '';
 
-    // Logo desde comercios.logo_url (nunca desde configuracion.url_logo)
-    var heroLogo2  = document.getElementById('hero-logo-img');
-    var heroCover2 = document.getElementById('hero-bg-el');
-    if (c.logo_url && c.logo_url.trim()) {
-      var logoUrl = c.logo_url.trim() + (c.logo_url.includes('?v=') ? '' : '?v=' + Date.now());
-      _STORE.config.logo = logoUrl;
-      if (heroLogo2) { heroLogo2.src = logoUrl; heroLogo2.style.display = 'block';
-        heroLogo2.onerror = function() { heroLogo2.style.display = 'none'; }; }
-      console.log('[SaaS] Logo aplicado:', logoUrl);
-    } else if (heroLogo2) { heroLogo2.style.display = 'none'; }
-
-    // Cover desde comercios.cover_url
-    if (c.cover_url && c.cover_url.trim()) {
-      var coverUrl = c.cover_url.trim() + (c.cover_url.includes('?v=') ? '' : '?v=' + Date.now());
-      _STORE.config.cover = coverUrl;
-      if (heroCover2) heroCover2.style.backgroundImage = 'url(' + JSON.stringify(coverUrl) + ')';
-      console.log('[SaaS] Cover aplicado:', coverUrl);
-    } else if (heroCover2) { heroCover2.style.backgroundImage = 'none'; }
-
-    if (c.whatsapp) _STORE.config.whatsapp = c.whatsapp;
-    return c;
+    console.log('[SB] Comercio cargado:', rows[0].nombre, '| id:', _COMERCIO_ID);
+    return true;
   } catch(e) {
-    console.error('[SaaS] Error detectando comercio:', e.message);
-    return null;
+    console.error('[SB] Error cargando comercio:', e.message);
+    return false;
   }
 }
 
 // ══════════════════════════════════════════════════════════════
-// PASO 1 — sbCargarConfig()
-// Solo datos operativos de 'configuracion' (horario, tiempos, etc.)
-// NO lee url_logo / url_portada — esas vienen de PASO 0 (comercios).
+// 1. CARGAR CONFIGURACIÓN desde tabla comercios (NO configuracion)
+// Lee la fila del comercio actual usando comercio_id ya conocido.
+// Columnas usadas: nombre, telefono, direccion, descripcion,
+// mensaje_bienvenida, esta_abierto, logo_url, cover_url,
+// tiempo_entrega_min, tiempo_entrega_max, url_menu,
+// url_repartidor, pin_repartidor, horario_semanal, whatsapp
 // ══════════════════════════════════════════════════════════════
 async function sbCargarConfig() {
+  if (!_COMERCIO_ID) return;
   try {
-    const qp = {
-      select: 'nombre_negocio,telefono_whatsapp,direccion,descripcion,mensaje_bienvenida,esta_abierto,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal',
+    const rows = await SB.get('comercios', {
+      select: 'nombre,whatsapp,telefono,direccion,descripcion,mensaje_bienvenida,esta_abierto,logo_url,cover_url,tiempo_entrega_min,tiempo_entrega_max,url_menu,url_repartidor,pin_repartidor,horario_semanal',
+      'id': 'eq.' + _COMERCIO_ID,
       limit: 1
-    };
-    if (_COMERCIO_ID) { qp['comercio_id'] = 'eq.' + _COMERCIO_ID; }
-    else              { qp['id'] = 'eq.1'; }
-    const rows = await SB.get('configuracion', qp);
-    if (!rows || !rows.length) { console.warn('[SB] Sin config para slug:', _COMERCIO_SLUG); return; }
+    });
+    if (!rows || !rows.length) { console.warn('[SB] Sin fila en comercios para id:', _COMERCIO_ID); return; }
     const c = rows[0];
+
     const prev = _STORE.config;
     _STORE.config = {
-      name:        prev.name      || c.nombre_negocio   || '',
-      whatsapp:    prev.whatsapp  || c.telefono_whatsapp || '',
-      address:     c.direccion    || prev.address         || '',
-      desc:        c.descripcion  || prev.desc            || '',
-      welcome:     c.mensaje_bienvenida || prev.welcome   || '',
+      name:        c.nombre              || prev.name        || 'Papayaso',
+      whatsapp:    c.whatsapp            || c.telefono       || prev.whatsapp    || '',
+      address:     c.direccion           || prev.address     || '',
+      desc:        c.descripcion         || prev.desc        || '',
+      welcome:     c.mensaje_bienvenida  || prev.welcome     || '',
       isOpen:      c.esta_abierto !== false,
-      logo:        prev.logo  || '',  // siempre de PASO 0
-      cover:       prev.cover || '',  // siempre de PASO 0
+      logo:        (c.logo_url  && c.logo_url.trim())   ? c.logo_url.trim()  : (prev.logo  || ''),
+      cover:       (c.cover_url && c.cover_url.trim())  ? c.cover_url.trim() : (prev.cover || ''),
       deliveryMin: String(c.tiempo_entrega_min || prev.deliveryMin || 30),
       deliveryMax: String(c.tiempo_entrega_max || prev.deliveryMax || 60),
-      menuUrl:     c.url_menu       || prev.menuUrl  || 'menu.html',
-      riderUrl:    c.url_repartidor || prev.riderUrl || 'repartidor.html',
-      riderPin:    c.pin_repartidor  || prev.riderPin || '1234',
+      menuUrl:     c.url_menu            || prev.menuUrl    || 'menu.html',
+      riderUrl:    c.url_repartidor      || prev.riderUrl   || 'repartidor.html',
+      riderPin:    c.pin_repartidor      || prev.riderPin   || '1234',
       schedule:    (c.horario_semanal && typeof c.horario_semanal === 'object')
-                     ? c.horario_semanal : (prev.schedule || null)
+                     ? c.horario_semanal
+                     : (prev.schedule || null)
     };
+
+    // Si hay horario configurado, calcular isOpen automáticamente según la hora actual
     if (_STORE.config.schedule) {
       _STORE.config.isOpen = calcularIsOpenPorHorario(_STORE.config.schedule);
+      console.log('[SB] isOpen calculado por horario:', _STORE.config.isOpen,
+        '| toggle manual era:', c.esta_abierto);
     }
-    // Re-inyectar nombre si init() corrió antes
-    var hn = document.getElementById('hero-name');
-    if (hn && _STORE.config.name) hn.textContent = _STORE.config.name;
-    document.title = (_STORE.config.name || 'Menú') + ' — Menú';
+
+    // Aplicar logo
+    const logoEl = document.getElementById('hero-logo-img');
+    if (logoEl) {
+      if (_STORE.config.logo) {
+        logoEl.src = _STORE.config.logo;
+        logoEl.style.display = 'block';
+        logoEl.onerror = function() { logoEl.style.display = 'none'; };
+      }
+    }
+
+    // Aplicar portada
+    const coverEl = document.getElementById('hero-bg-el');
+    if (coverEl && _STORE.config.cover) {
+      coverEl.style.backgroundImage = 'url(' + JSON.stringify(_STORE.config.cover) + ')';
+    }
+
     console.log('[SB] Config cargada — nombre:', _STORE.config.name,
-      '| isOpen:', _STORE.config.isOpen);
-  } catch(e) { console.error('[SB] Error cargando config:', e.message); }
+      '| isOpen:', _STORE.config.isOpen,
+      '| schedule:', _STORE.config.schedule ? 'sí' : 'no');
+  } catch(e) {
+    console.error('[SB] Error cargando config:', e.message);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2342,27 +2326,25 @@ function aplicarEstadoAbierto() {
   // Badge en el hero
   var badge = document.getElementById('hero-closed-badge');
   if (badge) badge.className = isOpen ? 'hero-closed-badge' : 'hero-closed-badge show';
-  // También actualizar el init() si ya corrió
-  if (typeof init === 'function' && document.getElementById('hero-name')) {
-    var hn = document.getElementById('hero-name');
-    // Solo actualizar el badge, no re-renderizar todo
-    if (badge) badge.className = isOpen ? 'hero-closed-badge' : 'hero-closed-badge show';
-  }
+  if (badge) badge.className = isOpen ? 'hero-closed-badge' : 'hero-closed-badge show';
   console.log('[Horario] isOpen actualizado:', isOpen, '—', new Date().toLocaleTimeString('es-CO'));
   return isOpen;
 }
 
 // ══════════════════════════════════════════════════════════════
-// 2. CARGAR PRODUCTOS
-// extras: JSONB [{name,price}] — ya viene parseado de Supabase
-// opciones_sabores: JSONB ["Vainilla","Chocolate"] — gratis
+// 2. CARGAR PRODUCTOS — filtra por comercio_id
+// REGLA DE ORO: .eq('comercio_id', _COMERCIO_ID) obligatorio
 // ══════════════════════════════════════════════════════════════
 async function sbCargarProductos() {
+  if (!_COMERCIO_ID) return;
   try {
-    var _pP = { select: '*', 'disponible': 'eq.true', order: 'categoria.asc,nombre.asc' };
-    if (_COMERCIO_ID) { _pP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
-    const prods = await SB.get('productos', _pP);
-    if (!prods || !prods.length) { console.warn('[SB] Sin productos'); return; }
+    const prods = await SB.get('pos_productos', {
+      select:        '*',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      'disponible':  'eq.true',
+      order:         'categoria.asc,nombre.asc'
+    });
+    if (!prods || !prods.length) { console.warn('[SB] Sin productos para comercio:', _COMERCIO_ID); return; }
 
     _STORE.products = prods.map(function(p) {
       // extras JSONB: [{name:"Queso extra", price:2000}, ...]
@@ -2410,21 +2392,70 @@ async function sbCargarProductos() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 3. RENDERIZAR CARRITO con extras JSONB
-// Sobrescribe renderCartItems para manejar extras [{name,price}]
+// CATEGORÍAS — extras_categoria y adiciones_categoria
+// Filtro por comercio_id obligatorio
 // ══════════════════════════════════════════════════════════════
-(function patchRenderCartItems() {
-  // La función original ya soporta extras como [{name,price}]
-  // Solo necesitamos asegurar que el formato de item.extras sea correcto
-  // cart[] se llena en addToCart() usando curProd.extras que ya vienen como JSONB
-  // → no se necesita patch adicional
-})();
+async function sbCargarCategorias() {
+  if (!_COMERCIO_ID) return;
+  try {
+    const cats = await SB.get('pos_categorias', {
+      select:        'nombre,extras_categoria,adiciones_categoria',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      order:         'orden.asc,nombre.asc'
+    });
+
+    // Construir mapa indexado por nombre: { "Hamburguesas": { extras: [], adiciones: [] }, ... }
+    const mapa = {};
+    (cats || []).forEach(function(cat) {
+      if (!cat.nombre || cat.nombre === '__extras_globales__') return;
+
+      // extras_categoria: [{nombre, precio}] — con precio sumable
+      var extras = [];
+      if (Array.isArray(cat.extras_categoria)) {
+        extras = cat.extras_categoria.filter(function(e) {
+          return e && (e.nombre || e.name);
+        }).map(function(e) {
+          return {
+            name:  e.nombre || e.name || '',
+            price: parseInt(e.precio !== undefined ? e.precio : (e.price || 0)) || 0
+          };
+        });
+      }
+
+      // adiciones_categoria: ["Salsa especial", "Mayonesa"] — strings simples, precio 0
+      var adiciones = [];
+      if (Array.isArray(cat.adiciones_categoria)) {
+        adiciones = cat.adiciones_categoria.filter(function(a) {
+          return a && String(a).trim();
+        }).map(function(a) {
+          return { name: String(a).trim(), price: 0 };
+        });
+      }
+
+      mapa[cat.nombre] = { extras: extras, adiciones: adiciones };
+    });
+
+    _STORE._categoriasMapa = mapa;
+    console.log('[SB] Categorías cargadas para menú:', Object.keys(mapa).length,
+      '— con extras/adiciones:', Object.values(mapa).filter(function(c) {
+        return c.extras.length || c.adiciones.length;
+      }).length);
+  } catch(e) {
+    // Sin datos de categorías el menú sigue funcionando — simplemente no habrá extras de categoría
+    _STORE._categoriasMapa = {};
+    console.warn('[SB] No se pudieron cargar categorías:', e.message);
+  }
+}
 
 // ══════════════════════════════════════════════════════════════
-// 4. INSERT EN PEDIDOS al finalizar compra
-// sendOrder() construye el mensaje WA; nosotros hacemos el INSERT aquí
+// 3. INSERT EN PEDIDOS al finalizar compra
+// REGLA DE ORO: incluye comercio_id en el body del INSERT
 // ══════════════════════════════════════════════════════════════
 async function sbInsertPedido(orderData) {
+  if (!_COMERCIO_ID) {
+    console.error('[SB] No se puede insertar pedido sin comercio_id');
+    return null;
+  }
   // orderData: {client, phone, address, ref, payment, cambio, items[], total, notes}
   const detalles = (orderData.items || []).map(function(it) {
     return {
@@ -2440,6 +2471,7 @@ async function sbInsertPedido(orderData) {
   });
 
   const body = {
+    comercio_id:     _COMERCIO_ID,          // ← AISLAMIENTO MULTI-TENANT
     cliente:         orderData.client   || '',
     telefono:        orderData.phone    || '',
     direccion:       orderData.address  || '',
@@ -2450,11 +2482,10 @@ async function sbInsertPedido(orderData) {
     metodo_pago:     orderData.payment  || 'Efectivo',
     cambio:          orderData.cambio   || '',
     notas:           orderData.notes    || '',
-    origen:          'web',
-    comercio_id:     _COMERCIO_ID || '00000000-0000-0000-0000-000000000001'
+    origen:          'web'
   };
 
-  console.log('[SB] Insertando pedido:', body);
+  console.log('[SB] Insertando pedido para comercio:', _COMERCIO_ID);
 
   try {
     const result = await SB.post('pedidos', body);
@@ -2490,7 +2521,6 @@ async function sbInsertPedido(orderData) {
   } catch(e) {
     console.error('[SB] Error insertando pedido:', e.message);
     // NO bloquear el flujo — el mensaje de WhatsApp ya fue enviado
-    // El admin puede ingresar el pedido manualmente
     showToast && showToast('⚠️ Pedido enviado por WA pero no registrado en BD');
     return null;
   }
@@ -2539,7 +2569,6 @@ async function sbInsertPedido(orderData) {
     }
 
     // 3. INSERT en Supabase — ESPERAR el resultado antes de continuar.
-    // Necesitamos el id real de Supabase para que el tracking funcione.
     const orderData = {
       client: name, phone: '+57' + rawPh, address: address, ref: ref,
       payment: payment, cambio: cambio, notes: '',
@@ -2552,15 +2581,13 @@ async function sbInsertPedido(orderData) {
     // Await: el ID real de Supabase debe existir antes de abrir el tracking
     const sbId = await sbInsertPedido(orderData);
 
-    // Si el INSERT falló, sbId es null — el pedido igual se envía por WA
-    // pero el tracking mostrará "sin pedido activo" hasta que se restaure
     if (!sbId) {
       console.warn('[Send] INSERT falló — abriendo WA sin id de SB');
     }
 
     // 4. Construir y abrir WhatsApp
-    const num = '#' + (Date.now()); // ID temporal hasta que SB responda
-    let msg = 'NUEVO PEDIDO — ' + (cfg.name || 'PAPAYASO') + '\n';
+    const num = '#' + (sbId || Date.now());
+    let msg = 'NUEVO PEDIDO ' + num + ' — ' + (cfg.name || 'PAPAYASO') + '\n';
     msg += 'Cliente: ' + name + '\n';
     msg += 'Tel: +57 ' + rawPh + '\n';
     msg += 'Dirección: ' + address + '\n';
@@ -2569,25 +2596,21 @@ async function sbInsertPedido(orderData) {
     if (cambio && cambio !== 'Exacto') msg += 'Paga con: ' + cambio + '\n';
     msg += '---\nPRODUCTOS:\n';
     cart.forEach(function(item) {
-      msg += item.qty + 'x ' + item.name + ' — ' + fp(item.total) + '\n';
+      msg += item.qty + 'x ' + item.name + ' — $' + (item.total||0).toLocaleString('es-CO') + '\n';
       (item.extras || []).forEach(function(e) {
-        msg += '  + ' + (e.name||e) + (e.price ? ' (+'+fp(e.price)+')' : '') + '\n';
+        msg += '  + ' + (e.name||e) + (e.price ? ' (+$'+e.price.toLocaleString('es-CO')+')' : '') + '\n';
       });
       if (item.note) msg += '  * ' + item.note + '\n';
     });
-    msg += '---\nTOTAL: ' + fp(total) + '\n';
+    msg += '---\nTOTAL: $' + total.toLocaleString('es-CO') + '\n';
     msg += '\n' + (cfg.welcome || '¡Gracias por tu pedido!');
 
     const waRaw = (cfg.whatsapp || '').replace(/\D/g,'');
     const wa    = waRaw.startsWith('57') ? waRaw : '57' + waRaw;
 
-    // En móviles window.open es bloqueado como popup — location.href lanza WA directamente.
-    // Se abre ANTES de cualquier cambio de UI para que el navegador no lo bloquee.
     window.location.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent(msg);
 
-    // 5. Limpiar carrito y mostrar tracking después de 500ms
-    // El timeout le da tiempo al móvil de lanzar WhatsApp antes de que
-    // la app cambie de pantalla al estado del pedido.
+    // 5. Limpiar carrito y mostrar tracking
     cart = [];
     orderNum++;
     if(typeof updateCartUI === 'function') updateCartUI();
@@ -2601,8 +2624,9 @@ async function sbInsertPedido(orderData) {
 })();
 
 // ══════════════════════════════════════════════════════════════
-// 5. TRACKING — polling Supabase cada 6s
-// getLastOrder() ya lee de _STORE.orders en memoria
+// 4. TRACKING — polling Supabase cada 6s
+// El seguimiento usa el ID de Supabase directamente, sin filtro de comercio_id
+// porque es el ID único del pedido del usuario
 // ══════════════════════════════════════════════════════════════
 let _trackingInterval = null;
 
@@ -2667,31 +2691,29 @@ async function sbTrackingPoll() {
 // ══════════════════════════════════════════════════════════════
 // 5. PERSISTENCIA DEL SEGUIMIENTO — localStorage solo para el ID
 // El ID del pedido sobrevive recargas; el estado siempre viene de Supabase
+// La clave incluye el slug para no mezclar pedidos entre comercios
 // ══════════════════════════════════════════════════════════════
-// La llave usa el slug como prefijo: 'pedido_activo_papayaso' vs 'pedido_activo_real-broaster'
-// Esto evita que el pedido de un restaurante aparezca en el menú del otro.
-function _trackingKey() {
-  return 'pedido_activo_' + (_COMERCIO_SLUG || 'papayaso');
-}
+const TRACKING_KEY = 'papayaso_tracking_id_' + (_SLUG || 'default');
 
 function persistirIdPedido(sbId) {
   try {
-    var k = _trackingKey();
-    localStorage.setItem(k, String(sbId));
-    console.log('[Track] ID persistido:', sbId, '| key:', k);
-  } catch(e) { console.warn('[Track] No se pudo persistir el ID:', e.message); }
+    localStorage.setItem(TRACKING_KEY, String(sbId));
+    console.log('[Track] ID persistido en localStorage:', sbId);
+  } catch(e) {
+    console.warn('[Track] No se pudo persistir el ID:', e.message);
+  }
 }
 
 function limpiarIdPedido() {
   try {
-    localStorage.removeItem(_trackingKey());
-    console.log('[Track] ID limpiado | key:', _trackingKey());
+    localStorage.removeItem(TRACKING_KEY);
+    console.log('[Track] ID de pedido limpiado');
   } catch(e) {}
 }
 
 function leerIdPedidoGuardado() {
   try {
-    var id = localStorage.getItem(_trackingKey());
+    var id = localStorage.getItem(TRACKING_KEY);
     return id ? parseInt(id) : null;
   } catch(e) { return null; }
 }
@@ -2703,25 +2725,18 @@ async function restaurarSeguimientoSiExiste() {
 
   console.log('[Track] ID guardado encontrado:', idGuardado, '— consultando Supabase...');
   try {
-    // Filtrar por comercio_id para que pedidos de otro restaurante nunca aparezcan
-    var _tP = {
-      select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at,comercio_id',
-      'id': 'eq.' + idGuardado, limit: 1
-    };
-    if (_COMERCIO_ID) { _tP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
-    const rows = await SB.get('pedidos', _tP);
+    const rows = await SB.get('pedidos', {
+      select: 'id,cliente,telefono,direccion,detalles_pedido,total,estado,created_at',
+      'id': 'eq.' + idGuardado,
+      limit: 1
+    });
     if (!rows || !rows.length) {
+      // Pedido no existe o fue purgado — limpiar
       limpiarIdPedido();
-      console.log('[Track] Pedido no encontrado o de otro comercio — limpiando');
+      console.log('[Track] Pedido no encontrado en Supabase, limpiando');
       return;
     }
     const p = rows[0];
-    // Verificación en el cliente (segunda capa de seguridad)
-    if (_COMERCIO_ID && p.comercio_id && String(p.comercio_id) !== String(_COMERCIO_ID)) {
-      limpiarIdPedido();
-      console.warn('[Track] Pedido de otro restaurante — ignorando');
-      return;
-    }
     const estadoLocal = SB_TO_LOCAL[p.estado] || 'nuevo';
 
     // Si ya fue entregado o cancelado → limpiar y no mostrar tracking
@@ -2779,97 +2794,53 @@ async function restaurarSeguimientoSiExiste() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 6. ARRANQUE — carga config + productos, luego renderiza
+// 6. ARRANQUE — primero detectar comercio, luego carga paralela
 // ══════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════
-// CATEGORÍAS — extras_categoria y adiciones_categoria
-// Se carga UNA VEZ al arrancar y se indexa por nombre de categoría.
-// openProd() lo consulta en memoria sin hacer GETs adicionales por clic.
-// ══════════════════════════════════════════════════════════════
-async function sbCargarCategorias() {
-  try {
-    var _cP = { select: 'nombre,extras_categoria,adiciones_categoria', order: 'orden.asc,nombre.asc' };
-    if (_COMERCIO_ID) { _cP['comercio_id'] = 'eq.' + _COMERCIO_ID; }
-    const cats = await SB.get('categorias', _cP);
-
-    // Construir mapa indexado por nombre: { "Hamburguesas": { extras: [], adiciones: [] }, ... }
-    const mapa = {};
-    (cats || []).forEach(function(cat) {
-      if (!cat.nombre || cat.nombre === '__extras_globales__') return;
-
-      // extras_categoria: [{nombre, precio}] — con precio sumable
-      var extras = [];
-      if (Array.isArray(cat.extras_categoria)) {
-        extras = cat.extras_categoria.filter(function(e) {
-          return e && (e.nombre || e.name);
-        }).map(function(e) {
-          return {
-            name:  e.nombre || e.name || '',
-            price: parseInt(e.precio !== undefined ? e.precio : (e.price || 0)) || 0
-          };
-        });
-      }
-
-      // adiciones_categoria: ["Salsa especial", "Mayonesa"] — strings simples, precio 0
-      var adiciones = [];
-      if (Array.isArray(cat.adiciones_categoria)) {
-        adiciones = cat.adiciones_categoria.filter(function(a) {
-          return a && String(a).trim();
-        }).map(function(a) {
-          return { name: String(a).trim(), price: 0 };
-        });
-      }
-
-      mapa[cat.nombre] = { extras: extras, adiciones: adiciones };
-    });
-
-    _STORE._categoriasMapa = mapa;
-    console.log('[SB] Categorías cargadas para menú:', Object.keys(mapa).length,
-      '— con extras/adiciones:', Object.values(mapa).filter(function(c) {
-        return c.extras.length || c.adiciones.length;
-      }).length);
-  } catch(e) {
-    // Sin datos de categorías el menú sigue funcionando — simplemente no habrá extras de categoría
-    _STORE._categoriasMapa = {};
-    console.warn('[SB] No se pudieron cargar categorías:', e.message);
-  }
-}
-
 (async function sbMenuInit() {
-  console.log('[SaaS] 🚀 Iniciando menú multitenant...');
-  try {
-    // PASO 0 — detectar comercio por ?rest=slug (BLOQUEANTE)
-    // Limpia caché si el slug cambió, inyecta nombre/logo/cover al DOM.
-    const comercio = await sbResolverComercio();
-    if (!comercio) return; // slug inválido → pantalla de error ya mostrada
+  console.log('[SB] 🚀 Cargando menú multi-tenant... slug:', _SLUG);
 
-    // PASO 1 — cargar datos (ya con _COMERCIO_ID definido → todos filtrados)
+  // Paso 0: DETECTAR COMERCIO (obligatorio antes de todo)
+  const ok = await sbCargarComercio();
+  if (!ok) {
+    // Mostrar mensaje de error al usuario
+    const heroName = document.getElementById('hero-name');
+    if (heroName) heroName.textContent = 'Restaurante no encontrado';
+    document.title = 'Menú no encontrado';
+    console.error('[SB] ❌ No se pudo identificar el comercio. Deteniendo arranque.');
+    return;
+  }
+
+  try {
+    // 1. Cargar config, productos y categorías en paralelo (todos con comercio_id)
     await Promise.all([sbCargarConfig(), sbCargarProductos(), sbCargarCategorias()]);
 
-    // PASO 2 — renderizar UI
-    if (typeof init           === 'function') init();
-    if (typeof renderCats     === 'function') renderCats(getStore());
-    if (typeof renderSections === 'function') renderSections(getStore(), 'all');
+    // 2. Renderizar UI con datos de Supabase
+    if (typeof init          === 'function') init();
+    if (typeof renderCats    === 'function') renderCats(getStore());
+    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
 
-    // PASO 3 — restaurar seguimiento (verifica comercio_id)
+    // 3. Restaurar seguimiento si el cliente tiene un pedido activo guardado
     await restaurarSeguimientoSiExiste();
 
-    // PASO 4 — recálculo de horario cada 60 segundos
+    // 4. Auto-verificación de horario cada 60 segundos
     setInterval(function() {
-      if (_STORE && _STORE.config && _STORE.config.schedule) {
-        var era = _STORE.config.isOpen;
-        var ahora = aplicarEstadoAbierto();
-        if (era !== ahora) console.log('[Horario] Cambió →', ahora ? 'Abierto' : 'Cerrado');
+      if (_STORE.config.schedule) {
+        var eraAbierto = _STORE.config.isOpen;
+        var ahoraAbierto = aplicarEstadoAbierto();
+        if (eraAbierto !== ahoraAbierto) {
+          console.log('[Horario] Estado cambió automáticamente →', ahoraAbierto ? 'Abierto' : 'Cerrado');
+        }
       }
-    }, 60000);
+    }, 60000); // cada 60 segundos
+
+    // Aplicar estado inicial inmediatamente después de cargar
     aplicarEstadoAbierto();
 
-    console.log('[SaaS] ✅ Menú listo — comercio:', _STORE.config.name,
-      '| productos:', (_STORE.products || []).length);
+    console.log('[SB] ✅ Menú listo. Comercio:', _SLUG, '| ID:', _COMERCIO_ID);
   } catch(e) {
-    console.error('[SaaS] Error en arranque:', e.message);
-    if (typeof init           === 'function') init();
-    if (typeof renderSections === 'function') renderSections(getStore(), 'all');
+    console.error('[SB] Error en arranque del menú:', e.message);
+    if (typeof init          === 'function') init();
+    if (typeof renderSections=== 'function') renderSections(getStore(), 'all');
   }
 })();
 
