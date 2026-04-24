@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Acceso — Papayaso</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --brand: #ff6b00;
+  --brand2: #e05a00;
+  --brand-bg: rgba(255,107,0,.12);
+  --brand-bd: rgba(255,107,0,.35);
+  --dark:  #0d0d0d;
+  --dark2: #161616;
+  --dark3: #1e1e1e;
+  --dark4: #252525;
+  --white: #fff;
+  --muted: rgba(255,255,255,.38);
+  --muted2: rgba(255,255,255,.55);
+  --border: rgba(255,255,255,.1);
+  --border2: rgba(255,255,255,.18);
+  --ok: #4caf50;
+  --danger: #ef5350;
+  --r: 14px;
+  --rs: 10px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--dark);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  /* Patrón sutil de fondo */
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(255,107,0,.07) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(255,107,0,.05) 0%, transparent 50%);
+}
+
+/* ── Contenedor principal ─────────────────────────────────── */
+.login-wrap {
+  width: 100%;
+  max-width: 420px;
+  animation: fadeIn .4s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Header de marca ──────────────────────────────────────── */
+.brand-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.brand-icon {
+  width: 64px;
+  height: 64px;
+  background: var(--brand-bg);
+  border: 1.5px solid var(--brand-bd);
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  margin-bottom: 14px;
+}
+.brand-name {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--white);
+  letter-spacing: -1px;
+  margin-bottom: 4px;
+}
+.brand-sub {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ── Tarjeta de formulario ────────────────────────────────── */
+.card {
+  background: var(--dark2);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  padding: 32px 28px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.5);
+}
+
+/* ── Título del panel activo ──────────────────────────────── */
+.panel-title {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--white);
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-title .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  flex-shrink: 0;
+}
+
+/* ── Campos ───────────────────────────────────────────────── */
+.field-group {
+  margin-bottom: 14px;
+}
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted2);
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 7px;
+}
+.field-input {
+  width: 100%;
+  padding: 13px 16px;
+  background: var(--dark3);
+  border: 1.5px solid var(--border);
+  border-radius: var(--rs);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--white);
+  transition: border-color .2s, background .2s;
+}
+.field-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  background: var(--dark4);
+}
+.field-input::placeholder { color: var(--muted); }
+.field-input.error { border-color: var(--danger) !important; }
+
+/* ── Hint de contraseña ───────────────────────────────────── */
+.pass-req {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+/* ── Botón principal ──────────────────────────────────────── */
+.btn-main {
+  width: 100%;
+  padding: 14px;
+  background: var(--brand);
+  color: var(--white);
+  border: none;
+  border-radius: var(--rs);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  margin-top: 6px;
+  letter-spacing: .2px;
+}
+.btn-main:hover  { background: var(--brand2); }
+.btn-main:active { transform: scale(.98); }
+.btn-main:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Botón secundario ─────────────────────────────────────── */
+.btn-back {
+  background: none;
+  border: none;
+  color: var(--muted2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color .15s;
+  margin-bottom: 20px;
+}
+.btn-back:hover { color: var(--white); }
+
+/* ── Link de olvidé contraseña ────────────────────────────── */
+.forgot-link {
+  display: block;
+  text-align: right;
+  font-size: 12px;
+  color: var(--muted2);
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: -6px;
+  margin-bottom: 18px;
+  transition: color .15s;
+}
+.forgot-link:hover { color: var(--brand); }
+
+/* ── Mensajes de feedback ─────────────────────────────────── */
+.msg {
+  padding: 11px 14px;
+  border-radius: var(--rs);
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 14px;
+  display: none;
+  line-height: 1.5;
+}
+.msg.show    { display: block; }
+.msg.error   { background: rgba(239,83,80,.12);  color: #ef9090;  border: 1px solid rgba(239,83,80,.25); }
+.msg.success { background: rgba(76,175,80,.12);  color: #81c784;  border: 1px solid rgba(76,175,80,.25); }
+.msg.info    { background: rgba(255,107,0,.1);   color: #ffb380;  border: 1px solid var(--brand-bd); }
+
+/* ── Spinner ──────────────────────────────────────────────── */
+.spinner-wrap {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.spinner-wrap.show { display: flex; }
+.spin {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,107,0,.2);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Divisor ──────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 22px 0;
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+.footer-txt {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 20px;
+  line-height: 1.6;
+}
+
+/* ── Paneles (solo uno visible a la vez) ─────────────────── */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Badge de rol detectado ──────────────────────────────── */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 16px;
+}
+.role-badge.super { background: rgba(255,107,0,.15); color: var(--brand); border: 1px solid var(--brand-bd); }
+.role-badge.admin { background: rgba(21,101,192,.15); color: #90caf9;     border: 1px solid rgba(21,101,192,.3); }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .card { padding: 24px 18px; }
+  .brand-name { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+
+<div class="login-wrap">
+
+  <!-- ── Encabezado de marca ── -->
+  <div class="brand-header">
+    <div class="brand-icon">🍔</div>
+    <div class="brand-name">Papayaso</div>
+    <div class="brand-sub">Plataforma de gestión de domicilios</div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════
+       PANEL 1: LOGIN
+  ════════════════════════════════════════════════ -->
+  <div class="card">
+    <div id="panel-login" class="panel active">
+      <div class="panel-title"><div class="dot"></div> Iniciar sesión</div>
+
+      <div class="field-group">
+        <label class="field-label" for="login-email">Correo electrónico</label>
+        <input
+          class="field-input" id="login-email" type="email"
+          placeholder="tu@correo.com"
+          autocomplete="username"
+          onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"
+        >
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="login-pass">Contraseña</label>
+        <input
+          class="field-input" id="login-pass" type="password"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          onkeydown="if(event.key==='Enter')doLogin()"
+        >
+      </div>
+
+      <span class="forgot-link" onclick="showPanel('panel-recovery')">
+        ¿Olvidaste tu contraseña?
+      </span>
+
+      <button class="btn-main" id="btn-login" onclick="doLogin()">Entrar →</button>
+
+      <div class="spinner-wrap" id="spin-login"><div class="spin"></div>Verificando...</div>
+      <div class="msg"         id="msg-login"></div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════
+         PANEL 2: RECUPERAR CONTRASEÑA
+    ════════════════════════════════════════════════ -->
+    <div id="panel-recovery" class="panel">
+      <button class="btn-back" onclick="showPanel('panel-login')">← Volver al login</button>
+      <div class="panel-title"><div class="dot"></div> Recuperar contraseña</div>
+
+      <div class="field-group">
+        <label class="field-label" for="rec-email">Tu correo electrónico</label>
+        <input
+          class="field-input" id="rec-email" type="email"
+          placeholder="tu@correo.com"
+          autocomplete="email"
+          onkeydown="if(event.key==='Enter')doRecovery()"
+        >
+      </div>
+
+      <button class="btn-main" id="btn-recovery" onclick="doRecovery()">
+        Enviar enlace de recuperación
+      </button>
+
+      <div class="spinner-wrap" id="spin-recovery"><div class="spin"></div>Enviando correo...</div>
+      <div class="msg"          id="msg-recovery"></div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════
+         PANEL 3: NUEVA CONTRASEÑA
+         (se activa cuando el usuario llega desde el correo
+          de recuperación con #access_token en la URL)
+    ════════════════════════════════════════════════ -->
+    <div id="panel-newpass" class="panel">
+      <div class="panel-title"><div class="dot"></div> Crea tu nueva contraseña</div>
+
+      <div class="field-group">
+        <label class="field-label" for="np-pass">Nueva contraseña</label>
+        <input
+          class="field-input" id="np-pass" type="password"
+          placeholder="Mínimo 8 caracteres"
+          autocomplete="new-password"
+          onkeydown="if(event.key==='Enter')document.getElementById('np-pass2').focus()"
+        >
+        <div class="pass-req">Mínimo 8 caracteres</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="np-pass2">Confirmar contraseña</label>
+        <input
+          class="field-input" id="np-pass2" type="password"
+          placeholder="Repite la contraseña"
+          autocomplete="new-password"
+          onkeydown="if(event.key==='Enter')doNewPass()"
+        >
+      </div>
+
+      <button class="btn-main" id="btn-newpass" onclick="doNewPass()">
+        Guardar nueva contraseña
+      </button>
+
+      <div class="spinner-wrap" id="spin-newpass"><div class="spin"></div>Actualizando...</div>
+      <div class="msg"          id="msg-newpass"></div>
+    </div>
+
+  </div><!-- .card -->
+
+  <div class="footer-txt">
+    Papayaso SaaS &copy; 2025 · Todos los derechos reservados<br>
+    <span style="color:rgba(255,255,255,.2)">v2.0 · Multi-tenant</span>
+  </div>
+</div><!-- .login-wrap -->
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════════════
+// CONSTANTES SUPABASE
+// ══════════════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://mmnyxlsyizylivvikfuf.supabase.co';
+const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
+const SITE_URL      = 'https://papayaso-app.vercel.app';
+
+// ══════════════════════════════════════════════════════════════
+// HELPERS DE UI
+// ══════════════════════════════════════════════════════════════
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function setMsg(panelId, txt, type) {
+  // type: 'error' | 'success' | 'info'
+  var el = document.getElementById('msg-' + panelId);
+  if (!el) return;
+  el.textContent = txt;
+  el.className   = 'msg ' + (txt ? 'show ' + (type || 'error') : '');
+}
+
+function setLoading(panelId, on) {
+  var btnId  = 'btn-'  + panelId;
+  var spinId = 'spin-' + panelId;
+  var btn    = document.getElementById(btnId);
+  var spin   = document.getElementById(spinId);
+  if (btn)  btn.disabled = on;
+  if (spin) spin.classList.toggle('show', on);
+}
+
+// ══════════════════════════════════════════════════════════════
+// LLAMADAS A SUPABASE AUTH (fetch directo, sin CDN)
+// ══════════════════════════════════════════════════════════════
+async function authFetch(endpoint, body, accessToken) {
+  var headers = {
+    'Content-Type': 'application/json',
+    'apikey':       SUPABASE_KEY
+  };
+  if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+
+  var r = await fetch(SUPABASE_URL + '/auth/v1/' + endpoint, {
+    method:  'POST',
+    headers: headers,
+    body:    JSON.stringify(body)
+  });
+  var data = await r.json();
+  if (!r.ok) {
+    throw new Error(data.error_description || data.msg || data.error || 'Error de autenticación');
+  }
+  return data;
+}
+
+// ══════════════════════════════════════════════════════════════
+// DETECCIÓN DE HASH DE RECUPERACIÓN EN LA URL
+// Supabase redirige a: login.html#access_token=...&type=recovery
+// Hay que detectar esto AL CARGAR y mostrar el panel de nueva clave.
+// ══════════════════════════════════════════════════════════════
+var _recoveryToken = null;
+
+function detectarHashRecovery() {
+  var hash = window.location.hash;
+  if (!hash) return false;
+
+  // Parsear los parámetros del hash (vienen como fragmento URL)
+  var params = {};
+  hash.replace(/^#/, '').split('&').forEach(function(part) {
+    var eq = part.indexOf('=');
+    if (eq < 0) return;
+    params[decodeURIComponent(part.slice(0, eq))] = decodeURIComponent(part.slice(eq + 1));
+  });
+
+  // Supabase envía type=recovery (y también type=signup en algunos flujos)
+  if (params.type === 'recovery' && params.access_token) {
+    _recoveryToken = params.access_token;
+    console.log('[Auth] Token de recuperación detectado en URL');
+    // Limpiar el hash de la URL sin recargar
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    showPanel('panel-newpass');
+    return true;
+  }
+
+  // También puede llegar como type=magiclink o sin type (sesión directa)
+  if (params.access_token && !params.type) {
+    _recoveryToken = params.access_token;
+    console.log('[Auth] Token de acceso detectado en URL (magic link / recovery)');
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    showPanel('panel-newpass');
+    return true;
+  }
+
+  return false;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PANEL 1: LOGIN
+// Al autenticar, lee user_metadata.role para redirigir:
+//   super_admin → superadmin.html
+//   cualquier otro → admin.html?rest=slug
+// ══════════════════════════════════════════════════════════════
+async function doLogin() {
+  var email = (document.getElementById('login-email') || {}).value || '';
+  var pass  = (document.getElementById('login-pass')  || {}).value || '';
+
+  setMsg('login', '');
+  if (!email || !pass) {
+    setMsg('login', 'Ingresa tu correo y contraseña.', 'error');
+    return;
+  }
+
+  setLoading('login', true);
+  try {
+    var data = await authFetch('token?grant_type=password', {
+      email:    email.trim(),
+      password: pass
+    });
+
+    if (!data.access_token) throw new Error('Respuesta inesperada del servidor');
+
+    var user     = data.user || {};
+    var meta     = user.user_metadata || {};
+    var appMeta  = user.app_metadata  || {};
+    var role     = meta.role || appMeta.role || '';
+
+    console.log('[Auth] Login OK:', user.email, '| role:', role || '(sin role)');
+
+    // Guardar sesión en sessionStorage para que admin/superadmin la lean
+    var session = {
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+      user:          user
+    };
+
+    // ── Redirigir según role ────────────────────────────────────────
+    if (role === 'super_admin' || email.trim() === 'escobardiego1992@hotmail.com') {
+      // Super admin → superadmin.html
+      try { sessionStorage.setItem('papayaso_superadmin_session', JSON.stringify(session)); } catch(e) {}
+      console.log('[Auth] Redirigiendo a Super Admin...');
+      window.location.href = 'superadmin.html';
+      return;
+    }
+
+    // Comercio → buscar su slug en tabla comercios (por user_id o email)
+    // y redirigir a admin.html?rest=slug
+    var slug = await _buscarSlugComercio(user, data.access_token);
+
+    try { sessionStorage.setItem('papayaso_admin_session', JSON.stringify(session)); } catch(e) {}
+
+    if (slug) {
+      console.log('[Auth] Redirigiendo a Admin slug:', slug);
+      window.location.href = 'admin.html?rest=' + encodeURIComponent(slug);
+    } else {
+      // Sin slug conocido → ir al admin sin slug (el admin mostrará el error de comercio)
+      console.warn('[Auth] Sin slug en comercios — redirigiendo a admin sin ?rest=');
+      window.location.href = 'admin.html';
+    }
+
+  } catch(e) {
+    console.error('[Auth] Error login:', e.message);
+    var msg = e.message;
+    if (msg.includes('Invalid') || msg.includes('invalid') || msg.includes('credentials')) {
+      msg = 'Correo o contraseña incorrectos.';
+    } else if (msg.includes('Email not confirmed')) {
+      msg = 'Debes confirmar tu correo primero. Revisa tu bandeja de entrada.';
+    }
+    setMsg('login', msg, 'error');
+    setLoading('login', false);
+    // Limpiar campo de contraseña
+    var passEl = document.getElementById('login-pass');
+    if (passEl) { passEl.value = ''; passEl.focus(); }
+  }
+}
+
+// Buscar el slug del comercio asociado al usuario que inicia sesión
+async function _buscarSlugComercio(user, accessToken) {
+  try {
+    // Intentar buscar por user_id primero
+    var url = new URL(SUPABASE_URL + '/rest/v1/comercios');
+    url.searchParams.set('select', 'slug');
+    url.searchParams.set('user_id', 'eq.' + user.id);
+    url.searchParams.set('limit', '1');
+
+    var r = await fetch(url, {
+      headers: {
+        'apikey':        SUPABASE_KEY,
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type':  'application/json'
+      }
+    });
+    if (r.ok) {
+      var rows = await r.json();
+      if (rows && rows.length && rows[0].slug) return rows[0].slug;
+    }
+
+    // Si no hay user_id, buscar por email del dueño (columna email_dueno si existe)
+    // Esta búsqueda es de fallback — puede no existir en todas las instalaciones
+    console.log('[Auth] Sin comercio por user_id, el admin usará el parámetro ?rest= de la URL');
+    return null;
+  } catch(e) {
+    console.warn('[Auth] No se pudo buscar slug del comercio:', e.message);
+    return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// PANEL 2: RECUPERAR CONTRASEÑA
+// Usa supabase.auth.resetPasswordForEmail
+// Redirige al propio login.html para que detecte el hash de recovery
+// ══════════════════════════════════════════════════════════════
+async function doRecovery() {
+  var email = (document.getElementById('rec-email') || {}).value || '';
+
+  setMsg('recovery', '');
+  if (!email || !email.includes('@')) {
+    setMsg('recovery', 'Ingresa un correo electrónico válido.', 'error');
+    return;
+  }
+
+  setLoading('recovery', true);
+  try {
+    // El enlace de recuperación redirigirá a SITE_URL/login.html
+    // Supabase enviará: login.html#access_token=...&type=recovery
+    await authFetch('recover', {
+      email:       email.trim(),
+      redirect_to: SITE_URL + '/login.html'
+    });
+
+    setMsg(
+      'recovery',
+      '✅ Correo enviado. Revisa tu bandeja de entrada (y la carpeta de spam). ' +
+      'El enlace es válido por 1 hora.',
+      'success'
+    );
+    console.log('[Auth] Correo de recuperación enviado a:', email);
+
+  } catch(e) {
+    console.error('[Auth] Error recuperación:', e.message);
+    // Supabase devuelve 200 incluso si el correo no existe (por seguridad)
+    // así que cualquier error aquí es inesperado
+    setMsg('recovery', 'Error al enviar el correo: ' + e.message, 'error');
+  } finally {
+    setLoading('recovery', false);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// PANEL 3: NUEVA CONTRASEÑA
+// Usa el access_token del hash para actualizar la contraseña
+// ══════════════════════════════════════════════════════════════
+async function doNewPass() {
+  var pass1 = (document.getElementById('np-pass')  || {}).value || '';
+  var pass2 = (document.getElementById('np-pass2') || {}).value || '';
+
+  setMsg('newpass', '');
+
+  if (!pass1 || pass1.length < 8) {
+    setMsg('newpass', 'La contraseña debe tener al menos 8 caracteres.', 'error');
+    document.getElementById('np-pass').classList.add('error');
+    return;
+  }
+  if (pass1 !== pass2) {
+    setMsg('newpass', 'Las contraseñas no coinciden.', 'error');
+    document.getElementById('np-pass2').classList.add('error');
+    return;
+  }
+  if (!_recoveryToken) {
+    setMsg('newpass', 'Token de recuperación no encontrado. Solicita un nuevo enlace.', 'error');
+    return;
+  }
+
+  // Limpiar clases de error
+  ['np-pass', 'np-pass2'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.remove('error');
+  });
+
+  setLoading('newpass', true);
+  try {
+    // PATCH /auth/v1/user con el token de recuperación para cambiar la contraseña
+    var r = await fetch(SUPABASE_URL + '/auth/v1/user', {
+      method: 'PUT',
+      headers: {
+        'Content-Type':  'application/json',
+        'apikey':        SUPABASE_KEY,
+        'Authorization': 'Bearer ' + _recoveryToken
+      },
+      body: JSON.stringify({ password: pass1 })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error al actualizar');
+
+    console.log('[Auth] Contraseña actualizada para:', data.email);
+    _recoveryToken = null;
+
+    setMsg(
+      'newpass',
+      '✅ Contraseña actualizada correctamente. Ahora puedes iniciar sesión.',
+      'success'
+    );
+
+    // Limpiar campos y redirigir al login después de 2 segundos
+    document.getElementById('np-pass').value  = '';
+    document.getElementById('np-pass2').value = '';
+
+    setTimeout(function() {
+      showPanel('panel-login');
+      setMsg('login', 'Contraseña actualizada. Inicia sesión con tu nueva clave.', 'info');
+    }, 2200);
+
+  } catch(e) {
+    console.error('[Auth] Error actualizando contraseña:', e.message);
+    var msg = e.message;
+    if (msg.includes('expired') || msg.includes('invalid')) {
+      msg = 'El enlace de recuperación expiró. Solicita uno nuevo.';
+    }
+    setMsg('newpass', msg, 'error');
+  } finally {
+    setLoading('newpass', false);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// ARRANQUE: detectar si el usuario ya tiene sesión activa
+// o si viene desde un enlace de recuperación
+// ══════════════════════════════════════════════════════════════
+(function init() {
+  // 1. Detectar hash de recuperación en la URL (prioridad máxima)
+  if (detectarHashRecovery()) return;
+
+  // 2. Si ya hay sesión de super admin guardada y es válida → redirigir
+  try {
+    var saRaw = sessionStorage.getItem('papayaso_superadmin_session');
+    if (saRaw) {
+      var saSession = JSON.parse(saRaw);
+      if (saSession && saSession.access_token && Date.now() < (saSession.expires_at || 0)) {
+        console.log('[Auth] Sesión de super admin activa detectada — redirigiendo...');
+        window.location.href = 'superadmin.html';
+        return;
+      }
+    }
+  } catch(e) {}
+
+  // 3. Si ya hay sesión de admin guardada y es válida → buscar slug y redirigir
+  try {
+    var admRaw = sessionStorage.getItem('papayaso_admin_session');
+    if (admRaw) {
+      var admSession = JSON.parse(admRaw);
+      if (admSession && admSession.access_token && Date.now() < (admSession.expires_at || 0)) {
+        var user = admSession.user || {};
+        var meta = user.user_metadata || {};
+        var role = meta.role || (user.app_metadata || {}).role || '';
+        if (role === 'super_admin' || (user.email === 'escobardiego1992@hotmail.com')) {
+          window.location.href = 'superadmin.html';
+          return;
+        }
+        // Redirigir al admin — el admin.html leerá la sesión de sessionStorage
+        console.log('[Auth] Sesión de admin activa detectada — redirigiendo...');
+        window.location.href = 'admin.html';
+        return;
+      }
+    }
+  } catch(e) {}
+
+  // 4. Sin sesión → mostrar el panel de login (ya es el default)
+  console.log('[Auth] Sin sesión activa — mostrando login');
+
+  // Focus automático en el campo de email
+  setTimeout(function() {
+    var el = document.getElementById('login-email');
+    if (el) el.focus();
+  }, 100);
+})();
+</script>
+</body>
+</html>
