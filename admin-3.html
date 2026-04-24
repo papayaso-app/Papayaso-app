@@ -2266,6 +2266,7 @@ function saveProd() {
   (async function() {
     try {
       const body = {
+        comercio_id: _COMERCIO_ID,   // ← AISLAMIENTO MULTI-TENANT (obligatorio, NOT NULL)
         nombre:      name,
         precio:      price,
         descripcion: desc,
@@ -3134,7 +3135,7 @@ function posCheckout(payMethod) {
 async function sbPosLoadProductos() {
   try {
     var prods = await SB.get('pos_productos', {
-      select: '*', order: 'categoria.asc,nombre.asc'
+      select: '*', 'comercio_id': 'eq.' + _COMERCIO_ID, order: 'categoria.asc,nombre.asc'
     });
     updPos(function(s) {
       s.products = (prods || []).map(function(p) {
@@ -3167,7 +3168,7 @@ async function sbPosLoadProductos() {
 async function sbPosLoadCategorias() {
   try {
     var cats = await SB.get('pos_categorias', {
-      select: 'id,nombre,orden', order: 'orden.asc,nombre.asc'
+      select: 'id,nombre,orden', 'comercio_id': 'eq.' + _COMERCIO_ID, order: 'orden.asc,nombre.asc'
     });
     updPos(function(s) {
       s.categories = (cats || []).map(function(c) { return c.nombre; });
@@ -3216,6 +3217,7 @@ async function sbPosLoadVentas(fechaDesde, fechaHasta) {
     // Usamos el filtro 'and' en un solo parámetro para el rango de fechas.
     var rows = await SB.get('pedidos', {
       select: '*',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
       'origen': 'eq.pos',
       'and':    '(created_at.gte.' + inicio + ',created_at.lte.' + fin + ')',
       order:    'created_at.desc',
@@ -3622,6 +3624,7 @@ function savePosProd() {
   if (!cat)   { alert('⚠️ Selecciona una categoría');      return; }
 
   var body = {
+    comercio_id: _COMERCIO_ID,   // ← AISLAMIENTO MULTI-TENANT (obligatorio, NOT NULL)
     nombre:     name,
     precio:     price,
     descripcion: desc,
@@ -3693,7 +3696,7 @@ function savePosCat(i) {
   (async function() {
     try {
       // Buscar id en Supabase
-      var rows = await SB.get('pos_categorias', { select: 'id', 'nombre': 'eq.' + oldName, limit: 1 });
+      var rows = await SB.get('pos_categorias', { select: 'id', 'comercio_id': 'eq.' + _COMERCIO_ID, 'nombre': 'eq.' + oldName, limit: 1 });
       if (rows && rows[0]) {
         await SB.patch('pos_categorias', 'id=eq.' + rows[0].id, { nombre: newName });
       }
@@ -3722,7 +3725,7 @@ function addPosCat() {
   if (s.categories.indexOf(v) >= 0) { showToast('Ya existe esa categoría'); return; }
   (async function() {
     try {
-      await SB.post('pos_categorias', { nombre: v, orden: s.categories.length });
+      await SB.post('pos_categorias', { comercio_id: _COMERCIO_ID, nombre: v, orden: s.categories.length });
       if (inp) inp.value = '';
       await sbPosLoadCategorias();
       showToast('Categoría POS creada ✓');
@@ -3743,7 +3746,7 @@ function deletePosCat(i) {
   (async function() {
     try {
       // Buscar el id real en Supabase
-      var rows = await SB.get('pos_categorias', { select: 'id', 'nombre': 'eq.' + cat, limit: 1 });
+      var rows = await SB.get('pos_categorias', { select: 'id', 'comercio_id': 'eq.' + _COMERCIO_ID, 'nombre': 'eq.' + cat, limit: 1 });
       if (rows && rows[0]) {
         await SB.del('pos_categorias', 'id=eq.' + rows[0].id);
       }
@@ -4761,6 +4764,7 @@ async function _persistAddonsSB() {
       const catNombre = catNombres[i];
       const catRows = await SB.get('categorias', {
         select: 'id',
+        'comercio_id': 'eq.' + _COMERCIO_ID,
         'nombre': 'eq.' + encodeURIComponent(catNombre),
         limit: 1
       });
@@ -4778,6 +4782,7 @@ async function _persistAddonsSB() {
       if (!byCat[allCats[j]]) {
         const rows2 = await SB.get('categorias', {
           select: 'id,adiciones_categoria',
+          'comercio_id': 'eq.' + _COMERCIO_ID,
           'nombre': 'eq.' + encodeURIComponent(allCats[j]),
           limit: 1
         });
