@@ -5588,7 +5588,10 @@ let   _COMERCIO_ROW = null;  // Fila completa de comercios
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-// ── Cliente fetch directo (sin CDN) ─────────────────────────────────
+// ── Cliente fetch directo — con retry automático en 401 ─────────────
+// Si una llamada devuelve 401 (token expirado a mitad de operación),
+// se llama a _refreshSession() y se reintenta la misma petición UNA vez.
+// Esto es el equivalente exacto de autoRefreshToken: true en Supabase JS v2.
 const SB = {
   _headers() {
     const token = (typeof _authSession !== 'undefined' && _authSession && _authSession.access_token)
@@ -5601,10 +5604,24 @@ const SB = {
       'Prefer':        'return=representation'
     };
   },
+  // ── Retry en 401: refrescar token y reintentar UNA vez ─────────────
+  async _withRetry(fn) {
+    const r = await fn();
+    if (r.status === 401) {
+      console.warn('[SB] 401 detectado — intentando refreshSession() automático...');
+      const ok = (typeof _refreshSession === 'function') ? await _refreshSession() : false;
+      if (ok) {
+        console.log('[SB] Token renovado — reintentando la petición...');
+        return fn();   // segunda llamada con el token nuevo
+      }
+      console.error('[SB] refreshSession falló — no se puede reintentar');
+    }
+    return r;
+  },
   async get(table, params) {
     const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
     if (params) Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
-    const r = await fetch(url, { headers: this._headers() });
+    const r = await this._withRetry(() => fetch(url, { headers: this._headers() }));
     if (!r.ok) {
       const e = await r.text();
       console.error(`[SB] GET ${table} ${r.status}:`, e);
@@ -5613,9 +5630,9 @@ const SB = {
     return r.json();
   },
   async post(table, body) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    const r = await this._withRetry(() => fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: 'POST', headers: this._headers(), body: JSON.stringify(body)
-    });
+    }));
     if (!r.ok) {
       const e = await r.text();
       console.error(`[SB] POST ${table} ${r.status}:`, e, '\nBody:', body);
@@ -5624,9 +5641,9 @@ const SB = {
     return r.json();
   },
   async patch(table, filter, body) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    const r = await this._withRetry(() => fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: 'PATCH', headers: this._headers(), body: JSON.stringify(body)
-    });
+    }));
     if (!r.ok) {
       const e = await r.text();
       console.error(`[SB] PATCH ${table} ${r.status}:`, e);
@@ -5635,9 +5652,9 @@ const SB = {
     return r.json();
   },
   async del(table, filter) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    const r = await this._withRetry(() => fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: 'DELETE', headers: this._headers()
-    });
+    }));
     if (!r.ok) {
       const e = await r.text();
       console.error(`[SB] DELETE ${table} ${r.status}:`, e);
@@ -5645,22 +5662,24 @@ const SB = {
     }
     return true;
   },
-  // Subir archivo a Storage y devolver URL pública
+  // Subir archivo a Storage — también con retry en 401
   async uploadFile(bucket, path, file) {
-    const token = (typeof _authSession !== 'undefined' && _authSession && _authSession.access_token)
-      ? _authSession.access_token
-      : SUPABASE_KEY;
-    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
-      method: 'POST',
-      headers: {
-        'apikey':        SUPABASE_KEY,
-        'Authorization': 'Bearer ' + token,
-        'Content-Type':  file.type,
-        'Cache-Control': '3600',
-        'x-upsert':      'true'
-      },
-      body: file
-    });
+    const mkReq = () => {
+      const token = (typeof _authSession !== 'undefined' && _authSession && _authSession.access_token)
+        ? _authSession.access_token : SUPABASE_KEY;
+      return fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+        method: 'POST',
+        headers: {
+          'apikey':        SUPABASE_KEY,
+          'Authorization': 'Bearer ' + token,
+          'Content-Type':  file.type,
+          'Cache-Control': '3600',
+          'x-upsert':      'true'
+        },
+        body: file
+      });
+    };
+    const r = await this._withRetry(mkReq);
     if (!r.ok) {
       const e = await r.text();
       throw new Error(`Storage upload: ${r.status}: ${e}`);
@@ -6805,11 +6824,24 @@ async function sbInit() {
 const AUTH_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
-// Clave para guardar la sesión en sessionStorage (no localStorage — se borra al cerrar tab)
-const SESSION_KEY = 'papayaso_admin_session';
+// ══════════════════════════════════════════════════════════════════════
+// PERSISTENCIA DE SESIÓN — equivalente a createClient con:
+//   auth: { persistSession: true, autoRefreshToken: true }
+//
+// ▸ localStorage (no sessionStorage) → la sesión sobrevive cierres de tab
+//   y recargas, igual que Supabase JS v2 con persistSession: true.
+// ▸ Auto-refresh con setInterval cada 15 min → autoRefreshToken: true.
+// ▸ Retry automático en 401 → si cualquier llamada recibe 401,
+//   se renueva el token con refresh_token y se reintenta UNA vez.
+// ▸ Margen de renovación: 10 min antes de expirar (token de 24h = 86400s).
+// ══════════════════════════════════════════════════════════════════════
+const SESSION_KEY   = 'papayaso_admin_session';  // clave en localStorage
+const REFRESH_MARGEN_MS = 10 * 60 * 1000;        // renovar con 10 min de margen
+const AUTO_REFRESH_MS   = 15 * 60 * 1000;        // polling de renovación cada 15 min
 
 // ── Estado de sesión ────────────────────────────────────────────────
-let _authSession = null;   // { access_token, refresh_token, expires_at, user }
+let _authSession       = null;   // { access_token, refresh_token, expires_at, user }
+let _autoRefreshTimer  = null;   // setInterval handle para el auto-refresh
 
 // ── Mostrar / ocultar capas ─────────────────────────────────────────
 function _mostrarAdmin() {
@@ -6854,6 +6886,8 @@ async function _authFetch(endpoint, body) {
   return data;
 }
 
+// ── Renovar token con refresh_token ─────────────────────────────────
+// Equivalente a supabase.auth.refreshSession()
 async function _authRefreshFetch(refreshToken) {
   const r = await fetch(AUTH_URL + '/auth/v1/token?grant_type=refresh_token', {
     method:  'POST',
@@ -6861,24 +6895,79 @@ async function _authRefreshFetch(refreshToken) {
     body: JSON.stringify({ refresh_token: refreshToken })
   });
   const data = await r.json();
-  if (!r.ok) throw new Error(data.error_description || 'Sesión expirada');
+  if (!r.ok) throw new Error(data.error_description || 'No se pudo renovar la sesión');
   return data;
 }
 
-// ── Guardar / leer / limpiar sesión en sessionStorage ──────────────
+// ── refreshSession() — renovar proactivamente el token ──────────────
+// Llamado por el auto-refresh periódico y por el retry en 401.
+async function _refreshSession() {
+  const session = _authSession || _leerSesion();
+  if (!session || !session.refresh_token) {
+    console.warn('[Auth] refreshSession: sin refresh_token disponible');
+    return false;
+  }
+  try {
+    console.log('[Auth] Renovando token de sesión...');
+    const data = await _authRefreshFetch(session.refresh_token);
+    const newSession = {
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token || session.refresh_token,
+      expires_at:    Date.now() + (data.expires_in || 86400) * 1000,
+      user:          data.user || session.user
+    };
+    _authSession = newSession;
+    _guardarSesion(newSession);
+    console.log('[Auth] ✅ Token renovado. Expira en:', Math.round((newSession.expires_at - Date.now()) / 60000), 'min');
+    return true;
+  } catch(e) {
+    console.error('[Auth] Error renovando token:', e.message);
+    return false;
+  }
+}
+
+// ── Auto-refresh periódico (autoRefreshToken: true equivalente) ──────
+// Verifica cada AUTO_REFRESH_MS si el token está cerca de expirar y lo renueva.
+// Se inicia al activar el admin y se cancela al cerrar sesión.
+function _iniciarAutoRefresh() {
+  if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  _autoRefreshTimer = setInterval(async function() {
+    if (!_authSession) return;
+    const tiempoRestante = (_authSession.expires_at || 0) - Date.now();
+    if (tiempoRestante < REFRESH_MARGEN_MS) {
+      console.log('[Auth] Auto-refresh: token expira en', Math.round(tiempoRestante / 60000), 'min — renovando...');
+      await _refreshSession();
+    } else {
+      console.log('[Auth] Auto-refresh: token OK, expira en', Math.round(tiempoRestante / 60000), 'min');
+    }
+  }, AUTO_REFRESH_MS);
+  console.log('[Auth] Auto-refresh iniciado — intervalo:', AUTO_REFRESH_MS / 60000, 'min');
+}
+
+function _detenerAutoRefresh() {
+  if (_autoRefreshTimer) {
+    clearInterval(_autoRefreshTimer);
+    _autoRefreshTimer = null;
+    console.log('[Auth] Auto-refresh detenido');
+  }
+}
+
+// ── Guardar / leer / limpiar sesión en localStorage ─────────────────
+// localStorage (no sessionStorage) para persistencia entre recargas y
+// cierres de tab — equivalente a persistSession: true en Supabase JS v2.
 function _guardarSesion(session) {
-  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e) {}
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e) {}
 }
 
 function _leerSesion() {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch(e) { return null; }
 }
 
 function _limpiarSesion() {
-  try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {}
+  try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
   _authSession = null;
 }
 
@@ -6887,6 +6976,7 @@ async function _activarAdmin(session) {
   _authSession = session;
   _guardarSesion(session);
   _mostrarAdmin();
+  _iniciarAutoRefresh();   // ← autoRefreshToken: true
 
   // Inicializar el admin solo ahora que el usuario está autenticado
   if (typeof sbInit === 'function') {
@@ -6921,11 +7011,12 @@ async function authLogin() {
     const session = {
       access_token:  data.access_token,
       refresh_token: data.refresh_token,
-      expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
+      expires_at:    Date.now() + (data.expires_in || 86400) * 1000,  // 86400s = 24h
       user:          data.user
     };
 
-    console.log('[Auth] ✅ Login exitoso:', session.user.email);
+    console.log('[Auth] ✅ Login exitoso:', session.user.email,
+      '| expira en:', Math.round((data.expires_in || 86400) / 3600), 'h');
     await _activarAdmin(session);
 
   } catch(e) {
@@ -6957,6 +7048,7 @@ async function authLogout() {
     // Continuar con la limpieza local de todas formas
   }
 
+  _detenerAutoRefresh();  // ← cancelar auto-refresh antes de salir
   _limpiarSesion();
   // Limpiar datos en memoria
   if (typeof _STORE !== 'undefined') {
@@ -6968,46 +7060,50 @@ async function authLogout() {
 }
 
 // ── PERSISTENCIA DE SESIÓN — onAuthStateChange equivalente ─────────
-// Verificar al cargar si hay sesión guardada; si expiró, intentar renovar.
+// Lee de localStorage (persistSession: true) y renueva si es necesario.
+// Con token de 86400s (24h) y auto-refresh cada 15 min, el panel
+// funciona todo el día sin interrupciones ni avisos rojos.
 (async function onLoad() {
   const session = _leerSesion();
 
   if (!session || !session.access_token) {
-    // Sin sesión → mostrar login
     _mostrarLogin();
-    console.log('[Auth] Sin sesión activa — mostrando login');
+    console.log('[Auth] Sin sesión en localStorage — mostrando login');
     return;
   }
 
-  const ahoraMs = Date.now();
-  const margenMs = 5 * 60 * 1000; // renovar si expira en menos de 5 min
+  const ahoraMs     = Date.now();
+  const tiempoRestante = (session.expires_at || 0) - ahoraMs;
 
-  if (session.expires_at && ahoraMs < session.expires_at - margenMs) {
-    // Sesión válida → entrar directamente
-    console.log('[Auth] Sesión activa encontrada —', session.user && session.user.email);
+  // ── Caso 1: token vigente con margen amplio → entrar sin renovar ──
+  if (session.expires_at && tiempoRestante > REFRESH_MARGEN_MS) {
+    console.log('[Auth] Sesión activa en localStorage —', session.user && session.user.email,
+      '| expira en:', Math.round(tiempoRestante / 60000), 'min');
     await _activarAdmin(session);
     return;
   }
 
-  // Sesión expirada — intentar renovar con refresh_token
+  // ── Caso 2: token próximo a expirar o ya expirado → renovar primero ──
   if (session.refresh_token) {
     try {
-      console.log('[Auth] Renovando sesión...');
-      const data = await _authRefreshFetch(session.refresh_token);
-      const newSession = {
-        access_token:  data.access_token,
-        refresh_token: data.refresh_token || session.refresh_token,
-        expires_at:    Date.now() + (data.expires_in || 3600) * 1000,
-        user:          data.user || session.user
-      };
-      console.log('[Auth] ✅ Sesión renovada');
-      await _activarAdmin(newSession);
+      console.log('[Auth] Token próximo a expirar o caducado — renovando antes de entrar...');
+      const ok = await _refreshSession();
+      if (ok && _authSession) {
+        console.log('[Auth] ✅ Token renovado en onLoad — activando admin');
+        await _activarAdmin(_authSession);
+      } else {
+        console.warn('[Auth] refreshSession devolvió false en onLoad');
+        _limpiarSesion();
+        _mostrarLogin();
+      }
     } catch(e) {
-      console.warn('[Auth] No se pudo renovar la sesión:', e.message);
+      console.warn('[Auth] No se pudo renovar la sesión en onLoad:', e.message);
       _limpiarSesion();
       _mostrarLogin();
     }
   } else {
+    // Sin refresh_token → no hay forma de renovar, pedir login
+    console.warn('[Auth] Sesión sin refresh_token — pidiendo login de nuevo');
     _limpiarSesion();
     _mostrarLogin();
   }
