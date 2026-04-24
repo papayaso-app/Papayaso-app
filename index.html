@@ -2338,7 +2338,9 @@ function aplicarEstadoAbierto() {
 async function sbCargarProductos() {
   if (!_COMERCIO_ID) return;
   try {
-    const prods = await SB.get('pos_productos', {
+    // TABLA CORRECTA: 'productos' es la tabla del menú del cliente.
+    // 'pos_productos' es exclusiva del POS interno — NO usar aquí.
+    const prods = await SB.get('productos', {
       select:        '*',
       'comercio_id': 'eq.' + _COMERCIO_ID,
       'disponible':  'eq.true',
@@ -2430,11 +2432,12 @@ async function sbCargarProductos() {
 async function sbCargarCategorias() {
   if (!_COMERCIO_ID) return;
   try {
-    // CORRECCIÓN: pos_categorias solo tiene id, nombre, orden y comercio_id.
-    // Las columnas extras_categoria y adiciones_categoria NO existen en esa tabla.
-    // Los extras se leen directamente de cada producto desde las columnas
-    // extras, opciones_extras y opciones_sabores en pos_productos.
-    const cats = await SB.get('pos_categorias', {
+    // TABLA CORRECTA: 'categorias' es la tabla de categorías del menú del cliente.
+    // 'pos_categorias' es exclusiva del POS interno — NO usar aquí.
+    // Solo pedimos id y nombre — la tabla no tiene extras_categoria.
+    // Los extras viven en cada producto (columnas extras, opciones_extras,
+    // opciones_sabores en la tabla productos).
+    const cats = await SB.get('categorias', {
       select:        'id,nombre',
       'comercio_id': 'eq.' + _COMERCIO_ID,
       order:         'orden.asc,nombre.asc'
