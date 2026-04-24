@@ -20,40 +20,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 
-/* ═══════════ LOGIN ═══════════ */
-#login-wrap{
-  position:fixed;inset:0;background:var(--dark);
-  display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;
-}
-#login-wrap.hidden{display:none;}
-.login-box{
-  background:var(--dark2);border-radius:20px;padding:42px 34px 38px;
-  max-width:380px;width:100%;text-align:center;
-  box-shadow:0 24px 64px rgba(0,0,0,.6);
-}
-.login-badge{
-  display:inline-flex;align-items:center;gap:8px;
-  background:rgba(255,107,0,.15);border:1px solid var(--brand-bd);
-  border-radius:100px;padding:5px 14px;margin-bottom:20px;
-}
-.login-badge span{font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.8px;}
-.login-logo{font-family:'Montserrat',sans-serif;font-size:26px;font-weight:900;color:#fff;margin-bottom:4px;letter-spacing:-1px;}
-.login-sub{font-size:12px;color:rgba(255,255,255,.35);margin-bottom:28px;}
-.login-field{
-  width:100%;padding:14px 16px;background:rgba(255,255,255,.07);
-  border:1.5px solid rgba(255,255,255,.12);border-radius:10px;
-  font-family:inherit;font-size:14px;color:#fff;margin-bottom:12px;transition:border-color .2s;
-}
-.login-field:focus{outline:none;border-color:var(--brand);}
-.login-field::placeholder{color:rgba(255,255,255,.28);}
-.login-btn{
-  width:100%;padding:15px;background:var(--brand);color:#fff;border:none;
-  border-radius:10px;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;transition:background .15s;
-}
-.login-btn:hover{background:var(--brand2);}
-.login-btn:disabled{opacity:.5;cursor:not-allowed;}
-.login-err{font-size:12px;color:#ef5350;margin-top:10px;font-weight:600;min-height:18px;}
-.login-loading{font-size:12px;color:rgba(255,255,255,.4);margin-top:8px;display:none;}
+/* Login eliminado — redirige a login.html */
 
 /* ═══════════ TOPBAR ═══════════ */
 .topbar{
@@ -74,8 +41,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .t-logout:hover{background:rgba(255,255,255,.15);color:#fff;}
 
 /* ═══════════ LAYOUT ═══════════ */
-#app{display:none;}
-#app.visible{display:block;}
+#app{display:block;}
 .page{padding:28px 20px;max-width:1100px;margin:0 auto;}
 
 /* ═══════════ STATS ═══════════ */
@@ -171,26 +137,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <!-- ══════════════════════════════════════
      PANTALLA LOGIN
 ══════════════════════════════════════ -->
-<div id="login-wrap">
-  <div class="login-box">
-    <div class="login-badge"><span>🔐 Super Admin</span></div>
-    <div class="login-logo">🍔 Papayaso</div>
-    <div class="login-sub">Panel maestro de plataforma SaaS</div>
-
-    <input class="login-field" id="sa-email" type="email" placeholder="Correo de super admin"
-      autocomplete="username"
-      onkeydown="if(event.key==='Enter')document.getElementById('sa-pass').focus()">
-    <input class="login-field" id="sa-pass" type="password" placeholder="Contraseña"
-      autocomplete="current-password"
-      onkeydown="if(event.key==='Enter')saLogin()">
-    <button class="login-btn" id="sa-btn" onclick="saLogin()">Acceder →</button>
-    <div class="login-loading" id="sa-loading">Verificando...</div>
-    <div class="login-err" id="sa-err"></div>
-  </div>
-</div>
-
 <!-- ══════════════════════════════════════
-     APP PRINCIPAL
+     APP PRINCIPAL — el guard redirige a login.html si no hay sesión
 ══════════════════════════════════════ -->
 <div id="app">
 
@@ -454,26 +402,22 @@ const SB = {
 // ══════════════════════════════════════════════════════════════════════
 // AUTENTICACIÓN SUPER ADMIN
 // ══════════════════════════════════════════════════════════════════════
-function _saSetErr(msg) {
-  const el = document.getElementById('sa-err');
-  if (el) el.textContent = msg || '';
-}
-function _saSetLoading(on) {
-  const btn  = document.getElementById('sa-btn');
-  const load = document.getElementById('sa-loading');
-  if (btn)  { btn.disabled = on; btn.textContent = on ? 'Verificando...' : 'Acceder →'; }
-  if (load) load.style.display = on ? 'block' : 'none';
-}
+// Stubs eliminados — ya no hay formulario de login en este archivo.
+function _saSetErr(msg)      { console.warn('[SA] Error auth:', msg); }
+function _saSetLoading(on)   { /* sin formulario embebido */ }
+// ── Guardia de acceso — única puerta de entrada ─────────────────────
 function _mostrarApp(session) {
-  document.getElementById('login-wrap').classList.add('hidden');
-  document.getElementById('app').style.display = 'block';
-  const eu = document.getElementById('sa-user-email');
-  if (eu && session.user) eu.textContent = session.user.email;
+  // El #app siempre es visible; solo actualizar el email en el topbar
+  var eu = document.getElementById('sa-user-email');
+  if (eu && session && session.user) eu.textContent = session.user.email;
 }
+
 function _mostrarLogin(err) {
-  document.getElementById('login-wrap').classList.remove('hidden');
-  document.getElementById('app').style.display = 'none';
-  if (err) _saSetErr(err);
+  // GUARDIA: redirigir a login.html — NO pintar formulario en esta página.
+  console.log('[SA] Redirigiendo a login.html' + (err ? ' — ' + err : ''));
+  _saDetenerAutoRefresh();
+  _saLimpiarSesion();
+  window.location.href = 'login.html';
 }
 
 // ── Email y roles autorizados para Super Admin ─────────────────────
@@ -492,54 +436,11 @@ function _esSuperAdmin(data) {
   return SUPER_ADMIN_ALLOWED_EMAILS.indexOf(email) >= 0 || role === 'super_admin';
 }
 
-async function saLogin() {
-  const email = (document.getElementById('sa-email') || {}).value || '';
-  const pass  = (document.getElementById('sa-pass')  || {}).value || '';
-  _saSetErr('');
-  if (!email || !pass) { _saSetErr('Ingresa correo y contraseña'); return; }
-  _saSetLoading(true);
-  try {
-    const data = await SB.authPost('token?grant_type=password', { email, password: pass });
-    if (!data.access_token) throw new Error('Respuesta inesperada');
-
-    // ── BLOQUEO DE SEGURIDAD ─────────────────────────────────────────────
-    // Si el usuario autenticado NO es super_admin: cerrar sesión y denegar.
-    if (!_esSuperAdmin(data)) {
-      console.warn('[SA] Acceso denegado — el usuario no tiene rol super_admin:', data.user && data.user.email);
-      // Revocar el token inmediatamente
-      try {
-        await fetch(SUPABASE_URL + '/auth/v1/logout', {
-          method: 'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'apikey':        SUPABASE_KEY,
-            'Authorization': 'Bearer ' + data.access_token
-          }
-        });
-      } catch(e2) {}
-      _saSetLoading(false);
-      _saSetErr('⛔ Acceso denegado — esta cuenta no tiene permisos de Super Admin.');
-      return;
-    }
-    // ── FIN BLOQUEO ──────────────────────────────────────────────────────
-
-    _saSession = {
-      access_token:  data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at:    Date.now() + (data.expires_in || 86400) * 1000,  // 86400s = 24h
-      user:          data.user
-    };
-    _saGuardarSesion(_saSession);   // localStorage — persistSession: true
-    _saIniciarAutoRefresh();         // autoRefreshToken: true
-    console.log('[SA] Login exitoso:', _saSession.user.email,
-      '| expira en:', Math.round((data.expires_in||86400)/3600), 'h');
-    _mostrarApp(_saSession);
-    await cargarComercios();
-  } catch(e) {
-    console.error('[SA] Error login:', e.message);
-    _saSetErr('Acceso denegado — ' + (e.message.includes('Invalid') ? 'correo o contraseña incorrectos' : e.message));
-    _saSetLoading(false);
-  }
+// ── saLogin eliminada — el login lo gestiona login.html ──────────
+// Si por algún código heredado se llama saLogin(), redirigir al login.
+function saLogin() {
+  console.warn('[SA] saLogin() llamado en superadmin.html — redirigiendo a login.html');
+  window.location.href = 'login.html';
 }
 
 async function saLogout() {
@@ -558,29 +459,33 @@ async function saLogout() {
   window.location.href = 'login.html';
 }
 
-// Restaurar sesión al cargar — persistSession: true equivalente
+// ── GUARDIA DE SESIÓN — única puerta de entrada ─────────────────────
+// Lee la sesión de localStorage. Cualquier condición sin sesión válida
+// redirige SIEMPRE a login.html. No hay formulario embebido aquí.
 (async function saOnLoad() {
-  const s = _saLeerSesion();   // lee de localStorage
+  const s = _saLeerSesion();
 
+  // Sin sesión → redirigir al login
   if (!s || !s.access_token) {
-    _mostrarLogin();
-    console.log('[SA] Sin sesión en localStorage — mostrando login');
+    console.log('[SA] Sin sesión en localStorage — redirigiendo a login.html');
+    _saLimpiarSesion();
+    window.location.href = 'login.html';
     return;
   }
 
   // ── Bloqueo de seguridad: solo super_admin ──────────────────────
   if (!_esSuperAdmin({ user: s.user })) {
-    console.warn('[SA] Sesión guardada no es super_admin — bloqueando acceso');
+    console.warn('[SA] Sesión no es super_admin — redirigiendo a login.html');
     _saLimpiarSesion();
-    _mostrarLogin('⛔ Sin permisos de Super Admin');
+    window.location.href = 'login.html';
     return;
   }
 
   const restante = (s.expires_at || 0) - Date.now();
 
-  // ── Token vigente con margen amplio ──────────────────────────────
+  // ── Token vigente con margen amplio → entrar directamente ─────────
   if (restante > SA_REFRESH_MARGEN) {
-    console.log('[SA] Sesión activa en localStorage —', s.user && s.user.email,
+    console.log('[SA] Sesión activa —', s.user && s.user.email,
       '| expira en:', Math.round(restante / 60000), 'min');
     _saSession = s;
     _saIniciarAutoRefresh();
@@ -589,15 +494,16 @@ async function saLogout() {
     return;
   }
 
-  // ── Token próximo a expirar o caducado → renovar primero ─────────
+  // ── Token próximo a expirar o caducado → renovar primero ──────────
   if (s.refresh_token) {
     console.log('[SA] Token próximo a expirar — renovando en onLoad...');
-    _saSession = s;  // necesario para que _saRefreshSession() encuentre el refresh_token
+    _saSession = s;
     const ok = await _saRefreshSession();
     if (ok && _saSession) {
       if (!_esSuperAdmin({ user: _saSession.user })) {
+        console.warn('[SA] Sesión renovada no es super_admin — redirigiendo a login.html');
         _saLimpiarSesion();
-        _mostrarLogin('⛔ Sin permisos de Super Admin');
+        window.location.href = 'login.html';
         return;
       }
       console.log('[SA] ✅ Token renovado en onLoad');
@@ -605,13 +511,16 @@ async function saLogout() {
       _mostrarApp(_saSession);
       cargarComercios();
     } else {
-      console.warn('[SA] No se pudo renovar — pidiendo login de nuevo');
+      // refreshSession falló → redirigir al login
+      console.warn('[SA] No se pudo renovar — redirigiendo a login.html');
       _saLimpiarSesion();
-      _mostrarLogin();
+      window.location.href = 'login.html';
     }
   } else {
+    // Sin refresh_token → redirigir al login
+    console.warn('[SA] Sin refresh_token — redirigiendo a login.html');
     _saLimpiarSesion();
-    _mostrarLogin();
+    window.location.href = 'login.html';
   }
 })();
 
