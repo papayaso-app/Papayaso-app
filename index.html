@@ -2424,7 +2424,10 @@ async function sbCargarProductos() {
 
     // Categorías únicas en orden de aparición
     _STORE.categories = [...new Set(prods.map(p => p.categoria).filter(Boolean))];
-    console.log('[SB] Productos cargados:', prods.length, '— Categorías:', _STORE.categories);
+    console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
+      '| productos cargados:', prods.length,
+      '| Lee columnas: extras + opciones_sabores (adiciones) + opciones_extras (extras globales)');
+    console.log('[SB] Categorías detectadas en productos:', _STORE.categories);
   } catch(e) {
     console.error('[SB] Error cargando productos:', e.message);
   }
