@@ -3103,6 +3103,7 @@ function posCheckout(payMethod) {
         return { nombre: it.name, cantidad: it.qty, precio_unitario: it.price, total: it.total };
       });
       await SB.post('pedidos', {
+        comercio_id:     _COMERCIO_ID,   // ← AISLAMIENTO MULTI-TENANT (obligatorio, NOT NULL)
         cliente:         'Venta en caja',
         telefono:        '',
         direccion:       '',
@@ -5104,6 +5105,7 @@ function moConfirm() {
         return { nombre: it.name, cantidad: it.qty, precio_unitario: it.unit, total: it.total };
       });
       var body = {
+        comercio_id:     _COMERCIO_ID,   // ← AISLAMIENTO MULTI-TENANT (obligatorio, NOT NULL)
         cliente:         order.client,
         telefono:        order.phone,
         direccion:       order.address,
