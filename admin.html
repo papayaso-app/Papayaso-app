@@ -1117,10 +1117,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <input id="cfg-menu-url" type="text" placeholder="https://tudominio.com/menu.html">
       </div>
       <div class="share-row">
-        <span class="share-url" id="share-url-txt">menu.html</span>
-        <!-- BUG FIX #2: copyLink now receives the actual URL value, not the element ID -->
-        <button class="btn btn-g btn-sm" onclick="copyLink(document.getElementById('cfg-menu-url').value || 'menu.html')">📋 Copiar</button>
-        <button class="btn btn-sm" style="background:var(--fire-bg);border:1.5px solid var(--fire-bd);color:var(--fire);" onclick="window.open(document.getElementById('cfg-menu-url').value||'menu.html','_blank')">↗ Abrir</button>
+        <span class="share-url" id="share-url-txt"></span>
+        <button class="btn btn-g btn-sm" onclick="copyLink(_getUrlMenu())">📋 Copiar</button>
+        <button class="btn btn-sm" style="background:var(--fire-bg);border:1.5px solid var(--fire-bd);color:var(--fire);" onclick="window.open(_getUrlMenu(),'_blank')">↗ Abrir</button>
         <button class="btn btn-sm" style="background:#25D366;color:#fff;border:none" onclick="shareMenuWA()">📲 WA</button>
       </div>
     </div>
@@ -1138,11 +1137,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         </div>
       </div>
       <div class="share-row">
-        <span class="share-url" id="rider-url-txt">repartidor.html</span>
-        <!-- BUG FIX #2: copyLink now receives the actual URL value -->
-        <button class="btn btn-g btn-sm" onclick="copyLink(document.getElementById('cfg-rider-url').value || 'repartidor.html')">📋 Copiar link</button>
-        <button class="btn btn-sm" style="background:var(--fire-bg);border:1.5px solid var(--fire-bd);color:var(--fire);" onclick="window.open(document.getElementById('cfg-rider-url').value||'repartidor.html','_blank')">↗ Abrir</button>
-        <!-- BUG FIX #3: was shareWA('rider'), now correctly calls shareRiderWA() -->
+        <span class="share-url" id="rider-url-txt"></span>
+        <button class="btn btn-g btn-sm" onclick="copyLink(_getUrlRider())">📋 Copiar link</button>
+        <button class="btn btn-sm" style="background:var(--fire-bg);border:1.5px solid var(--fire-bd);color:var(--fire);" onclick="window.open(_getUrlRider(),'_blank')">↗ Abrir</button>
         <button class="btn btn-sm" style="background:#25D366;color:#fff;border:none" onclick="shareRiderWA()">📲 Enviar al repartidor</button>
       </div>
     </div>
@@ -1473,6 +1470,9 @@ function goConfig() {
   if (curMode === 'pos') switchMode('domicilios');
   else if (curMode === 'manual') { curMode = 'domicilios'; _hideManualView(); var mb = document.getElementById('mode-dom'); if(mb) mb.classList.add('active'); var mm = document.getElementById('mode-manual'); if(mm) mm.classList.remove('active'); }
   showGroup('info');
+  // Actualizar las URLs completas al abrir el panel de configuración
+  // para que reflejen siempre el slug actual del comercio.
+  _actualizarDisplayUrls();
 }
 
 function goCuenta() {
@@ -2773,12 +2773,13 @@ function loadConfig() {
   var sv = function(id, v) { var el = document.getElementById(id); if (el) el.value = v || ''; };
   sv('cfg-name', c.name); sv('cfg-wa', c.whatsapp); sv('cfg-address', c.address);
   sv('cfg-desc', c.desc); sv('cfg-welcome', c.welcome);
-  sv('cfg-menu-url', c.menuUrl || 'menu.html');
   sv('cfg-nit', c.nit || ''); sv('cfg-phone', c.phone || '');
   sv('cfg-delivery-min', c.deliveryMin || '30'); sv('cfg-delivery-max', c.deliveryMax || '60');
-  sv('cfg-rider-pin', c.riderPin || '1234'); sv('cfg-rider-url', c.riderUrl || 'repartidor.html');
-  var su = document.getElementById('share-url-txt'); if (su) su.textContent = c.menuUrl || 'menu.html';
-  var ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = c.riderUrl || 'repartidor.html';
+  sv('cfg-rider-pin', c.riderPin || '1234');
+  // ── URLs completas con slug del comercio detectado en la URL ──────
+  // Se construyen con _buildUrls(_SLUG) para incluir siempre el ?rest=
+  // Los campos de input muestran la URL completa; los spans de display también.
+  _actualizarDisplayUrls();
   // Cargar logo y portada: solo actualizar la previsualización si hay URL.
   // Si la columna está vacía, no tocar el área (evita borrar imágenes existentes).
   if (c.logo)  _updateLogoUI(c.logo);
@@ -2861,13 +2862,18 @@ function saveConfig() {
     s.config.address = gv('cfg-address');
     s.config.desc    = gv('cfg-desc');
     s.config.welcome = gv('cfg-welcome');
-    s.config.menuUrl = gv('cfg-menu-url') || 'menu.html';
-    s.config.nit     = gv('cfg-nit');
+    // Las URLs completas se construyen desde _buildUrls() — no desde el input,
+    // ya que el input puede haber sido editado manualmente por el admin.
+    // Guardamos lo que haya en el input (respetando edición manual) pero
+    // si está vacío usamos la URL completa construida automáticamente.
+    var builtUrls = _buildUrls(_SLUG);
+    s.config.menuUrl  = gv('cfg-menu-url')  || builtUrls.menu;
+    s.config.nit      = gv('cfg-nit');
     s.config.deliveryMin = gv('cfg-delivery-min') || '30';
     s.config.deliveryMax = gv('cfg-delivery-max') || '60';
-    s.config.phone   = gv('cfg-phone');
+    s.config.phone    = gv('cfg-phone');
     s.config.riderPin = gv('cfg-rider-pin') || '1234';
-    s.config.riderUrl = gv('cfg-rider-url') || 'repartidor.html';
+    s.config.riderUrl = gv('cfg-rider-url') || builtUrls.rider;
     // Guardar horario por día
     var days = ['lun','mar','mie','jue','vie','sab','dom'];
     var sched = {};
@@ -2888,8 +2894,8 @@ function saveConfig() {
   var cfg = getStore().config;
   var tn = document.getElementById('t-name'); if (tn) tn.textContent = cfg.name;
   document.title = 'Admin - ' + cfg.name;
-  var su = document.getElementById('share-url-txt'); if (su) su.textContent = cfg.menuUrl || 'menu.html';
-  var ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = cfg.riderUrl || 'repartidor.html';
+  // Actualizar displays de URL con las URLs completas (pueden haber cambiado con el nombre)
+  _actualizarDisplayUrls();
   showToast('Información guardada correctamente ✓');
 }
 
@@ -2981,18 +2987,39 @@ function copyLink(url) {
   }
 }
 
+// ── Helpers de URL — siempre devuelven la URL completa vigente ───────
+// Leen primero el input (por si el admin lo editó manualmente) y
+// si está vacío o solo tiene el nombre de archivo, usan _buildUrls().
+function _getUrlMenu() {
+  var inputEl = document.getElementById('cfg-menu-url');
+  var val = inputEl ? inputEl.value.trim() : '';
+  // Si el valor ya es una URL completa, usarla; si no, construir
+  if (val && val.startsWith('http')) return val;
+  return _buildUrls(_SLUG).menu;
+}
+
+function _getUrlRider() {
+  var inputEl = document.getElementById('cfg-rider-url');
+  var val = inputEl ? inputEl.value.trim() : '';
+  if (val && val.startsWith('http')) return val;
+  return _buildUrls(_SLUG).rider;
+}
+
 function shareMenuWA() {
-  var s = getStore();
-  var msg = s.config.name + ' - Haz tu pedido: ' + (s.config.menuUrl || 'menu.html');
+  var s   = getStore();
+  var url = _getUrlMenu();
+  var msg = '🍔 *' + (s.config.name || 'Papayaso') + '*\n\n'
+          + '¡Haz tu pedido en línea! 👇\n' + url;
   window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
 }
 
-// BUG FIX #3: shareRiderWA is now properly called from the button
 function shareRiderWA() {
-  var s = getStore();
-  var u = s.config.riderUrl || 'repartidor.html';
+  var s   = getStore();
+  var url = _getUrlRider();
   var pin = s.config.riderPin || '1234';
-  var msg = 'Panel Repartidor - ' + s.config.name + '\n\nLink: ' + u + '\nPIN: ' + pin;
+  var msg = '🛵 *Panel Repartidor — ' + (s.config.name || 'Papayaso') + '*\n\n'
+          + 'Link: ' + url + '\n'
+          + 'PIN de acceso: *' + pin + '*';
   window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
 }
 
@@ -5525,6 +5552,38 @@ const _SLUG         = (_urlParams.get('rest') || '').trim().toLowerCase();
 let   _COMERCIO_ID  = null;  // UUID del comercio activo
 let   _COMERCIO_ROW = null;  // Fila completa de comercios
 
+// ── URLs completas de la plataforma ─────────────────────────────────
+// BASE_URL es la raíz del proyecto en producción.
+// _buildUrls(slug) genera las URLs completas para menú y repartidor
+// usando siempre el slug actual del comercio detectado en la URL.
+const BASE_URL = 'https://papayaso-app.vercel.app';
+
+function _buildUrls(slug) {
+  var s = (slug || _SLUG || '').trim();
+  return {
+    // URL limpia sin nombre de archivo — más estética para redes sociales
+    menu:  BASE_URL + '/?rest=' + encodeURIComponent(s),
+    // Repartidor mantiene el archivo porque no es la página principal
+    rider: BASE_URL + '/repartidor.html?rest=' + encodeURIComponent(s)
+  };
+}
+
+// Actualizar los displays de URL en el panel de configuración.
+// Llamado en loadConfig(), saveConfig() y cuando el admin abre la sección.
+function _actualizarDisplayUrls() {
+  var urls  = _buildUrls(_SLUG);
+  // ── Actualizar el campo de input (editable) si está vacío o tiene el valor antiguo
+  var menuInput  = document.getElementById('cfg-menu-url');
+  var riderInput = document.getElementById('cfg-rider-url');
+  if (menuInput)  menuInput.value  = urls.menu;
+  if (riderInput) riderInput.value = urls.rider;
+  // ── Actualizar el span de display (solo lectura)
+  var menuDisplay  = document.getElementById('share-url-txt');
+  var riderDisplay = document.getElementById('rider-url-txt');
+  if (menuDisplay)  menuDisplay.textContent = urls.menu;
+  if (riderDisplay) riderDisplay.textContent = urls.rider;
+}
+
 const SUPABASE_URL = 'https://mmnyxlsyizylivvikfuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbnl4bHN5aXp5bGl2dmlrZnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODg5MzQsImV4cCI6MjA5MTY2NDkzNH0.Ou5pNg5wf0TYqsfG2cxzMgb3lsQzYPA2za6UdzrtpnU';
 
@@ -5780,8 +5839,8 @@ async function sbSaveConfig() {
     const tn = document.getElementById('t-name');
     if (tn) tn.textContent = body.nombre;
     document.title = 'Admin - ' + body.nombre;
-    const su = document.getElementById('share-url-txt'); if (su) su.textContent = body.url_menu;
-    const ru = document.getElementById('rider-url-txt'); if (ru) ru.textContent = body.url_repartidor;
+    // Actualizar displays con URLs completas (incluye ?rest=slug)
+    _actualizarDisplayUrls();
     showToast('Configuración guardada ✓');
     console.log('[SB] Config guardada en comercios, id:', _COMERCIO_ID);
   } catch(e) {
