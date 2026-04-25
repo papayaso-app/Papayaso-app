@@ -311,7 +311,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pos-pay-btn{flex:1;padding:14px 6px;border-radius:var(--rs);border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;}
 .pos-pay-efectivo{background:var(--green);color:#fff;}
 .pos-pay-nequi{background:#6f42c1;color:#fff;}
+.pos-pay-daviplata{background:#e30613;color:#fff;}
 .pos-pay-tarjeta{background:var(--info);color:#fff;}
+/* Badge Daviplata en tarjetas de pedido y en tabla de historial */
+.opay-daviplata{background:#fde8ea;color:#b30010;border-color:#f5a5ac;}
 
 /* Receipt modal */
 .pos-receipt{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:none;align-items:center;justify-content:center;padding:20px;}
@@ -1339,6 +1342,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
             <select id="mo-payment" class="fsel" style="width:100%">
               <option value="Efectivo">💵 Efectivo</option>
               <option value="Nequi">📱 Nequi</option>
+              <option value="Daviplata">🔴 Daviplata</option>
               <option value="Tarjeta">💳 Tarjeta</option>
             </select>
           </div>
@@ -1833,7 +1837,7 @@ function renderOrders() {
       // Fila 2: estado, pago, cambio, precio, hora
       + '<div class="orow-mid">'
       + '<span class="badge ' + (BC[o.status] || '') + '">' + (SL[o.status] || o.status) + '</span>'
-      + (o.payment ? '<span class="opay-badge">' + o.payment + '</span>' : '')
+      + (o.payment ? '<span class="opay-badge' + (o.payment==='Daviplata'?' opay-daviplata':'') + '">' + (o.payment==='Daviplata'?'🔴 ':'') + o.payment + '</span>' : '')
       + cambioHtml
       + '<span class="oprice">' + fp(o.total) + '</span>'
       + '<span style="font-size:10px;color:var(--muted);margin-left:4px;flex-shrink:0">' + horaStr + '</span>'
@@ -1985,9 +1989,9 @@ function addDemo() {
 
 // ---- DESGLOSE POR MÉTODO DE PAGO ----
 function buildPaymentBreakdown(sales) {
-  var methods = ['Efectivo','Nequi','Tarjeta'];
-  var icons   = {Efectivo:'💵',Nequi:'📱',Tarjeta:'💳'};
-  var colors  = {Efectivo:'var(--ok)',Nequi:'#6f42c1',Tarjeta:'var(--info)'};
+  var methods = ['Efectivo','Nequi','Daviplata','Tarjeta'];
+  var icons   = {Efectivo:'💵',Nequi:'📱',Daviplata:'🔴',Tarjeta:'💳'};
+  var colors  = {Efectivo:'var(--ok)',Nequi:'#6f42c1',Daviplata:'#e30613',Tarjeta:'var(--info)'};
   var totals = {}; var counts = {};
   for (var m=0;m<methods.length;m++){totals[methods[m]]=0;counts[methods[m]]=0;}
   for (var i=0;i<sales.length;i++){
@@ -3695,8 +3699,8 @@ function printGlobalDaySummary() {
   var allSales = getAllSalesData().filter(function(v){ return localDateStr(v.time) === today; });
   if (!allSales.length) { showToast('Sin ventas hoy para imprimir'); return; }
 
-  var methods = ['Efectivo','Nequi','Tarjeta'];
-  var icons   = {Efectivo:'💵 Efectivo', Nequi:'📱 Nequi', Tarjeta:'💳 Tarjeta'};
+  var methods = ['Efectivo','Nequi','Daviplata','Tarjeta'];
+  var icons   = {Efectivo:'💵 Efectivo', Nequi:'📱 Nequi', Daviplata:'🔴 Daviplata', Tarjeta:'💳 Tarjeta'};
   var byMethod = {}; var countByMethod = {};
   for (var mi=0;mi<methods.length;mi++){ byMethod[methods[mi]]=0; countByMethod[methods[mi]]=0; }
   var grand=0; var otroTotal=0; var otroCount=0;
@@ -4347,9 +4351,9 @@ function renderEstMensual(all, year) {
 function renderEstPago(all, year) {
   var monthSel=document.getElementById('est-month');
   if(monthSel) monthSel.style.display='none';
-  var methods=['Efectivo','Nequi','Tarjeta'];
-  var colors={Efectivo:'rgba(45,138,62,0.75)',Nequi:'rgba(111,66,193,0.75)',Tarjeta:'rgba(21,101,192,0.75)'};
-  var colorsLight={Efectivo:'rgba(45,138,62,0.15)',Nequi:'rgba(111,66,193,0.15)',Tarjeta:'rgba(21,101,192,0.15)'};
+  var methods=['Efectivo','Nequi','Daviplata','Tarjeta'];
+  var colors={Efectivo:'rgba(45,138,62,0.75)',Nequi:'rgba(111,66,193,0.75)',Daviplata:'rgba(227,6,19,0.75)',Tarjeta:'rgba(21,101,192,0.75)'};
+  var colorsLight={Efectivo:'rgba(45,138,62,0.15)',Nequi:'rgba(111,66,193,0.15)',Daviplata:'rgba(227,6,19,0.15)',Tarjeta:'rgba(21,101,192,0.15)'};
   var mNames=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   var mNamesFull=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -4386,7 +4390,7 @@ function renderEstPago(all, year) {
       for(var di=0;di<datasets[mi2].data.length;di++) methodTotals[methods[mi2]]+=datasets[mi2].data[di];
       if(methodTotals[methods[mi2]]>grandMax) grandMax=methodTotals[methods[mi2]];
     }
-    var icons2={Efectivo:'💵',Nequi:'📱',Tarjeta:'💳'};
+    var icons2={Efectivo:'💵',Nequi:'📱',Daviplata:'🔴',Tarjeta:'💳'};
     for(var mi3=0;mi3<methods.length;mi3++){
       var key=methods[mi3]; var pct=grandMax>0?Math.round(methodTotals[key]/grandMax*100):0;
       bHtml+='<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'
@@ -4413,7 +4417,7 @@ function renderEstPago(all, year) {
   // Tabla
   var thead=document.getElementById('est-table-head');
   var tbody=document.getElementById('est-table-body');
-  if(thead) thead.innerHTML='<th>Mes</th><th>💵 Efectivo</th><th>📱 Nequi</th><th>💳 Tarjeta</th><th style="color:var(--green)">Total</th>';
+  if(thead) thead.innerHTML='<th>Mes</th><th>💵 Efectivo</th><th>📱 Nequi</th><th style="color:#e30613">🔴 Daviplata</th><th>💳 Tarjeta</th><th style="color:var(--green)">Total</th>';
   if(tbody){
     var tRows=''; var hasData=false;
     for(var ti=0;ti<12;ti++){
@@ -4423,11 +4427,12 @@ function renderEstPago(all, year) {
         tRows+='<tr><td style="font-weight:600">'+row.mes+'</td>'
           +'<td style="color:var(--ok)">'+fp(row.totals['Efectivo']||0)+'</td>'
           +'<td style="color:#6f42c1">'+fp(row.totals['Nequi']||0)+'</td>'
+          +'<td style="color:#e30613">'+fp(row.totals['Daviplata']||0)+'</td>'
           +'<td style="color:var(--info)">'+fp(row.totals['Tarjeta']||0)+'</td>'
           +'<td style="color:var(--green);font-weight:700">'+fp(rowTotal)+'</td></tr>';
       }
     }
-    tbody.innerHTML=hasData?tRows:'<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">Sin datos en '+year+'</td></tr>';
+    tbody.innerHTML=hasData?tRows:'<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">Sin datos en '+year+'</td></tr>';
   }
 }
 
