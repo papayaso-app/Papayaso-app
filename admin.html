@@ -1527,33 +1527,118 @@ async function cuentaCambiarPassword() {
   var pass1 = (document.getElementById('cuenta-new-pass')  || {}).value || '';
   var pass2 = (document.getElementById('cuenta-new-pass2') || {}).value || '';
   var msgEl = document.getElementById('cuenta-msg-pass');
+  var btnEl = document.getElementById('btn-mi-cuenta-pass');
+
   function _setMsg(txt, ok) {
     if (!msgEl) return;
     msgEl.style.display = txt ? 'block' : 'none';
     msgEl.style.color   = ok ? 'var(--ok)' : 'var(--danger)';
     msgEl.textContent   = txt;
   }
+
+  // Helper: detectar si el error es de sesión/JWT inválida
+  function _esErrorDeSesion(msg) {
+    var m = (msg || '').toLowerCase();
+    return m.indexOf('session_id') >= 0
+        || m.indexOf('session from session') >= 0
+        || m.indexOf('jwt') >= 0
+        || m.indexOf('invalid token') >= 0
+        || m.indexOf('token expired') >= 0
+        || m.indexOf('not exist') >= 0
+        || m.indexOf('no existe') >= 0;
+  }
+
+  // Helper: cerrar sesión y redirigir al login tras un error de sesión antigua
+  async function _cerrarSesionYRedirigir() {
+    _setMsg(
+      '⚠️ Tu sesión es antigua. Por seguridad, es necesario volver a iniciar sesión para autorizar el cambio de contraseña. Serás redirigido en 4 segundos…',
+      false
+    );
+    console.warn('[Cuenta] Sesión inválida para cambio de contraseña — cerrando sesión...');
+    // Cerrar sesión en Supabase
+    try {
+      await fetch(AUTH_URL + '/auth/v1/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY,
+                   'Authorization': 'Bearer ' + (_authSession && _authSession.access_token || '') }
+      });
+    } catch(e2) {}
+    // Limpiar storage local y redirigir al login
+    _detenerAutoRefresh();
+    _limpiarSesion();
+    try { localStorage.clear(); }   catch(e3) {}
+    try { sessionStorage.setItem('papayaso_logout_flag', '1'); } catch(e4) {}
+    // Dar tiempo al usuario de leer el mensaje antes de redirigir
+    setTimeout(function() {
+      window.location.replace('login.html');
+    }, 4000);
+  }
+
   _setMsg('');
   if (!pass1 || pass1.length < 8) { _setMsg('La contraseña debe tener al menos 8 caracteres.', false); return; }
   if (pass1 !== pass2)            { _setMsg('Las contraseñas no coinciden.', false); return; }
-  if (!_authSession || !_authSession.access_token) { _setMsg('Sin sesión activa.', false); return; }
+  if (!_authSession || !_authSession.access_token) { _setMsg('Sin sesión activa. Recarga la página.', false); return; }
+
+  // Deshabilitar el botón mientras procesa
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Actualizando…'; }
+
   try {
+    // ── PASO 1: Verificación proactiva — refrescar la sesión antes de intentar updateUser ──
+    // Esto resuelve el error 'session_id claim in JWT does not exist' que ocurre
+    // cuando la sesión en Supabase ha sido invalidada aunque el token local siga guardado.
+    console.log('[Cuenta] Refrescando sesión antes de cambiar contraseña...');
+    var refreshed = await _refreshSession();
+    if (!refreshed || !_authSession || !_authSession.access_token) {
+      // El refresh falló — la sesión es demasiado antigua para renovarla
+      await _cerrarSesionYRedirigir();
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Actualizar contraseña'; }
+      return;
+    }
+    console.log('[Cuenta] Sesión refrescada correctamente — procediendo a cambiar contraseña...');
+
+    // ── PASO 2: Cambiar la contraseña con el token renovado ──────────────────────────────
     var r = await fetch(AUTH_URL + '/auth/v1/user', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'apikey': AUTH_KEY, 'Authorization': 'Bearer ' + _authSession.access_token },
+      headers: {
+        'Content-Type':  'application/json',
+        'apikey':        AUTH_KEY,
+        'Authorization': 'Bearer ' + _authSession.access_token
+      },
       body: JSON.stringify({ password: pass1 })
     });
     var data = await r.json();
-    if (!r.ok) throw new Error(data.error_description || data.msg || data.error || 'Error');
-    _setMsg('✅ Contraseña actualizada correctamente.', true);
+
+    if (!r.ok) {
+      var errMsg = data.error_description || data.msg || data.error || 'Error al actualizar';
+
+      // ── PASO 3 y 4: Si el error es de JWT/sesión → mensaje amigable + re-logueo ────────
+      if (_esErrorDeSesion(errMsg) || r.status === 401 || r.status === 403) {
+        await _cerrarSesionYRedirigir();
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Actualizar contraseña'; }
+        return;
+      }
+
+      throw new Error(errMsg);
+    }
+
+    // ── PASO 5: Éxito — mensaje amigable y limpiar campos ────────────────────────────────
+    _setMsg('✅ ¡Contraseña actualizada correctamente!', true);
     console.log('[Cuenta] Contraseña actualizada para:', _authSession.user && _authSession.user.email);
     var p1 = document.getElementById('cuenta-new-pass');
     var p2 = document.getElementById('cuenta-new-pass2');
     if (p1) p1.value = '';
     if (p2) p2.value = '';
+
   } catch(e) {
     console.error('[Cuenta] Error cambiando contraseña:', e.message);
-    _setMsg('Error: ' + e.message, false);
+    // ── Captura extra: si el catch recibe un error de sesión también redirigir ───────────
+    if (_esErrorDeSesion(e.message)) {
+      await _cerrarSesionYRedirigir();
+    } else {
+      _setMsg('Error: ' + e.message, false);
+    }
+  } finally {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Actualizar contraseña'; }
   }
 }
 
