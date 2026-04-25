@@ -5179,20 +5179,17 @@ function resetManualOrder() {
 function moSearchProds(q) {
   var res = document.getElementById('mo-prod-results');
   if (!res) return;
-  if (!q || q.trim().length < 2) { res.classList.remove('show'); return; }
+  // Buscar desde 1 carácter (antes requería 2)
+  if (!q || q.trim().length < 1) { res.classList.remove('show'); return; }
   q = q.toLowerCase();
 
-  // Combinar productos del menú y del POS
+  // Solo productos de domicilio (getStore) — NO incluir POS (getPosStore)
+  // para evitar confusión con productos de nombre igual en ambas secciones.
   var allProds = [];
   var s = getStore();
   for (var i=0;i<s.products.length;i++) {
     if (s.products[i].available !== false)
-      allProds.push({id:'dom_'+s.products[i].id, name:s.products[i].name, price:s.products[i].price, src:'menu'});
-  }
-  var ps = getPosStore();
-  for (var j=0;j<ps.products.length;j++) {
-    if (ps.products[j].available !== false)
-      allProds.push({id:'pos_'+ps.products[j].id, name:ps.products[j].name, price:ps.products[j].price, src:'pos'});
+      allProds.push({id:'dom_'+s.products[i].id, name:s.products[i].name, price:s.products[i].price});
   }
 
   var filtered = allProds.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; });
@@ -5211,8 +5208,7 @@ function moSearchProds(q) {
       + ' data-name="' + p.name.replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '"'
       + ' data-price="' + p.price + '"'
       + ' onclick="moAddProdFromEl(this)">'
-      + '<div><b>' + p.name + '</b>'
-      + '<span style="font-size:10px;color:var(--muted);margin-left:6px">' + (p.src==='pos'?'🏪 POS':'🛵 Menú') + '</span></div>'
+      + '<div><b>' + p.name + '</b></div>'
       + '<span class="mprod-result-price">' + fp(p.price) + '</span>'
       + '</div>';
   }
