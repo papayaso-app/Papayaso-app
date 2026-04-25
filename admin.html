@@ -5771,6 +5771,26 @@ const SB = {
       throw new Error(`Storage upload: ${r.status}: ${e}`);
     }
     return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
+  },
+  // Borrar un archivo del Storage dado su path relativo dentro del bucket.
+  // Se usa para la limpieza automática de imágenes viejas al cambiar foto.
+  async deleteFile(bucket, path) {
+    const token = (typeof _authSession !== 'undefined' && _authSession && _authSession.access_token)
+      ? _authSession.access_token : SUPABASE_KEY;
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey':        SUPABASE_KEY,
+        'Authorization': 'Bearer ' + token
+      }
+    });
+    if (!r.ok) {
+      const e = await r.text();
+      console.warn(`[SB] deleteFile ${bucket}/${path} — ${r.status}: ${e}`);
+      return false;
+    }
+    console.log('[SB] Imagen vieja eliminada del bucket:', bucket + '/' + path);
+    return true;
   }
 };
 
@@ -5958,16 +5978,103 @@ async function sbToggleOpen() {
 // ══════════════════════════════════════════════════════════════════════
 // IMÁGENES — Storage + actualiza comercios con logo_url / cover_url
 // ══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// UTILIDADES DE IMAGEN — Compresión y limpieza automática
+// ══════════════════════════════════════════════════════════════════════
+
+// _comprimirImagen: reduce la imagen a maxW px de ancho y la convierte
+// a WebP (si el navegador lo soporta) o JPEG al 80% de calidad.
+// Usa Canvas nativo — sin dependencias externas.
+// Devuelve un Blob listo para subir a Supabase Storage.
+function _comprimirImagen(file, maxW = 800, calidad = 0.80) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onerror = function() { reject(new Error('No se pudo leer el archivo')); };
+    reader.onload = function(ev) {
+      var img = new Image();
+      img.onerror = function() { reject(new Error('No se pudo decodificar la imagen')); };
+      img.onload = function() {
+        // Calcular nuevas dimensiones manteniendo el aspect ratio
+        var w = img.width;
+        var h = img.height;
+        if (w > maxW) {
+          h = Math.round(h * maxW / w);
+          w = maxW;
+        }
+
+        var canvas = document.createElement('canvas');
+        canvas.width  = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+
+        // Intentar WebP primero (mejor compresión), fallback a JPEG
+        var webpData = canvas.toDataURL('image/webp', calidad);
+        var useWebP  = webpData.indexOf('data:image/webp') === 0;
+        var mimeType = useWebP ? 'image/webp' : 'image/jpeg';
+        var imgData  = useWebP ? webpData : canvas.toDataURL('image/jpeg', calidad);
+
+        // Convertir data URL → Blob
+        var byteStr  = atob(imgData.split(',')[1]);
+        var arrBuf   = new ArrayBuffer(byteStr.length);
+        var uInt8Arr = new Uint8Array(arrBuf);
+        for (var i = 0; i < byteStr.length; i++) uInt8Arr[i] = byteStr.charCodeAt(i);
+        var blob = new Blob([arrBuf], { type: mimeType });
+
+        console.log(
+          '[Img] Compresión:',
+          Math.round(file.size / 1024) + 'KB →',
+          Math.round(blob.size / 1024) + 'KB |',
+          w + 'x' + h + 'px |',
+          mimeType
+        );
+        resolve({ blob: blob, ext: useWebP ? 'webp' : 'jpg', mime: mimeType });
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// _borrarImagenVieja: extrae el path relativo de la URL pública de Supabase
+// y llama a SB.deleteFile() para liberar espacio del bucket.
+// Si la URL no pertenece al mismo bucket, lo ignora silenciosamente.
+async function _borrarImagenVieja(oldUrl) {
+  if (!oldUrl || typeof oldUrl !== 'string') return;
+  // Las URLs del bucket tienen el formato:
+  //   https://xxx.supabase.co/storage/v1/object/public/BUCKET/PATH
+  var marker = '/object/public/imagenes/';
+  var idx = oldUrl.indexOf(marker);
+  if (idx < 0) {
+    console.log('[Img] URL vieja no pertenece al bucket "imagenes" — no se borra:', oldUrl);
+    return;
+  }
+  var oldPath = oldUrl.slice(idx + marker.length);
+  console.log('[Img] Intentando borrar imagen vieja:', oldPath);
+  await SB.deleteFile('imagenes', oldPath);
+}
+
 async function sbHandleLogoUpload(inp) {
   if (!_COMERCIO_ID) return;
   const f = inp.files[0]; if (!f) return;
   if (f.size > 3*1024*1024) { showToast('Logo muy grande (máx 3MB)'); return; }
-  showToast('Subiendo logo...');
+  showToast('Comprimiendo logo...');
   try {
-    const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `logos/${_SLUG}/logo.${ext}`;
-    const url  = await SB.uploadFile('imagenes', path, f);
-    // REGLA DE ORO: actualizar la tabla comercios con logo_url
+    // 1. Comprimir: máx 400px de ancho, calidad 80%, WebP si disponible
+    const { blob, ext } = await _comprimirImagen(f, 400, 0.80);
+
+    // 2. Nomenclatura limpia: logos/SLUG/logo_TIMESTAMP.ext
+    const path = `logos/${_SLUG}/logo_${Date.now()}.${ext}`;
+
+    // 3. Borrar logo viejo del bucket antes de subir el nuevo
+    const oldLogo = (typeof getStore === 'function') ? getStore().config.logo : '';
+    if (oldLogo) await _borrarImagenVieja(oldLogo);
+
+    // 4. Subir imagen comprimida
+    showToast('Subiendo logo...');
+    const url = await SB.uploadFile('imagenes', path, blob);
+
+    // 5. REGLA DE ORO: actualizar la tabla comercios con logo_url
     await SB.patch('comercios', `id=eq.${_COMERCIO_ID}`, { logo_url: url });
     upd(function(s){ s.config.logo = url; });
     if (typeof _updateLogoUI === 'function') _updateLogoUI(url);
@@ -5983,12 +6090,23 @@ async function sbHandleCoverUpload(inp) {
   if (!_COMERCIO_ID) return;
   const f = inp.files[0]; if (!f) return;
   if (f.size > 5*1024*1024) { showToast('Portada muy grande (máx 5MB)'); return; }
-  showToast('Subiendo portada...');
+  showToast('Comprimiendo portada...');
   try {
-    const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `portadas/${_SLUG}/portada.${ext}`;
-    const url  = await SB.uploadFile('imagenes', path, f);
-    // REGLA DE ORO: actualizar la tabla comercios con cover_url
+    // 1. Comprimir: máx 1200px de ancho (portada necesita más resolución), calidad 80%
+    const { blob, ext } = await _comprimirImagen(f, 1200, 0.80);
+
+    // 2. Nomenclatura limpia: portadas/SLUG/portada_TIMESTAMP.ext
+    const path = `portadas/${_SLUG}/portada_${Date.now()}.${ext}`;
+
+    // 3. Borrar portada vieja del bucket antes de subir la nueva
+    const oldCover = (typeof getStore === 'function') ? getStore().config.cover : '';
+    if (oldCover) await _borrarImagenVieja(oldCover);
+
+    // 4. Subir imagen comprimida
+    showToast('Subiendo portada...');
+    const url = await SB.uploadFile('imagenes', path, blob);
+
+    // 5. REGLA DE ORO: actualizar la tabla comercios con cover_url
     await SB.patch('comercios', `id=eq.${_COMERCIO_ID}`, { cover_url: url });
     upd(function(s){ s.config.cover = url; });
     if (typeof _updateCoverUI === 'function') _updateCoverUI(url);
@@ -6004,15 +6122,27 @@ async function sbHandleProdPhotoUpload(inp) {
   if (!_COMERCIO_ID) return;
   const f = inp.files[0]; if (!f) return;
   if (f.size > 3*1024*1024) { showToast('Imagen muy grande (máx 3MB)'); return; }
-  showToast('Subiendo imagen...');
+  showToast('Comprimiendo imagen...');
   try {
-    const ext  = f.type.split('/')[1] || 'jpg';
-    const path = `productos/${_SLUG}/${Date.now()}.${ext}`;
-    const url  = await SB.uploadFile('imagenes', path, f);
+    // 1. Comprimir: máx 800px de ancho, calidad 80%, WebP si disponible
+    const { blob, ext } = await _comprimirImagen(f, 800, 0.80);
+
+    // 2. Nomenclatura limpia: COMERCIO_ID/productos/SLUG_TIMESTAMP.ext
+    //    Se usa _COMERCIO_ID para aislar por restaurante y evitar colisiones.
+    const ts       = Date.now();
+    const prodName = (typeof editId !== 'undefined' && editId)
+      ? String(editId)
+      : (f.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 30));
+    const path = `${_COMERCIO_ID}/productos/${prodName}_${ts}.${ext}`;
+
+    // 3. Subir imagen comprimida (el borrado de la vieja se hace en sbSaveProd
+    //    donde tenemos acceso al producto original con su imagen_url anterior)
+    showToast('Subiendo imagen...');
+    const url = await SB.uploadFile('imagenes', path, blob);
     if (typeof window !== 'undefined') window.editPhoto = url;
     if (typeof _updateProdPhotoUI === 'function') _updateProdPhotoUI(url);
     showToast('Imagen lista ✓');
-    console.log('[SB] Foto de producto subida:', url);
+    console.log('[SB] Foto de producto subida:', url, '| tamaño:', Math.round(blob.size / 1024) + 'KB');
   } catch(e) {
     console.error('[SB] Error subiendo foto de producto:', e);
     alert('❌ Error al subir imagen:\n' + e.message);
@@ -6249,18 +6379,52 @@ async function sbSaveProd() {
     opciones_extras:  opcionesExtras    // columna opciones_extras: extras globales
   };
 
+  // ── Manejo de imagen del producto ──────────────────────────────────
+  // Si la foto cambió y el producto ya tenía una imagen en el bucket,
+  // se borra la imagen vieja para no dejar archivos basura.
+  // La foto nueva se comprime a 800px/WebP antes de subir.
   if (typeof editPhoto !== 'undefined' && editPhoto && editPhoto.startsWith('data:')) {
+    // Caso A: foto nueva seleccionada (base64) — comprimir y subir
     try {
-      const blob = await (await fetch(editPhoto)).blob();
-      const ext  = blob.type.split('/')[1] || 'jpg';
-      const path = `productos/${_SLUG}/${Date.now()}.${ext}`;
-      const url  = await SB.uploadFile('imagenes', path, blob);
+      // Recuperar imagen vieja para borrarla después de subir la nueva
+      const prodActual = typeof editId !== 'undefined' && editId
+        ? (getStore().products || []).find(function(p){ return String(p.id) === String(editId) || String(p.sb_id) === String(editId); })
+        : null;
+      const urlVieja = prodActual ? (prodActual.photo || '') : '';
+
+      // Convertir base64 a File-like Blob para pasar a _comprimirImagen
+      const rawBlob  = await (await fetch(editPhoto)).blob();
+      const rawFile  = new File([rawBlob], 'foto.jpg', { type: rawBlob.type || 'image/jpeg' });
+
+      // Comprimir: máx 800px, calidad 80%, WebP si disponible
+      const { blob: compBlob, ext } = await _comprimirImagen(rawFile, 800, 0.80);
+
+      // Nomenclatura limpia: COMERCIO_ID/productos/ID_TIMESTAMP.ext
+      const prodRef  = (typeof editId !== 'undefined' && editId) ? String(editId) : 'nuevo';
+      const path     = `${_COMERCIO_ID}/productos/${prodRef}_${Date.now()}.${ext}`;
+
+      const url = await SB.uploadFile('imagenes', path, compBlob);
       body.imagen_url = url;
+      console.log('[SB] Foto de producto comprimida y subida:', url, '| tamaño:', Math.round(compBlob.size / 1024) + 'KB');
+
+      // Borrar imagen vieja DESPUÉS de subir la nueva (evita quedar sin foto si falla)
+      if (urlVieja && urlVieja !== url) await _borrarImagenVieja(urlVieja);
+
     } catch(e) {
       console.warn('[SB] Error subiendo imagen, se guarda sin foto:', e.message);
     }
+
   } else if (typeof editPhoto !== 'undefined' && editPhoto && !editPhoto.startsWith('data:')) {
+    // Caso B: la foto ya es una URL del bucket (fue subida por sbHandleProdPhotoUpload)
+    // Solo verificar si cambió respecto a la foto anterior y borrar la vieja
+    const prodActualB = typeof editId !== 'undefined' && editId
+      ? (getStore().products || []).find(function(p){ return String(p.id) === String(editId) || String(p.sb_id) === String(editId); })
+      : null;
+    const urlViejaB = prodActualB ? (prodActualB.photo || '') : '';
     body.imagen_url = editPhoto;
+
+    // Borrar imagen vieja si cambió
+    if (urlViejaB && urlViejaB !== editPhoto) await _borrarImagenVieja(urlViejaB);
   }
 
   try {
