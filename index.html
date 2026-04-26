@@ -149,37 +149,46 @@ body{font-family:'Inter',sans-serif;background:#fff;color:var(--text);padding-bo
   background:#fff;
   border-bottom:1px solid var(--border);
   cursor:pointer;transition:background .15s;
-  display:flex;flex-direction:row;
+  display:flex;flex-direction:row;   /* imagen izq, contenido der */
   align-items:flex-start;
-  padding:14px 16px 14px 0;
-  gap:0;
+  padding:14px 16px 14px 14px;       /* padding uniforme izq y der */
+  gap:14px;                          /* espacio entre imagen y texto */
   position:relative;
 }
 .pcard:first-child{border-top:none;}
 .pcard:active{background:#fafafa;}
-.pcard-body{flex:1;padding:0 12px 0 0;display:flex;flex-direction:column;min-width:0;}
+.pcard-body{
+  flex:1;
+  padding:0;                         /* sin padding extra, el gap del flex se encarga */
+  display:flex;flex-direction:column;
+  min-width:0;
+  justify-content:space-between;     /* precio+botón se ancla abajo */
+}
 .pcard-name{font-family:'Montserrat',sans-serif;font-size:14px;font-weight:800;margin-bottom:3px;color:var(--text);}
-.pcard-desc{font-size:12px;color:var(--muted);line-height:1.45;flex:1;margin-bottom:6px;
+.pcard-desc{font-size:12px;color:var(--muted);line-height:1.45;flex:1;margin-bottom:8px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-.pcard-foot{display:flex;align-items:center;justify-content:space-between;}
-.pcard-price{font-family:'Montserrat',sans-serif;font-size:15px;font-weight:800;color:var(--text);}
+.pcard-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.pcard-price{font-family:'Montserrat',sans-serif;font-size:15px;font-weight:800;color:var(--fire);}
 .pcard-add{
-  width:32px;height:32px;border-radius:50%;
-  background:#fff;color:var(--green);
-  border:2px solid var(--green);
-  font-size:22px;font-weight:300;
+  width:38px;height:38px;border-radius:50%;    /* ligeramente más grande */
+  background:var(--green);color:#fff;           /* sólido como en la imagen */
+  border:none;
+  font-size:26px;font-weight:300;
   cursor:pointer;display:flex;align-items:center;justify-content:center;
   transition:all .15s;line-height:1;flex-shrink:0;
+  box-shadow:0 2px 8px rgba(255,107,0,.35);
 }
-.pcard-add:hover{background:var(--green);color:#fff;}
+.pcard-add:hover{opacity:.88;}
 .pcard-media{
-  width:100px;height:100px;flex-shrink:0;
-  background:var(--gray);border-radius:12px;overflow:hidden;
+  width:120px;height:120px;         /* imagen más grande: 100→120px */
+  flex-shrink:0;
+  background:var(--gray);border-radius:14px;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
-  position:relative;margin-left:auto;
+  position:relative;
+  order:-1;                         /* fuerza la imagen al lado IZQUIERDO */
 }
 .pcard-media img{width:100%;height:100%;object-fit:cover;}
-.pcard-emoji{font-size:38px;}
+.pcard-emoji{font-size:42px;}
 .unavail-badge{
   position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
   background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;
@@ -907,14 +916,14 @@ function renderSections(s, f) {
       var click = p.available ? 'openProd(' + p.id + ')' : '';
       var addBtn = p.available
         ? '<button class="pcard-add" onclick="event.stopPropagation();openProd(' + p.id + ')">+</button>' : '';
-      // Layout: info izq, imagen der
+      // Layout: imagen izq, info+botón der (imagen más grande, botón naranja sólido)
       h += '<div class="pcard' + (!p.available ? ' pcard-unavail' : '') + '" onclick="' + click + '">'
-        + '<div class="pcard-body" style="padding:0 0 0 16px">'
+        + '<div class="pcard-media">' + img + badge + '</div>'
+        + '<div class="pcard-body">'
         + '<div class="pcard-name">' + p.name + '</div>'
         + '<div class="pcard-desc">' + (p.desc || '') + '</div>'
         + '<div class="pcard-foot"><span class="pcard-price">' + fp(p.price) + '</span>' + addBtn + '</div>'
         + '</div>'
-        + '<div class="pcard-media">' + img + badge + '</div>'
         + '</div>';
     }
     h += '</div>';
