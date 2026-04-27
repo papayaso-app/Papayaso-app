@@ -5635,7 +5635,22 @@ function dailyCleanup() {
 // MULTI-TENANT — Detectar comercio desde ?rest=slug
 // ══════════════════════════════════════════════════════════════
 const _urlParams    = new URLSearchParams(window.location.search);
-const _SLUG         = (_urlParams.get('rest') || '').trim().toLowerCase();
+// Leer el slug desde ?rest= en la URL.
+// Si no viene en la URL (ej. admin.html sin parámetros tras redirect desde login),
+// usar el slug guardado en localStorage por login.html como fallback.
+// Esto evita el error "No se pudo identificar el comercio" en carga limpia.
+const _SLUG = (function() {
+  var fromUrl = (_urlParams.get('rest') || '').trim().toLowerCase();
+  if (fromUrl) return fromUrl;
+  try {
+    var fromStorage = (localStorage.getItem('papayaso_admin_slug') || '').trim().toLowerCase();
+    if (fromStorage) {
+      console.log('[Admin] Slug leído desde localStorage:', fromStorage);
+      return fromStorage;
+    }
+  } catch(e) {}
+  return '';
+})();
 let   _COMERCIO_ID  = null;  // UUID del comercio activo
 let   _COMERCIO_ROW = null;  // Fila completa de comercios
 
@@ -5819,7 +5834,10 @@ async function sbCargarComercio() {
     });
     if (!rows || !rows.length) {
       console.error('[SB] Comercio no encontrado para slug:', _SLUG);
-      alert('❌ Comercio "' + _SLUG + '" no encontrado en la base de datos.\n\nVerifica el parámetro ?rest= en la URL.');
+      // No usar alert() — bloquea la UI en móviles.
+      // Mostrar mensaje amigable en el topbar y continuar.
+      var tn = document.getElementById('t-name');
+      if (tn) tn.textContent = '⚠️ Comercio no encontrado (' + (_SLUG || 'sin slug') + ')';
       return false;
     }
     _COMERCIO_ROW = rows[0];
@@ -7012,9 +7030,22 @@ async function sbInit() {
   console.log('[SB] 🚀 Iniciando Admin multi-tenant... slug:', _SLUG);
 
   // Paso 0: DETECTAR COMERCIO (obligatorio)
+  // Si no hay slug (ni en URL ni en localStorage), mostrar aviso amigable
+  // y detener la carga de datos — pero SIN alert() bloqueante en móviles.
   const ok = await sbCargarComercio();
   if (!ok) {
-    alert('❌ No se pudo identificar el comercio "' + _SLUG + '".\n\nVerifica el parámetro ?rest= en la URL.');
+    // Quitar la pantalla de carga para que el admin sea usable
+    var ls = document.getElementById('auth-loading-screen');
+    if (ls) { ls.classList.add('fade-out'); setTimeout(function(){ if(ls.parentNode) ls.parentNode.removeChild(ls); }, 280); }
+    // Mostrar aviso en el topbar (no es un alert — no bloquea)
+    var tn = document.getElementById('t-name');
+    if (tn) tn.textContent = _SLUG
+      ? '⚠️ Comercio "' + _SLUG + '" no encontrado'
+      : '⚠️ Falta el parámetro ?rest= en la URL';
+    showToast(_SLUG
+      ? 'Comercio "' + _SLUG + '" no encontrado en la base de datos'
+      : 'No se detectó el ID del restaurante. Accede desde el link correcto.');
+    console.error('[SB] sbInit detenido: no se pudo identificar el comercio. Slug:', _SLUG || '(vacío)');
     return;
   }
 
