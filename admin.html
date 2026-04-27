@@ -2713,43 +2713,65 @@ async function renderGlobalExtras() {
   var el = document.getElementById('extras-global-list');
   if (!el) return;
 
+  // Mostrar "Cargando..." mientras se espera la respuesta de Supabase
   el.innerHTML = '<p style="color:var(--muted);padding:14px 0;font-size:13px">Cargando...</p>';
 
-  const rows = await sbCargarExtrasMaestros();
-  const extraGlobales = rows.filter(function(r) { return r.tipo === 'extra_global'; });
+  // Helper local: escapa caracteres HTML para evitar XSS en nombres de extras.
+  // Se define aquí para no depender de ninguna función global externa (esc no existe en admin).
+  function _safeText(str) {
+    return String(str || '').trim()
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
-  // Sincronizar en memoria para compatibilidad con código existente
-  upd(function(s2) {
-    s2.globalExtras = extraGlobales.map(function(r) {
-      return { id: r.id, nombre: r.nombre, precio: r.precio, categoria: r.categoria || '' };
+  try {
+    const rows = await sbCargarExtrasMaestros();
+    const extraGlobales = rows.filter(function(r) { return r.tipo === 'extra_global'; });
+
+    // Sincronizar en memoria para compatibilidad con código existente
+    upd(function(s2) {
+      s2.globalExtras = extraGlobales.map(function(r) {
+        return { id: r.id, nombre: r.nombre, precio: r.precio, categoria: r.categoria || '' };
+      });
     });
-  });
 
-  if (!extraGlobales.length) {
-    el.innerHTML = '<p style="color:var(--muted);padding:14px 0;font-size:13px">No hay extras globales. Agrega uno abajo.</p>';
+    if (!extraGlobales.length) {
+      el.innerHTML = '<p style="color:var(--muted);padding:14px 0;font-size:13px">No hay extras globales. Agrega uno abajo.</p>';
+      _fillExtraCatSelect();
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < extraGlobales.length; i++) {
+      var ge   = extraGlobales[i];
+      var pStr = ge.precio > 0 ? '+' + fp(ge.precio) : 'Gratis';
+      // _safeText() reemplaza esc() — misma función de escape, definida localmente
+      html += '<div class="litem" style="align-items:center">'
+        + '<div style="flex:1;min-width:0">'
+        +   '<span class="litem-name">' + _safeText(ge.nombre) + '</span>'
+        +   '<span class="litem-sub" style="margin-left:8px">' + pStr + '</span>'
+        +   (ge.categoria
+              ? '<span style="display:inline-block;margin-left:8px;background:var(--green-bg);'
+              + 'color:var(--green);font-size:10px;font-weight:700;padding:1px 8px;'
+              + 'border-radius:100px;border:1px solid var(--green-bd)">' + _safeText(ge.categoria) + '</span>'
+              : '')
+        + '</div>'
+        + '<button class="btn btn-d btn-xs" onclick="delGlobalExtraMaestro(' + ge.id + ',\'' + _safeText(ge.nombre) + '\')">Eliminar</button>'
+        + '</div>';
+    }
+    el.innerHTML = html;
     _fillExtraCatSelect();
-    return;
-  }
 
-  var html = '';
-  for (var i = 0; i < extraGlobales.length; i++) {
-    var ge   = extraGlobales[i];
-    var pStr = ge.precio > 0 ? '+' + fp(ge.precio) : 'Gratis';
-    html += '<div class="litem" style="align-items:center">'
-      + '<div style="flex:1;min-width:0">'
-      +   '<span class="litem-name">' + esc(ge.nombre) + '</span>'
-      +   '<span class="litem-sub" style="margin-left:8px">' + pStr + '</span>'
-      +   (ge.categoria
-            ? '<span style="display:inline-block;margin-left:8px;background:var(--green-bg);'
-            + 'color:var(--green);font-size:10px;font-weight:700;padding:1px 8px;'
-            + 'border-radius:100px;border:1px solid var(--green-bd)">' + esc(ge.categoria) + '</span>'
-            : '')
-      + '</div>'
-      + '<button class="btn btn-d btn-xs" onclick="delGlobalExtraMaestro(' + ge.id + ',\'' + esc(ge.nombre) + '\')">Eliminar</button>'
-      + '</div>';
+  } catch(e) {
+    // Punto 4: si algo falla, resetear el "Cargando..." para no bloquear la pantalla
+    console.error('[Admin] Error en renderGlobalExtras:', e.message);
+    el.innerHTML = '<p style="color:var(--danger);padding:14px 0;font-size:13px">'
+      + '⚠️ Error al cargar extras: ' + String(e.message).replace(/</g,'&lt;') + '</p>';
+    _fillExtraCatSelect();
   }
-  el.innerHTML = html;
-  _fillExtraCatSelect();
 }
 
 // ── addGlobalExtra: guarda en extras_maestros (tipo=extra_global) ─────
