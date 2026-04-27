@@ -565,10 +565,15 @@ async function doLogin() {
     try { localStorage.setItem('papayaso_admin_session', JSON.stringify(session)); } catch(e) {}
 
     if (slug) {
+      // Guardar el slug en localStorage como fallback para cuando admin.html
+      // cargue sin ?rest= (ej. tras refresh o navegación por historial)
+      try { localStorage.setItem('papayaso_admin_slug', slug); } catch(e) {}
       console.log('[Auth] Redirigiendo a Admin slug:', slug);
       window.location.replace('admin.html?rest=' + encodeURIComponent(slug));
     } else {
-      // Sin slug conocido → ir al admin sin slug (el admin mostrará el error de comercio)
+      // Sin slug conocido → ir al admin sin slug.
+      // admin.html lo leerá desde localStorage ('papayaso_admin_slug')
+      // si estaba guardado de una sesión anterior, o mostrará aviso amigable.
       console.warn('[Auth] Sin slug en comercios — redirigiendo a admin sin ?rest=');
       window.location.replace('admin.html');
     }
@@ -592,7 +597,14 @@ async function doLogin() {
 // Buscar el slug del comercio asociado al usuario que inicia sesión
 async function _buscarSlugComercio(user, accessToken) {
   try {
-    // Intentar buscar por user_id primero
+    // Paso 1: Leer desde user_metadata (lo pone el superadmin al crear el comercio)
+    var meta = user.user_metadata || {};
+    if (meta.comercio_slug && meta.comercio_slug.trim()) {
+      console.log('[Auth] Slug encontrado en user_metadata:', meta.comercio_slug);
+      return meta.comercio_slug.trim();
+    }
+
+    // Paso 2: Buscar en la tabla comercios por user_id
     var url = new URL(SUPABASE_URL + '/rest/v1/comercios');
     url.searchParams.set('select', 'slug');
     url.searchParams.set('user_id', 'eq.' + user.id);
@@ -607,15 +619,37 @@ async function _buscarSlugComercio(user, accessToken) {
     });
     if (r.ok) {
       var rows = await r.json();
-      if (rows && rows.length && rows[0].slug) return rows[0].slug;
+      if (rows && rows.length && rows[0].slug) {
+        console.log('[Auth] Slug encontrado en tabla comercios:', rows[0].slug);
+        return rows[0].slug;
+      }
     }
 
-    // Si no hay user_id, buscar por email del dueño (columna email_dueno si existe)
-    // Esta búsqueda es de fallback — puede no existir en todas las instalaciones
-    console.log('[Auth] Sin comercio por user_id, el admin usará el parámetro ?rest= de la URL');
+    // Paso 3: Buscar por email del usuario (columna email_dueno si existe)
+    var urlEmail = new URL(SUPABASE_URL + '/rest/v1/comercios');
+    urlEmail.searchParams.set('select', 'slug');
+    urlEmail.searchParams.set('email_dueno', 'eq.' + (user.email || ''));
+    urlEmail.searchParams.set('limit', '1');
+
+    var r2 = await fetch(urlEmail, {
+      headers: {
+        'apikey':        SUPABASE_KEY,
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type':  'application/json'
+      }
+    });
+    if (r2.ok) {
+      var rows2 = await r2.json();
+      if (rows2 && rows2.length && rows2[0].slug) {
+        console.log('[Auth] Slug encontrado por email_dueno:', rows2[0].slug);
+        return rows2[0].slug;
+      }
+    }
+
+    console.warn('[Auth] No se encontró slug del comercio para este usuario — admin cargará sin ?rest=');
     return null;
   } catch(e) {
-    console.warn('[Auth] No se pudo buscar slug del comercio:', e.message);
+    console.warn('[Auth] Error buscando slug del comercio:', e.message);
     return null;
   }
 }
