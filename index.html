@@ -2204,14 +2204,15 @@ async function sbCargarComercio() {
     }
     _COMERCIO_ID = rows[0].id;
 
-    // Pre-poblar config con datos básicos del comercio
-    // (sbCargarConfig leerá el resto desde la misma fila)
-    _STORE.config.name  = rows[0].nombre || _STORE.config.name;
-    _STORE.config.logo  = rows[0].logo_url  || _STORE.config.logo  || '';
-    _STORE.config.cover = rows[0].cover_url || _STORE.config.cover || '';
-    _STORE.config.phone = rows[0].telefono  || _STORE.config.phone || '';
+    // Punto 3: normalizar null → "" antes de usar los datos
+    var r0 = rows[0];
+    // Columnas correctas: nombre, logo_url, cover_url (nunca url_logo/url_portada/nombre_negocio)
+    _STORE.config.name  = (r0.nombre    || '') || _STORE.config.name  || 'Papayaso';
+    _STORE.config.logo  = (r0.logo_url  || '') || _STORE.config.logo  || '';
+    _STORE.config.cover = (r0.cover_url || '') || _STORE.config.cover || '';
+    _STORE.config.phone = (r0.telefono  || '') || _STORE.config.phone || '';
 
-    console.log('[SB] Comercio cargado:', rows[0].nombre, '| id:', _COMERCIO_ID);
+    console.log('[SB] Comercio cargado:', r0.nombre, '| id:', _COMERCIO_ID);
     return true;
   } catch(e) {
     console.error('[SB] Error cargando comercio:', e.message);
@@ -2240,19 +2241,21 @@ async function sbCargarConfig() {
 
     const prev = _STORE.config;
     _STORE.config = {
-      name:        c.nombre              || prev.name        || 'Papayaso',
-      whatsapp:    c.whatsapp            || c.telefono       || prev.whatsapp    || '',
-      address:     c.direccion           || prev.address     || '',
-      desc:        c.descripcion         || prev.desc        || '',
-      welcome:     c.mensaje_bienvenida  || prev.welcome     || '',
+      // Punto 3: null → "" en todos los campos opcionales del comercio
+      // Columnas correctas: nombre, logo_url, cover_url
+      name:        (c.nombre || '')             || prev.name     || 'Papayaso',
+      whatsapp:    (c.whatsapp || '')           || (c.telefono || '')    || prev.whatsapp    || '',
+      address:     (c.direccion || '')          || prev.address  || '',
+      desc:        (c.descripcion || '')        || prev.desc     || '',
+      welcome:     (c.mensaje_bienvenida || '') || prev.welcome  || '',
       isOpen:      c.esta_abierto !== false,
       logo:        (c.logo_url  && c.logo_url.trim())   ? c.logo_url.trim()  : (prev.logo  || ''),
       cover:       (c.cover_url && c.cover_url.trim())  ? c.cover_url.trim() : (prev.cover || ''),
-      deliveryMin: String(c.tiempo_entrega_min || prev.deliveryMin || 30),
-      deliveryMax: String(c.tiempo_entrega_max || prev.deliveryMax || 60),
-      menuUrl:     c.url_menu            || prev.menuUrl    || 'menu.html',
-      riderUrl:    c.url_repartidor      || prev.riderUrl   || 'repartidor.html',
-      riderPin:    c.pin_repartidor      || prev.riderPin   || '1234',
+      deliveryMin: c.tiempo_entrega_min != null ? String(c.tiempo_entrega_min) : (prev.deliveryMin || '30'),
+      deliveryMax: c.tiempo_entrega_max != null ? String(c.tiempo_entrega_max) : (prev.deliveryMax || '60'),
+      menuUrl:     (c.url_menu || '')           || prev.menuUrl  || 'menu.html',
+      riderUrl:    (c.url_repartidor || '')     || prev.riderUrl || 'repartidor.html',
+      riderPin:    (c.pin_repartidor || '')     || prev.riderPin || '1234',
       schedule:    (c.horario_semanal && typeof c.horario_semanal === 'object')
                      ? c.horario_semanal
                      : (prev.schedule || null)
