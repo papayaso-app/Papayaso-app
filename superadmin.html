@@ -773,15 +773,20 @@ async function crearComercio() {
     }
 
     // ── PASO 2: Insertar el comercio en la tabla comercios ───────────────
+    // Punto 4: enviar "" en campos vacíos (no null) para uniformidad.
+    // Se incluye email_dueno para que el login pueda encontrar el slug
+    // mediante el Nivel 2 del detective (_buscarSlugComercio).
     const body = {
-      nombre:      nombre,
-      slug:        slug,
-      whatsapp:    wa       || null,
-      direccion:   dir      || null,
-      descripcion: desc     || null,
-      plan:        plan,
+      nombre:      nombre           || '',
+      slug:        slug             || '',
+      whatsapp:    wa               || '',
+      direccion:   dir              || '',
+      descripcion: desc             || '',
+      // email_dueno: clave para que el login identifique el comercio del admin
+      email_dueno: email            || '',
+      plan:        plan             || 'basico',
       activo:      true,
-      user_id:     userId   || null   // vincula el comercio con la cuenta Auth
+      user_id:     userId           || null   // vincula el comercio con la cuenta Auth
     };
 
     const result = await SB.post('comercios', body);
