@@ -5840,9 +5840,31 @@ async function sbCargarComercio() {
       if (tn) tn.textContent = '⚠️ Comercio no encontrado (' + (_SLUG || 'sin slug') + ')';
       return false;
     }
-    _COMERCIO_ROW = rows[0];
-    _COMERCIO_ID  = rows[0].id;
-    console.log('[SB] Comercio cargado:', rows[0].nombre, '| id:', _COMERCIO_ID);
+    // Punto 3: normalizar campos null → "" para proteger la UI
+    var row = rows[0];
+    _COMERCIO_ROW = {
+      id:           row.id,
+      nombre:       row.nombre        || '',
+      slug:         row.slug          || '',
+      whatsapp:     row.whatsapp      || '',
+      telefono:     row.telefono      || '',
+      nit:          row.nit           || '',
+      direccion:    row.direccion     || '',
+      descripcion:  row.descripcion   || '',
+      // Columnas correctas de imagen: logo_url y cover_url
+      logo_url:     row.logo_url      || '',
+      cover_url:    row.cover_url     || '',
+      esta_abierto: row.esta_abierto  !== false,
+      tiempo_entrega_min: row.tiempo_entrega_min != null ? row.tiempo_entrega_min : 30,
+      tiempo_entrega_max: row.tiempo_entrega_max != null ? row.tiempo_entrega_max : 60,
+      url_menu:       row.url_menu      || '',
+      url_repartidor: row.url_repartidor|| '',
+      pin_repartidor: row.pin_repartidor|| '1234',
+      horario_semanal: row.horario_semanal || null,
+      mensaje_bienvenida: row.mensaje_bienvenida || ''
+    };
+    _COMERCIO_ID = _COMERCIO_ROW.id;
+    console.log('[SB] Comercio cargado:', _COMERCIO_ROW.nombre, '| id:', _COMERCIO_ID);
     return true;
   } catch(e) {
     console.error('[SB] Error cargando comercio:', e.message);
@@ -5865,22 +5887,25 @@ async function sbLoadConfig() {
     if (!rows || !rows.length) { console.warn('[SB] Sin fila en comercios para id:', _COMERCIO_ID); return; }
     const c = rows[0];
 
+    // Helper: normalizar null/undefined a string vacío (Punto 3 — protección NULL)
+    function nn(v) { return (v === null || v === undefined) ? '' : String(v); }
+
     upd(function(s) {
-      s.config.name       = c.nombre               || s.config.name;
-      s.config.whatsapp   = c.whatsapp || c.telefono|| s.config.whatsapp;
-      s.config.address    = c.direccion             || s.config.address  || '';
-      s.config.desc       = c.descripcion           || s.config.desc     || '';
-      s.config.nit        = c.nit                   || s.config.nit      || '';
-      s.config.phone      = c.telefono              || s.config.phone    || '';
-      s.config.welcome    = c.mensaje_bienvenida    || s.config.welcome  || '';
-      s.config.menuUrl    = c.url_menu              || s.config.menuUrl  || 'menu.html';
-      s.config.riderUrl   = c.url_repartidor        || s.config.riderUrl || 'repartidor.html';
-      s.config.riderPin   = c.pin_repartidor        || s.config.riderPin || '1234';
-      s.config.deliveryMin= String(c.tiempo_entrega_min || s.config.deliveryMin || 30);
-      s.config.deliveryMax= String(c.tiempo_entrega_max || s.config.deliveryMax || 60);
+      s.config.name       = nn(c.nombre)            || s.config.name     || 'Papayaso';
+      s.config.whatsapp   = nn(c.whatsapp)          || nn(c.telefono)    || s.config.whatsapp || '';
+      s.config.address    = nn(c.direccion)         || s.config.address  || '';
+      s.config.desc       = nn(c.descripcion)       || s.config.desc     || '';
+      s.config.nit        = nn(c.nit)               || s.config.nit      || '';
+      s.config.phone      = nn(c.telefono)          || s.config.phone    || '';
+      s.config.welcome    = nn(c.mensaje_bienvenida)|| s.config.welcome  || '';
+      s.config.menuUrl    = nn(c.url_menu)          || s.config.menuUrl  || 'menu.html';
+      s.config.riderUrl   = nn(c.url_repartidor)    || s.config.riderUrl || 'repartidor.html';
+      s.config.riderPin   = nn(c.pin_repartidor)    || s.config.riderPin || '1234';
+      s.config.deliveryMin= c.tiempo_entrega_min != null ? String(c.tiempo_entrega_min) : (s.config.deliveryMin || '30');
+      s.config.deliveryMax= c.tiempo_entrega_max != null ? String(c.tiempo_entrega_max) : (s.config.deliveryMax || '60');
       s.config.isOpen     = c.esta_abierto !== false;
 
-      // Columnas específicas de la tabla comercios: logo_url y cover_url
+      // Columnas correctas: logo_url y cover_url (nunca url_logo ni url_portada)
       if (c.logo_url  && c.logo_url.trim())  s.config.logo  = c.logo_url.trim();
       if (c.cover_url && c.cover_url.trim()) s.config.cover = c.cover_url.trim();
 
