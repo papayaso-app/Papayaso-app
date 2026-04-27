@@ -2661,202 +2661,203 @@ function _fillExtraCatSelect() {
     + cats.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
 }
 
-function renderGlobalExtras() {
-  var s  = getStore();
+// ══════════════════════════════════════════════════════════════════════
+// EXTRAS MAESTROS — CRUD sobre la tabla extras_maestros en Supabase
+// Fuente de verdad para extras globales y adiciones del admin.
+// El menu.html también lee de esta tabla para mostrar extras al cliente.
+// ══════════════════════════════════════════════════════════════════════
+
+// Cargar todos los extras del comercio desde extras_maestros
+async function sbCargarExtrasMaestros() {
+  if (!_COMERCIO_ID) return [];
+  try {
+    const rows = await SB.get('extras_maestros', {
+      select:        'id,nombre,precio,tipo,categoria,activo',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      'activo':      'eq.true',
+      order:         'tipo.asc,id.asc'
+    });
+    upd(function(s) { s._extrasMaestros = rows || []; });
+    console.log('[SB] extras_maestros cargados:', (rows || []).length);
+    return rows || [];
+  } catch(e) {
+    console.error('[SB] Error cargando extras_maestros:', e.message);
+    return [];
+  }
+}
+
+// Insertar un extra en extras_maestros y devolver la fila creada
+async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria) {
+  if (!_COMERCIO_ID) return null;
+  const row = await SB.post('extras_maestros', {
+    comercio_id: _COMERCIO_ID,
+    nombre:      nombre,
+    precio:      parseInt(precio) || 0,
+    tipo:        tipo        || 'extra_global',
+    categoria:   categoria   || null,
+    activo:      true
+  });
+  return row && row[0] ? row[0] : null;
+}
+
+// Eliminar un extra de extras_maestros por su id
+async function sbEliminarExtraMaestro(id) {
+  await SB.del('extras_maestros',
+    'id=eq.' + id + '&comercio_id=eq.' + _COMERCIO_ID);
+}
+
+// ── renderGlobalExtras: lee de extras_maestros (tipo=extra_global) ────
+// Esta es la fuente de verdad persistente.
+// Al refrescar la página la lista siempre se reconstruye desde Supabase.
+async function renderGlobalExtras() {
   var el = document.getElementById('extras-global-list');
   if (!el) return;
 
-  // Reconstruir la lista completa desde _categorias (todas las filas reales)
-  // Cada fila tiene extras_categoria: [{nombre, precio}]
-  var categorias = s._categorias || [];
-  var allExtras  = [];   // [{nombre, precio, categoria}]
+  el.innerHTML = '<p style="color:var(--muted);padding:14px 0;font-size:13px">Cargando...</p>';
 
-  categorias.forEach(function(cat) {
-    if (!cat.nombre || cat.nombre === '__extras_globales__') return;
-    var arr = Array.isArray(cat.extras_categoria) ? cat.extras_categoria : [];
-    arr.forEach(function(e) {
-      if (e && (e.nombre || e.name)) {
-        allExtras.push({
-          nombre:    e.nombre    || e.name  || '',
-          precio:    parseInt(e.precio !== undefined ? e.precio : (e.price || 0)) || 0,
-          categoria: cat.nombre,
-          cat_id:    cat.id
-        });
-      }
+  const rows = await sbCargarExtrasMaestros();
+  const extraGlobales = rows.filter(function(r) { return r.tipo === 'extra_global'; });
+
+  // Sincronizar en memoria para compatibilidad con código existente
+  upd(function(s2) {
+    s2.globalExtras = extraGlobales.map(function(r) {
+      return { id: r.id, nombre: r.nombre, precio: r.precio, categoria: r.categoria || '' };
     });
   });
 
-  // Sincronizar globalExtras en memoria (fuente de verdad visual)
-  upd(function(s2) { s2.globalExtras = allExtras; });
-
-  if (!allExtras.length) {
-    el.innerHTML = '<p style="color:var(--muted);padding:14px 0;font-size:13px">No hay extras creados. Agrega uno abajo.</p>';
+  if (!extraGlobales.length) {
+    el.innerHTML = '<p style="color:var(--muted);padding:14px 0;font-size:13px">No hay extras globales. Agrega uno abajo.</p>';
     _fillExtraCatSelect();
     return;
   }
 
   var html = '';
-  for (var i = 0; i < allExtras.length; i++) {
-    var ge    = allExtras[i];
-    var pStr  = ge.precio > 0 ? '+' + fp(ge.precio) : 'Gratis';
+  for (var i = 0; i < extraGlobales.length; i++) {
+    var ge   = extraGlobales[i];
+    var pStr = ge.precio > 0 ? '+' + fp(ge.precio) : 'Gratis';
     html += '<div class="litem" style="align-items:center">'
       + '<div style="flex:1;min-width:0">'
-      +   '<span class="litem-name">' + ge.nombre + '</span>'
+      +   '<span class="litem-name">' + esc(ge.nombre) + '</span>'
       +   '<span class="litem-sub" style="margin-left:8px">' + pStr + '</span>'
-      +   '<span style="display:inline-block;margin-left:8px;background:var(--green-bg);color:var(--green);'
-      +     'font-size:10px;font-weight:700;padding:1px 8px;border-radius:100px;border:1px solid var(--green-bd)">'
-      +     ge.categoria
-      +   '</span>'
+      +   (ge.categoria
+            ? '<span style="display:inline-block;margin-left:8px;background:var(--green-bg);'
+            + 'color:var(--green);font-size:10px;font-weight:700;padding:1px 8px;'
+            + 'border-radius:100px;border:1px solid var(--green-bd)">' + esc(ge.categoria) + '</span>'
+            : '')
       + '</div>'
-      + '<button class="btn btn-d btn-xs" onclick="delGlobalExtra(' + i + ')">Eliminar</button>'
+      + '<button class="btn btn-d btn-xs" onclick="delGlobalExtraMaestro(' + ge.id + ',\'' + esc(ge.nombre) + '\')">Eliminar</button>'
       + '</div>';
   }
   el.innerHTML = html;
   _fillExtraCatSelect();
 }
 
+// ── addGlobalExtra: guarda en extras_maestros (tipo=extra_global) ─────
 function addGlobalExtra() {
   var nameEl  = document.getElementById('new-extra-name');
   var priceEl = document.getElementById('new-extra-price');
   var catEl   = document.getElementById('new-extra-cat');
-  var name    = (nameEl  ? nameEl.value.trim()                  : '');
+  var name    = nameEl  ? nameEl.value.trim()        : '';
   var price   = parseInt(priceEl ? priceEl.value : 0) || 0;
-  var catName = catEl    ? catEl.value                          : '';
+  var catName = catEl   ? catEl.value                : '';
 
-  if (!name)    { showToast('Ingresa el nombre del extra');      return; }
-  if (!catName) { showToast('Selecciona una categoría');         return; }
+  if (!name) { showToast('Ingresa el nombre del extra'); return; }
 
-  var s = getStore();
-  // Buscar la fila de esa categoría en _categorias (para la UI en memoria)
-  var catRow = (s._categorias || []).find(function(c) { return c.nombre === catName; });
-  if (!catRow) { showToast('Categoría no encontrada'); return; }
-
-  // Construir el nuevo array de extras para esa categoría en memoria
-  // Formato [{name, price}] — consistente con opciones_extras en tabla productos
-  var existentes = Array.isArray(catRow.extras_categoria)
-    ? catRow.extras_categoria.map(function(e) {
-        return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
-      })
-    : [];
-  existentes.push({ name: name, price: price });
-
-  // Limpiar formulario
+  // Limpiar formulario inmediatamente para feedback visual
   if (nameEl)  nameEl.value  = '';
   if (priceEl) priceEl.value = '';
-  if (catEl)   catEl.value   = '';
 
-  // CORRECCIÓN ARQUITECTURAL: PATCH en tabla PRODUCTOS columna opciones_extras
-  // (NO en tabla categorias). Se actualizan TODOS los productos de esa categoría.
   (async function() {
     try {
-      // Obtener todos los productos de esta categoría en este comercio
-      const prods = await SB.get('productos', {
-        select: 'id,opciones_extras',
-        'comercio_id': 'eq.' + _COMERCIO_ID,
-        'categoria':   'eq.' + encodeURIComponent(catName)
-      });
+      // 1. Insertar en extras_maestros (tabla maestra — fuente de verdad)
+      const nuevo = await sbInsertarExtraMaestro(name, price, 'extra_global', catName || null);
+      if (!nuevo) throw new Error('Sin respuesta de Supabase');
 
-      let actualizados = 0;
-      for (let k = 0; k < (prods || []).length; k++) {
-        // Leer opciones_extras actuales del producto y añadir el nuevo extra
-        var opActuales = [];
-        if (Array.isArray(prods[k].opciones_extras)) {
-          opActuales = prods[k].opciones_extras.map(function(e) {
-            return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
-          });
-        } else if (prods[k].opciones_extras) {
-          try { opActuales = JSON.parse(prods[k].opciones_extras); } catch(ex) {}
-        }
-        // Evitar duplicados: solo añadir si no existe ya
-        var yaExiste = opActuales.some(function(e) { return e.name === name; });
-        if (!yaExiste) opActuales.push({ name: name, price: price });
-
-        await SB.patch('productos', 'id=eq.' + prods[k].id, {
-          opciones_extras: opActuales
+      // 2. TAMBIÉN actualizar opciones_extras en los productos de esa categoría
+      //    para que menu.html (que lee de productos) los muestre de inmediato
+      //    hasta que se migre a leer de extras_maestros directamente.
+      if (catName) {
+        const prods = await SB.get('productos', {
+          select:        'id,opciones_extras',
+          'comercio_id': 'eq.' + _COMERCIO_ID,
+          'categoria':   'eq.' + encodeURIComponent(catName)
         });
-        actualizados++;
+        for (var k = 0; k < (prods || []).length; k++) {
+          var opAct = [];
+          if (Array.isArray(prods[k].opciones_extras)) {
+            opAct = prods[k].opciones_extras.map(function(e) {
+              return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
+            });
+          } else if (prods[k].opciones_extras) {
+            try { opAct = JSON.parse(prods[k].opciones_extras); } catch(ex) {}
+          }
+          var yaExiste = opAct.some(function(e) { return e.name === name; });
+          if (!yaExiste) {
+            opAct.push({ name: name, price: price });
+            await SB.patch('productos', 'id=eq.' + prods[k].id, { opciones_extras: opAct });
+          }
+        }
       }
 
-      // Actualizar _categorias en memoria (para que renderGlobalExtras funcione)
-      upd(function(s2) {
-        var cat = (s2._categorias || []).find(function(c) { return c.id === catRow.id; });
-        if (cat) cat.extras_categoria = existentes;
-      });
-      renderGlobalExtras();
-      showToast('Extra "' + name + '" agregado a ' + catName + ' ✓');
-      console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
-        '| extra:', name, '| categoría:', catName, '| productos actualizados:', actualizados);
+      await renderGlobalExtras();
+      showToast('Extra "' + name + '" agregado ✓');
+      console.log('[SB] Extra global guardado en extras_maestros:', nombre, '| id:', nuevo.id);
     } catch(e) {
-      console.error('[SB] Error guardando extra en tabla productos:', e.message);
-      alert('❌ Error al guardar el extra:\n' + e.message);
+      console.error('[SB] Error guardando extra global:', e.message);
+      showToast('Error al guardar: ' + e.message);
     }
   })();
 }
 
+// ── delGlobalExtraMaestro: elimina de extras_maestros por id ──────────
+function delGlobalExtraMaestro(id, nombre) {
+  if (!confirm('¿Eliminar el extra "' + nombre + '"?\nTambién se quitará de los productos de su categoría.')) return;
+
+  (async function() {
+    try {
+      // 1. Eliminar de extras_maestros (tabla maestra)
+      await sbEliminarExtraMaestro(id);
+
+      // 2. Quitar de opciones_extras en todos los productos del comercio
+      //    para mantener consistencia con el JSONB de productos
+      const prods = await SB.get('productos', {
+        select:        'id,opciones_extras',
+        'comercio_id': 'eq.' + _COMERCIO_ID
+      });
+      for (var k = 0; k < (prods || []).length; k++) {
+        var opAct = [];
+        if (Array.isArray(prods[k].opciones_extras)) {
+          opAct = prods[k].opciones_extras.map(function(e) {
+            return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
+          });
+        } else if (prods[k].opciones_extras) {
+          try { opAct = JSON.parse(prods[k].opciones_extras); } catch(ex) {}
+        }
+        var opNuevos = opAct.filter(function(e) { return (e.name || '') !== nombre; });
+        if (opNuevos.length !== opAct.length) {
+          await SB.patch('productos', 'id=eq.' + prods[k].id, { opciones_extras: opNuevos });
+        }
+      }
+
+      await renderGlobalExtras();
+      showToast('Extra eliminado ✓');
+      console.log('[SB] Extra global eliminado de extras_maestros:', nombre, '| id:', id);
+    } catch(e) {
+      console.error('[SB] Error eliminando extra global:', e.message);
+      showToast('Error al eliminar: ' + e.message);
+    }
+  })();
+}
+
+// ── delGlobalExtra (legacy): redirige a delGlobalExtraMaestro ─────────
+// Mantiene compatibilidad con cualquier código que llame al nombre antiguo
 function delGlobalExtra(i) {
-  var s       = getStore();
-  var ge      = (s.globalExtras || [])[i];
+  var s = getStore();
+  var ge = (s.globalExtras || [])[i];
   if (!ge) return;
-
-  if (!confirm('¿Eliminar el extra "' + ge.nombre + '" de la categoría "' + ge.categoria + '"?')) return;
-
-  // Encontrar la fila de la categoría en memoria para actualizar la UI
-  var catRow = (s._categorias || []).find(function(c) { return c.nombre === ge.categoria; });
-  if (!catRow) { showToast('Categoría no encontrada'); return; }
-
-  // Calcular el array nuevo (sin el extra eliminado) para la UI en memoria
-  var nuevos = (Array.isArray(catRow.extras_categoria) ? catRow.extras_categoria : [])
-    .filter(function(e) { return (e.nombre || e.name) !== ge.nombre; });
-
-  // CORRECCIÓN ARQUITECTURAL: quitar el extra de opciones_extras en tabla PRODUCTOS
-  // Se actualizan TODOS los productos de esa categoría.
-  (async function() {
-    try {
-      // Obtener todos los productos de esta categoría en este comercio
-      const prods = await SB.get('productos', {
-        select: 'id,opciones_extras',
-        'comercio_id': 'eq.' + _COMERCIO_ID,
-        'categoria':   'eq.' + encodeURIComponent(ge.categoria)
-      });
-
-      let actualizados = 0;
-      for (let k = 0; k < (prods || []).length; k++) {
-        // Leer opciones_extras actuales y quitar el extra eliminado
-        var opActuales = [];
-        if (Array.isArray(prods[k].opciones_extras)) {
-          opActuales = prods[k].opciones_extras.map(function(e) {
-            return { name: e.name || e.nombre || '', price: parseInt(e.price || e.precio) || 0 };
-          });
-        } else if (prods[k].opciones_extras) {
-          try { opActuales = JSON.parse(prods[k].opciones_extras); } catch(ex) {}
-        }
-        // Filtrar fuera el extra eliminado
-        var opNuevos = opActuales.filter(function(e) {
-          return (e.name || e.nombre) !== ge.nombre;
-        });
-
-        await SB.patch('productos', 'id=eq.' + prods[k].id, {
-          opciones_extras: opNuevos
-        });
-        actualizados++;
-      }
-
-      // Actualizar _categorias en memoria (para que renderGlobalExtras funcione)
-      upd(function(s2) {
-        var cat = (s2._categorias || []).find(function(c) { return c.id === catRow.id; });
-        if (cat) cat.extras_categoria = nuevos;
-      });
-      renderGlobalExtras();
-      showToast('Extra eliminado');
-      console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
-        '| extra eliminado:', ge.nombre, '| categoría:', ge.categoria,
-        '| productos actualizados:', actualizados);
-    } catch(e) {
-      console.error('[SB] Error eliminando extra en tabla productos:', e.message);
-      alert('❌ Error al eliminar el extra:\n' + e.message);
-    }
-  })();
+  delGlobalExtraMaestro(ge.id, ge.nombre);
 }
+
 
 function loadConfig() {
   var c = getStore().config;
@@ -4985,10 +4986,41 @@ function saveAddons(arr) {
 var _addonEditId = null;
 var _addonOptions = []; // [{id,name,price,available}]
 
-function renderAddons() {
-  var addons = getAddons();
+async function renderAddons() {
   var el = document.getElementById('addons-list');
   if (!el) return;
+
+  // Cargar adiciones desde extras_maestros para mostrarlas aunque no estén en memoria
+  // Esto garantiza que al refrescar la pestaña aparezcan las adiciones guardadas.
+  try {
+    const rows = await sbCargarExtrasMaestros();
+    const adicionesGuardadas = rows.filter(function(r) { return r.tipo === 'adicion'; });
+    if (adicionesGuardadas.length) {
+      // Reconstruir _catAddons en memoria desde extras_maestros
+      // agrupando por categoría para que el editor de adiciones funcione
+      var bycat = {};
+      adicionesGuardadas.forEach(function(r) {
+        var cat = r.categoria || '__sin_categoria__';
+        if (!bycat[cat]) bycat[cat] = [];
+        bycat[cat].push({ id: 'opt_' + r.id, name: r.nombre, price: r.precio, available: true });
+      });
+      var addonsMem = Object.keys(bycat).map(function(cat, idx) {
+        return {
+          id:      'addon_maestro_' + idx,
+          name:    'Adiciones — ' + (cat === '__sin_categoria__' ? 'General' : cat),
+          cat:     cat === '__sin_categoria__' ? '' : cat,
+          type:    'optional',
+          min:     0,
+          options: bycat[cat]
+        };
+      });
+      saveAddons(addonsMem);
+    }
+  } catch(e) {
+    console.warn('[Admin] No se pudieron cargar adiciones desde extras_maestros:', e.message);
+  }
+
+  var addons = getAddons();
   if (!addons.length) {
     el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:32px;margin-bottom:10px">➕</div><div>No hay adiciones creadas</div><div style="font-size:12px;margin-top:6px">Crea grupos de opciones para tus categorías</div></div>';
     return;
@@ -5102,15 +5134,13 @@ function addAddonOption(){
 // Cada grupo de adiciones se guarda en la fila de su categoría,
 // en la columna 'adiciones' (JSONB).
 async function _persistAddonsSB() {
-  // CORRECCIÓN ARQUITECTURAL: las adiciones se guardan en la tabla PRODUCTOS,
-  // columna opciones_sabores — NO en la tabla categorias.
-  // Por cada grupo de adiciones se obtienen todos los productos de esa categoría
-  // y se hace PATCH con opciones_sabores = [{name, price}].
+  // ARQUITECTURA ACTUALIZADA: las adiciones se guardan en DOS lugares:
+  // 1. tabla extras_maestros (tipo='adicion') — fuente de verdad persistente para el admin
+  // 2. tabla productos columna opciones_sabores — para que menu.html las lea en los productos
   try {
     const addons = getStore()._catAddons || [];
 
-    // Agrupar opciones por categoría → [{name, price}] para opciones_sabores
-    // Formato en BD: [{"name": "Salsa especial", "price": 0}, ...]
+    // Agrupar opciones por categoría → [{name, price}]
     const byCat = {};
     addons.forEach(function(addon) {
       if (!byCat[addon.cat]) byCat[addon.cat] = [];
@@ -5121,34 +5151,61 @@ async function _persistAddonsSB() {
       });
     });
 
-    // Para cada categoría con adiciones: obtener sus productos y actualizar opciones_sabores
+    // ── PASO 1: Sincronizar extras_maestros (tabla maestra) ───────────
+    // Para cada categoría: eliminar las adiciones viejas e insertar las nuevas.
+    // Usamos delete+insert en lugar de upsert para simplificar el control.
     const catNombres = Object.keys(byCat);
-    let totalProductosActualizados = 0;
     for (let i = 0; i < catNombres.length; i++) {
-      const catNombre = catNombres[i];
-      const nuevasAdiciones = byCat[catNombre]; // [{name, price}]
+      const catNombre     = catNombres[i];
+      const nuevasAdicion = byCat[catNombre];
 
-      // GET todos los productos de esta categoría para este comercio
+      // Eliminar adiciones antiguas de esta categoría en extras_maestros
+      try {
+        await SB.del('extras_maestros',
+          'comercio_id=eq.' + _COMERCIO_ID
+          + '&tipo=eq.adicion'
+          + '&categoria=eq.' + encodeURIComponent(catNombre));
+      } catch(delErr) { console.warn('[SB] No se pudieron borrar adiciones antiguas:', delErr.message); }
+
+      // Insertar las nuevas adiciones en extras_maestros
+      for (let n = 0; n < nuevasAdicion.length; n++) {
+        const opt = nuevasAdicion[n];
+        await sbInsertarExtraMaestro(opt.name, opt.price, 'adicion', catNombre);
+      }
+      console.log('[SB] Adiciones sincronizadas en extras_maestros | categoría:', catNombre, '| cantidad:', nuevasAdicion.length);
+    }
+
+    // Limpiar adiciones de categorías que ya no tienen ninguna
+    const allCats = getStore().categories || [];
+    for (let j = 0; j < allCats.length; j++) {
+      if (!byCat[allCats[j]]) {
+        try {
+          await SB.del('extras_maestros',
+            'comercio_id=eq.' + _COMERCIO_ID
+            + '&tipo=eq.adicion'
+            + '&categoria=eq.' + encodeURIComponent(allCats[j]));
+        } catch(e2) {}
+      }
+    }
+
+    // ── PASO 2: TAMBIÉN actualizar opciones_sabores en productos ──────
+    // Para que menu.html (que lee de productos) los muestre sin cambios.
+    let totalProd = 0;
+    for (let i = 0; i < catNombres.length; i++) {
+      const catNombre      = catNombres[i];
+      const nuevasAdicion  = byCat[catNombre];
       const prods = await SB.get('productos', {
         select: 'id',
         'comercio_id': 'eq.' + _COMERCIO_ID,
         'categoria':   'eq.' + encodeURIComponent(catNombre)
       });
-
-      // PATCH opciones_sabores en cada producto de la categoría
       for (let k = 0; k < (prods || []).length; k++) {
-        await SB.patch('productos', 'id=eq.' + prods[k].id, {
-          opciones_sabores: nuevasAdiciones
-        });
-        totalProductosActualizados++;
+        await SB.patch('productos', 'id=eq.' + prods[k].id, { opciones_sabores: nuevasAdicion });
+        totalProd++;
       }
-      console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
-        '| categoría:', catNombre, '| productos actualizados:', (prods || []).length,
-        '| adiciones:', nuevasAdiciones.length);
     }
 
-    // Categorías sin adiciones → vaciar opciones_sabores en sus productos
-    const allCats = getStore().categories || [];
+    // Vaciar opciones_sabores en productos de categorías sin adiciones
     for (let j = 0; j < allCats.length; j++) {
       if (!byCat[allCats[j]]) {
         const prodsVacios = await SB.get('productos', {
@@ -5165,10 +5222,10 @@ async function _persistAddonsSB() {
       }
     }
 
-    console.log('[SB] Datos persistidos en tabla PRODUCTOS para el comercio:', _COMERCIO_ID,
-      '| Total productos con adiciones actualizados:', totalProductosActualizados);
+    console.log('[SB] Adiciones persistidas en extras_maestros + productos | comercio:', _COMERCIO_ID,
+      '| productos actualizados:', totalProd);
   } catch(e) {
-    console.error('[SB] Error guardando adiciones en tabla productos:', e.message);
+    console.error('[SB] Error guardando adiciones:', e.message);
   }
 }
 
