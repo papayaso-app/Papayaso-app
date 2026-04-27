@@ -557,25 +557,31 @@ async function doLogin() {
       return;
     }
 
-    // Comercio → buscar su slug en tabla comercios (por user_id o email)
-    // y redirigir a admin.html?rest=slug
+    // Comercio → buscar slug con los 4 niveles garantizados
     var slug = await _buscarSlugComercio(user, data.access_token);
 
-    // Guardar sesión de admin en localStorage antes de redirigir
+    // Guardar sesión en localStorage
     try { localStorage.setItem('papayaso_admin_session', JSON.stringify(session)); } catch(e) {}
 
     if (slug) {
-      // Guardar el slug en localStorage como fallback para cuando admin.html
-      // cargue sin ?rest= (ej. tras refresh o navegación por historial)
+      // Guardar slug en localStorage (fallback para admin.html tras refresh)
       try { localStorage.setItem('papayaso_admin_slug', slug); } catch(e) {}
-      console.log('[Auth] Redirigiendo a Admin slug:', slug);
-      window.location.replace('admin.html?rest=' + encodeURIComponent(slug));
+      var destino = 'admin.html?rest=' + encodeURIComponent(slug);
+      console.log('[Auth] ✅ Redirigiendo al admin con slug:', destino);
+      // Punto 2: window.location.href (garantiza la URL completa en todos los navegadores)
+      window.location.href = destino;
     } else {
-      // Sin slug conocido → ir al admin sin slug.
-      // admin.html lo leerá desde localStorage ('papayaso_admin_slug')
-      // si estaba guardado de una sesión anterior, o mostrará aviso amigable.
-      console.warn('[Auth] Sin slug en comercios — redirigiendo a admin sin ?rest=');
-      window.location.replace('admin.html');
+      // ── Punto 4: sin slug → cerrar sesión y mostrar mensaje claro ────────
+      // No permitir que el usuario llegue al admin con el panel vacío.
+      console.warn('[Auth] ❌ Sin slug encontrado para:', user.email, '— cerrando sesión');
+      await _signOutYReset();
+      setLoading('login', false);
+      setMsg('login',
+        'Tu cuenta no tiene un comercio asignado. Contacta al Súper Admin.',
+        'error');
+      // Limpiar campo de contraseña para que el usuario sepa que debe actuar
+      var passEl = document.getElementById('login-pass');
+      if (passEl) passEl.value = '';
     }
 
   } catch(e) {
@@ -595,61 +601,125 @@ async function doLogin() {
 }
 
 // Buscar el slug del comercio asociado al usuario que inicia sesión
+// _buscarSlugComercio — detective de 4 niveles garantizado
+// Busca el slug del comercio asociado al usuario que acaba de iniciar sesión.
+// Al encontrarlo, sincroniza el slug en user_metadata para que
+// las próximas entradas sean instantáneas sin consultar la BD.
 async function _buscarSlugComercio(user, accessToken) {
+
+  var emailUsuario = (user.email || '').trim().toLowerCase();
+  var userId       = user.id || '';
+
+  var hdrs = {
+    'apikey':        SUPABASE_KEY,
+    'Authorization': 'Bearer ' + accessToken,
+    'Content-Type':  'application/json'
+  };
+
+  // Función interna: sincronizar el slug en user_metadata de Supabase
+  // para que las próximas entradas no necesiten consultar la BD (Punto 3).
+  async function _sincronizarMetadata(slugEncontrado) {
+    try {
+      var r = await fetch(SUPABASE_URL + '/auth/v1/user', {
+        method: 'PUT',
+        headers: {
+          'Content-Type':  'application/json',
+          'apikey':        SUPABASE_KEY,
+          'Authorization': 'Bearer ' + accessToken
+        },
+        body: JSON.stringify({ data: { comercio_slug: slugEncontrado } })
+      });
+      if (r.ok) {
+        console.log('[Auth] ✅ Slug sincronizado en user_metadata:', slugEncontrado);
+      } else {
+        console.warn('[Auth] No se pudo sincronizar metadata (no crítico)');
+      }
+    } catch(e) {
+      console.warn('[Auth] Error sincronizando metadata (no crítico):', e.message);
+    }
+  }
+
   try {
-    // Paso 1: Leer desde user_metadata (lo pone el superadmin al crear el comercio)
+    // ── Nivel 0: user_metadata — instantáneo, sin red ──────────────
     var meta = user.user_metadata || {};
     if (meta.comercio_slug && meta.comercio_slug.trim()) {
-      console.log('[Auth] Slug encontrado en user_metadata:', meta.comercio_slug);
+      console.log('[Auth] Nivel 0 — Slug en user_metadata:', meta.comercio_slug.trim());
       return meta.comercio_slug.trim();
     }
 
-    // Paso 2: Buscar en la tabla comercios por user_id
-    var url = new URL(SUPABASE_URL + '/rest/v1/comercios');
-    url.searchParams.set('select', 'slug');
-    url.searchParams.set('user_id', 'eq.' + user.id);
-    url.searchParams.set('limit', '1');
-
-    var r = await fetch(url, {
-      headers: {
-        'apikey':        SUPABASE_KEY,
-        'Authorization': 'Bearer ' + accessToken,
-        'Content-Type':  'application/json'
-      }
-    });
-    if (r.ok) {
-      var rows = await r.json();
-      if (rows && rows.length && rows[0].slug) {
-        console.log('[Auth] Slug encontrado en tabla comercios:', rows[0].slug);
-        return rows[0].slug;
+    // ── Nivel 1: comercios WHERE user_id = user.id ──────────────────
+    if (userId) {
+      var u1 = new URL(SUPABASE_URL + '/rest/v1/comercios');
+      u1.searchParams.set('select', 'slug'); u1.searchParams.set('user_id', 'eq.' + userId); u1.searchParams.set('limit', '1');
+      var r1 = await fetch(u1, { headers: hdrs });
+      if (r1.ok) {
+        var d1 = await r1.json();
+        if (d1 && d1.length && d1[0].slug) {
+          console.log('[Auth] Nivel 1 — Slug por user_id:', d1[0].slug);
+          await _sincronizarMetadata(d1[0].slug);
+          return d1[0].slug;
+        }
       }
     }
 
-    // Paso 3: Buscar por email del usuario (columna email_dueno si existe)
-    var urlEmail = new URL(SUPABASE_URL + '/rest/v1/comercios');
-    urlEmail.searchParams.set('select', 'slug');
-    urlEmail.searchParams.set('email_dueno', 'eq.' + (user.email || ''));
-    urlEmail.searchParams.set('limit', '1');
-
-    var r2 = await fetch(urlEmail, {
-      headers: {
-        'apikey':        SUPABASE_KEY,
-        'Authorization': 'Bearer ' + accessToken,
-        'Content-Type':  'application/json'
-      }
-    });
-    if (r2.ok) {
-      var rows2 = await r2.json();
-      if (rows2 && rows2.length && rows2[0].slug) {
-        console.log('[Auth] Slug encontrado por email_dueno:', rows2[0].slug);
-        return rows2[0].slug;
+    // ── Nivel 2: comercios WHERE email_dueno = email ────────────────
+    // Este es el caso de Real Broaster y cualquier comercio creado
+    // con la columna email_dueno en la tabla (Punto 1 obligatorio).
+    if (emailUsuario) {
+      var u2 = new URL(SUPABASE_URL + '/rest/v1/comercios');
+      u2.searchParams.set('select', 'slug'); u2.searchParams.set('email_dueno', 'eq.' + emailUsuario); u2.searchParams.set('limit', '1');
+      var r2 = await fetch(u2, { headers: hdrs });
+      if (r2.ok) {
+        var d2 = await r2.json();
+        if (d2 && d2.length && d2[0].slug) {
+          console.log('[Auth] Nivel 2 — Slug por email_dueno:', d2[0].slug);
+          await _sincronizarMetadata(d2[0].slug);
+          return d2[0].slug;
+        }
       }
     }
 
-    console.warn('[Auth] No se encontró slug del comercio para este usuario — admin cargará sin ?rest=');
+    // ── Nivel 3: comercios WHERE email = email (columna alternativa) ─
+    if (emailUsuario) {
+      var u3 = new URL(SUPABASE_URL + '/rest/v1/comercios');
+      u3.searchParams.set('select', 'slug'); u3.searchParams.set('email', 'eq.' + emailUsuario); u3.searchParams.set('limit', '1');
+      var r3 = await fetch(u3, { headers: hdrs });
+      if (r3.ok) {
+        var d3 = await r3.json();
+        if (d3 && d3.length && d3[0].slug) {
+          console.log('[Auth] Nivel 3 — Slug por columna email:', d3[0].slug);
+          await _sincronizarMetadata(d3[0].slug);
+          return d3[0].slug;
+        }
+      }
+    }
+
+    // ── Nivel 4 (garantía final): traer todos los comercios y filtrar
+    // localmente comparando el email del usuario contra todos los campos
+    // de texto que puedan contener un email (email_dueno, email, whatsapp,
+    // telefono, nombre). Funciona aunque la columna tenga cualquier nombre.
+    console.log('[Auth] Nivel 4 — Escaneando todos los comercios para encontrar el email...');
+    var u4 = new URL(SUPABASE_URL + '/rest/v1/comercios');
+    u4.searchParams.set('select', 'slug,email_dueno,email,whatsapp,telefono,nombre');
+    var r4 = await fetch(u4, { headers: hdrs });
+    if (r4.ok) {
+      var todos = await r4.json();
+      for (var i = 0; i < (todos || []).length; i++) {
+        var c = todos[i];
+        var camposEmail = [c.email_dueno, c.email, c.whatsapp, c.telefono]
+          .map(function(v) { return (v || '').trim().toLowerCase(); });
+        if (camposEmail.indexOf(emailUsuario) >= 0) {
+          console.log('[Auth] Nivel 4 — Slug encontrado por escaneo local:', c.slug);
+          await _sincronizarMetadata(c.slug);
+          return c.slug;
+        }
+      }
+    }
+
+    console.warn('[Auth] ❌ Ningún nivel encontró el slug para:', emailUsuario);
     return null;
   } catch(e) {
-    console.warn('[Auth] Error buscando slug del comercio:', e.message);
+    console.warn('[Auth] Error en _buscarSlugComercio:', e.message);
     return null;
   }
 }
@@ -879,36 +949,34 @@ function _slugDesdeCache(user) {
           return;
         }
 
-        // ── PUNTO 1: Buscar slug con los 3 niveles antes de redirigir ──────
+        // ── Buscar slug con los 4 niveles garantizados ──────────────────
         // Intentar primero desde caché (sin red) para ser rápidos
         var slug = _slugDesdeCache(user);
 
         if (!slug) {
           // No estaba en caché → buscar en Supabase con el accessToken de la sesión
-          console.log('[Login] Buscando slug del comercio en Supabase...');
+          console.log('[Login] Buscando slug del comercio en Supabase (sesión activa)...');
           slug = await _buscarSlugComercio(user, admSession.access_token);
         }
 
-        // ── PUNTO 2: Redirigir con ?rest= si encontramos el slug ─────────
+        // ── Punto 2: Redirigir con ?rest= SIEMPRE que haya slug ──────────
         if (slug) {
-          // Persistir el slug en localStorage para futuros accesos sin ?rest=
           try { localStorage.setItem('papayaso_admin_slug', slug); } catch(e) {}
           var destino = 'admin.html?rest=' + encodeURIComponent(slug);
           console.log('[Login] Sesión activa — redirigiendo con slug:', destino);
-          window.location.replace(destino);
+          // window.location.href para compatibilidad total en móviles
+          window.location.href = destino;
           return;
         }
 
-        // ── PUNTO 3: Sin slug → signOut y resetear para forzar nuevo login ─
-        // El usuario está logueado pero no tiene comercio asignado.
-        // Esto puede ocurrir si el superadmin creó la cuenta pero no la vinculó.
-        console.warn('[Login] Sesión activa pero SIN slug de comercio — ejecutando signOut y reset');
+        // ── Punto 4: Sin slug → signOut + mensaje claro ───────────────────
+        // No permitir acceso al admin con el panel vacío.
+        console.warn('[Login] Sesión activa pero SIN slug — cerrando sesión automáticamente');
         await _signOutYReset();
-        // Mostrar el formulario de login con mensaje informativo
         var msgEl = document.getElementById('msg-login');
         if (msgEl) {
-          msgEl.textContent = 'Tu cuenta no tiene un comercio asignado. Contacta al administrador.';
-          msgEl.className   = 'msg show info';
+          msgEl.textContent = 'Tu cuenta no tiene un comercio asignado. Contacta al Súper Admin.';
+          msgEl.className   = 'msg show error';
         }
         setTimeout(function() {
           var el = document.getElementById('login-email');
