@@ -740,10 +740,13 @@ async function crearComercio() {
           email:    email,
           password: password,
           data: {
-            // user_metadata: info útil para identificar al dueño
+            // user_metadata: info clave para identificar al dueño
             role:           'admin',
             comercio_slug:  slug,
-            comercio_nombre: nombre
+            comercio_nombre: nombre,
+            // email_admin guardado en metadata para que el detective de login
+            // lo use en el Nivel 0 (sin necesidad de consultar la BD)
+            email_admin:    email
           }
         });
 
