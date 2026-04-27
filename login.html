@@ -774,7 +774,40 @@ async function doNewPass() {
 // ══════════════════════════════════════════════════════════════
 // ARRANQUE: guardia del login — evitar bucles de redirección
 // ══════════════════════════════════════════════════════════════
-(function init() {
+// ── Helper: cerrar sesión en Supabase y limpiar storage ─────────────
+// Usado cuando el usuario está logueado pero no tiene comercio asignado.
+async function _signOutYReset() {
+  try {
+    var admRaw = localStorage.getItem('papayaso_admin_session');
+    var token  = admRaw ? (JSON.parse(admRaw).access_token || '') : '';
+    if (token) {
+      await fetch(SUPABASE_URL + '/auth/v1/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY,
+                   'Authorization': 'Bearer ' + token }
+      });
+    }
+  } catch(e) {}
+  try { localStorage.clear(); }    catch(e) {}
+  try { sessionStorage.setItem('papayaso_logout_flag', '1'); } catch(e) {}
+  console.log('[Login] signOut ejecutado — sesión reseteada');
+}
+
+// ── Helper: buscar slug sin necesitar accessToken (solo con datos en caché) ──
+// Busca en user_metadata y en localStorage antes de intentar red.
+function _slugDesdeCache(user) {
+  // Nivel 1: user_metadata
+  var meta = (user && user.user_metadata) || {};
+  if (meta.comercio_slug && meta.comercio_slug.trim()) return meta.comercio_slug.trim();
+  // Nivel 2: localStorage guardado por login previo
+  try {
+    var fromStorage = (localStorage.getItem('papayaso_admin_slug') || '').trim();
+    if (fromStorage) return fromStorage;
+  } catch(e) {}
+  return null;
+}
+
+(async function init() {
   // ── Paso 1: hash de recuperación de contraseña (prioridad máxima) ──
   if (detectarHashRecovery()) return;
 
@@ -838,21 +871,57 @@ async function doNewPass() {
         var meta = user.user_metadata || {};
         var appM = user.app_metadata  || {};
         var role = meta.role || appM.role || '';
+
+        // Si tiene rol super_admin → redirigir al superadmin sin necesitar slug
         if (role === 'super_admin' || user.email === 'escobardiego1992@hotmail.com') {
-          // Tiene rol super_admin pero la sesión guardada es de admin —
-          // redirigir al superadmin donde el guard hará la verificación
           console.log('[Login] Sesión de admin con rol super_admin — redirigiendo a superadmin...');
           window.location.replace('superadmin.html');
           return;
         }
-        console.log('[Login] Sesión de admin activa en localStorage — redirigiendo...');
-        window.location.replace('admin.html');
+
+        // ── PUNTO 1: Buscar slug con los 3 niveles antes de redirigir ──────
+        // Intentar primero desde caché (sin red) para ser rápidos
+        var slug = _slugDesdeCache(user);
+
+        if (!slug) {
+          // No estaba en caché → buscar en Supabase con el accessToken de la sesión
+          console.log('[Login] Buscando slug del comercio en Supabase...');
+          slug = await _buscarSlugComercio(user, admSession.access_token);
+        }
+
+        // ── PUNTO 2: Redirigir con ?rest= si encontramos el slug ─────────
+        if (slug) {
+          // Persistir el slug en localStorage para futuros accesos sin ?rest=
+          try { localStorage.setItem('papayaso_admin_slug', slug); } catch(e) {}
+          var destino = 'admin.html?rest=' + encodeURIComponent(slug);
+          console.log('[Login] Sesión activa — redirigiendo con slug:', destino);
+          window.location.replace(destino);
+          return;
+        }
+
+        // ── PUNTO 3: Sin slug → signOut y resetear para forzar nuevo login ─
+        // El usuario está logueado pero no tiene comercio asignado.
+        // Esto puede ocurrir si el superadmin creó la cuenta pero no la vinculó.
+        console.warn('[Login] Sesión activa pero SIN slug de comercio — ejecutando signOut y reset');
+        await _signOutYReset();
+        // Mostrar el formulario de login con mensaje informativo
+        var msgEl = document.getElementById('msg-login');
+        if (msgEl) {
+          msgEl.textContent = 'Tu cuenta no tiene un comercio asignado. Contacta al administrador.';
+          msgEl.className   = 'msg show info';
+        }
+        setTimeout(function() {
+          var el = document.getElementById('login-email');
+          if (el) el.focus();
+        }, 100);
         return;
       }
       // Sesión caducada → limpiarla
       localStorage.removeItem('papayaso_admin_session');
     }
-  } catch(e) {}
+  } catch(e) {
+    console.error('[Login] Error verificando sesión en localStorage:', e.message);
+  }
 
   // ── Paso 4: sin sesión válida → mostrar el formulario de login ─────
   console.log('[Login] Sin sesión activa — mostrando formulario de login');
