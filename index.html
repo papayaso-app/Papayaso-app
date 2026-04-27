@@ -962,6 +962,19 @@ function openProd(id) {
   if (ex) {
     var xh = '';
 
+    // ── Complementar con extras de extras_maestros (tabla maestra) ─────────
+    // Los extras propios del producto (JSONB) se mezclan con los de la tabla.
+    // Los de extras_maestros tienen prioridad para la administración,
+    // pero se muestran en secciones separadas para claridad.
+    var maestros    = (_STORE._extrasMaestros || []).filter(function(r) {
+      // Mostrar extras maestros que aplican a esta categoría o a todos (categoria=null)
+      return !r.categoria || r.categoria === p.cat;
+    });
+    var maestrosExt = maestros.filter(function(r) { return r.tipo === 'extra_global'; })
+      .map(function(r) { return { name: r.nombre, price: r.precio || 0 }; });
+    var maestrosAdc = maestros.filter(function(r) { return r.tipo === 'adicion'; })
+      .map(function(r) { return { name: r.nombre, price: r.precio || 0 }; });
+
     // ── Sección 1: Extras propios (columna extras) ────────────────────────
     var prodExtras = Array.isArray(p.extras) ? p.extras.filter(function(e) { return e && e.name; }) : [];
     if (prodExtras.length) {
@@ -1007,13 +1020,57 @@ function openProd(id) {
       }
     }
 
+    // ── Sección 4: Extras globales de extras_maestros (tipo=extra_global) ──
+    // Se combinan con prodExtrasGlob evitando duplicados por nombre
+    var nombresGlobProd = prodExtrasGlob.map(function(e){ return e.name; });
+    var maestrosExtNoDup = maestrosExt.filter(function(e) {
+      return nombresGlobProd.indexOf(e.name) < 0;
+    });
+    var extrasGlobFinal = prodExtrasGlob.concat(maestrosExtNoDup);
+
+    // ── Sección 5: Adiciones de extras_maestros (tipo=adicion) ───────────
+    var nombresAdicProd = prodAdiciones.map(function(e){ return e.name; });
+    var maestrosAdcNoDup = maestrosAdc.filter(function(e) {
+      return nombresAdicProd.indexOf(e.name) < 0;
+    });
+    var adicionesFinal = prodAdiciones.concat(maestrosAdcNoDup);
+
+    // Añadir filas al HTML si hay extras de extras_maestros que no estaban en JSONB
+    if (maestrosExtNoDup.length) {
+      for (var mi = 0; mi < maestrosExtNoDup.length; mi++) {
+        var me = maestrosExtNoDup[mi];
+        var giOff = prodExtras.length + adicionesFinal.length + prodExtrasGlob.length + mi;
+        xh += '<div class="xrow" id="xr_m_' + mi + '" onclick="togExtraSec(this)" data-grupo="m" data-idx="' + giOff + '">'
+          + '<div class="xchk"></div>'
+          + '<span class="xname">' + me.name + '</span>'
+          + '<span class="xprice-lbl">' + (me.price > 0 ? '+' + fp(me.price) : 'Incluido') + '</span>'
+          + '</div>';
+      }
+    }
+    if (maestrosAdcNoDup.length) {
+      var hasAbove2 = prodExtras.length || adicionesFinal.length;
+      if (!prodAdiciones.length && maestrosAdcNoDup.length) {
+        xh += '<div class="xtl" style="margin-top:' + (hasAbove2 ? '10px' : '0') + '">Adiciones'
+          + ' <span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;'
+          + 'padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span></div>';
+      }
+      for (var aj = 0; aj < maestrosAdcNoDup.length; aj++) {
+        var ma = maestrosAdcNoDup[aj];
+        var ajOff = prodExtras.length + prodAdiciones.length + aj;
+        xh += '<div class="xrow" id="xr_ma_' + aj + '" onclick="togExtraSec(this)" data-grupo="a" data-idx="' + ajOff + '">'
+          + '<div class="xchk"></div>'
+          + '<span class="xname">' + ma.name + '</span>'
+          + '<span class="xprice-lbl">' + (ma.price > 0 ? '+' + fp(ma.price) : 'Incluido') + '</span>'
+          + '</div>';
+      }
+    }
+
     // Guardar referencias en curProd para que addToCart() y updT() las usen
     curProd._extras      = prodExtras;
-    curProd._adiciones   = prodAdiciones;
-    curProd._extrasGlob  = prodExtrasGlob;
+    curProd._adiciones   = adicionesFinal;
+    curProd._extrasGlob  = extrasGlobFinal;
     // _allExtras unificado en orden: extras → adiciones → extras globales
-    // togX() e updT() usan el índice global de este array
-    curProd._allExtras   = prodExtras.concat(prodAdiciones).concat(prodExtrasGlob);
+    curProd._allExtras   = prodExtras.concat(adicionesFinal).concat(extrasGlobFinal);
     // mantener compatibilidad con código legacy
     curProd._catAddons   = [];
     curProd._catAdiciones = [];
@@ -2451,6 +2508,28 @@ async function sbCargarProductos() {
 // pos_categorias NO tiene extras_categoria ni adiciones_categoria.
 // Filtro por comercio_id obligatorio
 // ══════════════════════════════════════════════════════════════
+// ── sbCargarExtrasMaestros en menú: carga extras globales y adiciones
+// desde la tabla maestra para complementar los extras de cada producto.
+// Los productos siguen teniendo sus extras propios en JSONB (columna extras),
+// pero los globales/adiciones vienen de extras_maestros para facilitar su
+// administración desde el panel.
+async function sbCargarExtrasMaestros() {
+  if (!_COMERCIO_ID) return;
+  try {
+    const rows = await SB.get('extras_maestros', {
+      select:        'id,nombre,precio,tipo,categoria',
+      'comercio_id': 'eq.' + _COMERCIO_ID,
+      'activo':      'eq.true',
+      order:         'tipo.asc,id.asc'
+    });
+    _STORE._extrasMaestros = rows || [];
+    console.log('[SB] extras_maestros cargados en menú:', (rows || []).length);
+  } catch(e) {
+    _STORE._extrasMaestros = [];
+    console.warn('[SB] No se pudo cargar extras_maestros (puede no existir aún):', e.message);
+  }
+}
+
 async function sbCargarCategorias() {
   if (!_COMERCIO_ID) return;
   try {
@@ -2851,6 +2930,14 @@ async function restaurarSeguimientoSiExiste() {
     await sbCargarConfig();
   } catch(e) {
     console.warn('[SB] sbCargarConfig falló — continuando con defaults:', e.message);
+  }
+
+  // ── Paso 1b: Extras maestros (extras globales y adiciones desde tabla maestra)
+  try {
+    await sbCargarExtrasMaestros();
+  } catch(e) {
+    console.warn('[SB] sbCargarExtrasMaestros falló:', e.message);
+    _STORE._extrasMaestros = [];
   }
 
   // ── Paso 2: Productos — es el dato crítico del menú.
