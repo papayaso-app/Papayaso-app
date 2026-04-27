@@ -695,19 +695,24 @@ async function _buscarSlugComercio(user, accessToken) {
     }
 
     // ── Nivel 4 (garantía final): traer todos los comercios y filtrar
-    // localmente comparando el email del usuario contra todos los campos
-    // de texto que puedan contener un email (email_dueno, email, whatsapp,
-    // telefono, nombre). Funciona aunque la columna tenga cualquier nombre.
+    // localmente comparando el email del usuario contra los campos de
+    // email existentes en la tabla.
+    // Punto 5: el select SOLO usa columnas reales de la tabla comercios:
+    // slug, email_dueno, email, whatsapp, telefono.
+    // NO se usan columnas eliminadas: url_logo, url_portada, nombre_negocio.
     console.log('[Auth] Nivel 4 — Escaneando todos los comercios para encontrar el email...');
     var u4 = new URL(SUPABASE_URL + '/rest/v1/comercios');
-    u4.searchParams.set('select', 'slug,email_dueno,email,whatsapp,telefono,nombre');
+    // Solo columnas que existen en la tabla (sin las eliminadas)
+    u4.searchParams.set('select', 'slug,email_dueno,email,whatsapp,telefono');
     var r4 = await fetch(u4, { headers: hdrs });
     if (r4.ok) {
       var todos = await r4.json();
       for (var i = 0; i < (todos || []).length; i++) {
         var c = todos[i];
+        // Normalizar null → "" (Punto 3) antes de comparar
         var camposEmail = [c.email_dueno, c.email, c.whatsapp, c.telefono]
-          .map(function(v) { return (v || '').trim().toLowerCase(); });
+          .map(function(v) { return (v === null || v === undefined) ? '' : String(v).trim().toLowerCase(); })
+          .filter(function(v) { return v.length > 0; });
         if (camposEmail.indexOf(emailUsuario) >= 0) {
           console.log('[Auth] Nivel 4 — Slug encontrado por escaneo local:', c.slug);
           await _sincronizarMetadata(c.slug);
