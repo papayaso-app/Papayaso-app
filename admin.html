@@ -1164,12 +1164,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="pos-receipt-body" style="padding:16px">
       <div class="fg2" style="margin-bottom:10px">
         <div class="fg">
-          <label>Producto destino <span style="font-size:10px;color:var(--muted)">(categoria)</span></label>
-          <select id="addon-cat" class="fsel" style="width:100%"></select>
+          <label>Nombre del grupo</label>
+          <input id="addon-name" type="text" placeholder="Ej: Sabor de helado, Tipo de salsa...">
         </div>
         <div class="fg">
-          <label>Nombre del grupo <span style="font-size:10px;color:var(--muted)">(categoria_adicion)</span></label>
-          <input id="addon-cat-adicion" type="text" placeholder="Ej: Sabor de helado, Tipo de salsa...">
+          <label>Categoría a la que aplica</label>
+          <select id="addon-cat" class="fsel" style="width:100%"></select>
         </div>
       </div>
       <div class="fg2" style="margin-bottom:12px">
@@ -2682,9 +2682,9 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return [];
   try {
     const rows = await SB.get('extras_maestros', {
-      select:        'id,nombre,precio,tipo,categoria,categoria_adicion,activo,es_obligatorio,disponible,limite_unidades',
+      select:        'id,nombre,precio,tipo,categoria,activo,es_obligatorio,disponible,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
-      order:         'tipo.asc,categoria_adicion.asc,id.asc'
+      order:         'tipo.asc,id.asc'
     });
     upd(function(s) { s._extrasMaestros = rows || []; });
     console.log('[SB] extras_maestros cargados:', (rows || []).length);
@@ -2696,21 +2696,21 @@ async function sbCargarExtrasMaestros() {
 }
 
 // Insertar un extra en extras_maestros y devolver la fila creada.
-// categoria = producto destino; opts.categoria_adicion = nombre del grupo visible.
+// Acepta un objeto opts con los campos opcionales de la tabla:
+//   es_obligatorio, disponible, limite_unidades
 async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
   if (!_COMERCIO_ID) return null;
   var op = opts || {};
   const row = await SB.post('extras_maestros', {
-    comercio_id:       _COMERCIO_ID,
-    nombre:            nombre.trim(),
-    precio:            parseInt(precio) || 0,
-    tipo:              tipo || 'extra_global',
-    categoria:         categoria || null,
-    categoria_adicion: op.categoria_adicion ? op.categoria_adicion.trim() : null,
-    activo:            true,
-    es_obligatorio:    op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
-    disponible:        op.disponible !== undefined ? !!op.disponible : true,
-    limite_unidades:   parseInt(op.limite_unidades) || 1
+    comercio_id:    _COMERCIO_ID,
+    nombre:         nombre.trim(),
+    precio:         parseInt(precio) || 0,
+    tipo:           tipo           || 'extra_global',
+    categoria:      categoria      || null,
+    activo:         true,
+    es_obligatorio: op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
+    disponible:     op.disponible     !== undefined ? !!op.disponible     : true,
+    limite_unidades:parseInt(op.limite_unidades) || 1
   });
   return row && row[0] ? row[0] : null;
 }
@@ -5027,54 +5027,48 @@ async function renderAddons() {
   var el = document.getElementById('addons-list');
   if (!el) return;
 
-  // Vaciar SIEMPRE antes de pintar para evitar duplicaciones
-  el.innerHTML = '';
-
+  // Cargar adiciones desde extras_maestros para mostrarlas aunque no estén en memoria
+  // Esto garantiza que al refrescar la pestaña aparezcan las adiciones guardadas.
   try {
     const rows = await sbCargarExtrasMaestros();
     const adicionesGuardadas = rows.filter(function(r) { return r.tipo === 'adicion'; });
     if (adicionesGuardadas.length) {
-      // Agrupar por categoria_adicion (nombre del grupo visible).
-      // categoria = producto destino; categoria_adicion = nombre del grupo.
-      var byGrupo = {};
-      var grupoOrden = [];
+      // Reconstruir _catAddons en memoria desde extras_maestros,
+      // propagando es_obligatorio, disponible y limite_unidades al addon padre
+      // (se usan la primera fila de cada categoría como referencia del grupo)
+      var bycat = {};
       adicionesGuardadas.forEach(function(r) {
-        var grp = r.categoria_adicion || '__sin_grupo__';
-        if (!byGrupo[grp]) {
-          byGrupo[grp] = {
-            cat:             r.categoria        || '',
+        var cat = r.categoria || '__sin_categoria__';
+        if (!bycat[cat]) {
+          bycat[cat] = {
+            options:         [],
             es_obligatorio:  !!r.es_obligatorio,
             disponible:      r.disponible !== false,
-            limite_unidades: parseInt(r.limite_unidades) || 1,
-            options:         []
+            limite_unidades: parseInt(r.limite_unidades) || 1
           };
-          grupoOrden.push(grp);
         }
-        byGrupo[grp].options.push({
-          id:        'opt_' + r.id,
-          name:      r.nombre,
-          price:     r.precio || 0,
+        bycat[cat].options.push({
+          id:       'opt_' + r.id,
+          name:     r.nombre,
+          price:    r.precio || 0,
           available: r.disponible !== false
         });
       });
-      var addonsMem = grupoOrden.map(function(grp, idx) {
-        var g = byGrupo[grp];
+      var addonsMem = Object.keys(bycat).map(function(cat, idx) {
+        var g = bycat[cat];
         return {
-          id:                'addon_maestro_' + idx,
-          name:              grp === '__sin_grupo__' ? 'General' : grp,
-          cat:               g.cat,
-          categoria_adicion: grp === '__sin_grupo__' ? '' : grp,
-          type:              g.es_obligatorio ? 'required' : 'optional',
-          min:               g.es_obligatorio ? 1 : 0,
-          es_obligatorio:    g.es_obligatorio,
-          disponible:        g.disponible,
-          limite_unidades:   g.limite_unidades,
-          options:           g.options
+          id:              'addon_maestro_' + idx,
+          name:            'Adiciones — ' + (cat === '__sin_categoria__' ? 'General' : cat),
+          cat:             cat === '__sin_categoria__' ? '' : cat,
+          type:            g.es_obligatorio ? 'required' : 'optional',
+          min:             g.es_obligatorio ? 1 : 0,
+          es_obligatorio:  g.es_obligatorio,
+          disponible:      g.disponible,
+          limite_unidades: g.limite_unidades,
+          options:         g.options
         };
       });
       saveAddons(addonsMem);
-    } else {
-      saveAddons([]);
     }
   } catch(e) {
     console.warn('[Admin] No se pudieron cargar adiciones desde extras_maestros:', e.message);
@@ -5086,10 +5080,11 @@ async function renderAddons() {
     return;
   }
   var html = '';
-  for (var i = 0; i < addons.length; i++) {
+  for (var i=0;i<addons.length;i++) {
     var ad = addons[i];
-    var esOblig  = !!ad.es_obligatorio;
-    var esDispon = ad.disponible !== false;
+    // Badges usando los 3 campos persistidos desde extras_maestros
+    var esOblig  = ad.es_obligatorio  || ad.type === 'required';
+    var esDispon = ad.disponible      !== false;
     var limUni   = parseInt(ad.limite_unidades) || 1;
     var typeLabel =
         (esOblig
@@ -5097,33 +5092,34 @@ async function renderAddons() {
           : '<span style="background:var(--ok-bg);color:var(--ok);font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px">Opcional</span>')
       + (esDispon
           ? ' <span style="background:#e8f5e9;color:#2d8a3e;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px">✓ Disponible</span>'
-          : ' <span style="background:#fdecea;color:#c62828;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px">✗ Oculto</span>')
+          : ' <span style="background:#fdecea;color:#c62828;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px">✗ Oculto en menú</span>')
       + (limUni > 1
           ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px">Máx ' + limUni + '</span>'
           : '');
-    var avail = (ad.options || []).filter(function(o) { return o.available; }).length;
+    var avail = (ad.options||[]).filter(function(o){return o.available;}).length;
     html += '<div style="background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden">'
       + '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)">'
       + '<div style="flex:1">'
-      + '<div style="font-family:Montserrat,sans-serif;font-weight:800;font-size:14px">' + ad.name + '</div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-top:2px">Producto: <b>' + ad.cat + '</b> · ' + avail + '/' + (ad.options || []).length + ' opciones disponibles</div>'
+      + '<div style="font-family:Montserrat,sans-serif;font-weight:800;font-size:14px">'+ad.name+'</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-top:2px">Categoría: <b>'+ad.cat+'</b> · '+avail+'/'+(ad.options||[]).length+' opciones disponibles</div>'
       + '</div>'
       + typeLabel
       + '<div style="display:flex;gap:6px">'
       + '<button class="btn btn-g btn-sm" onclick="openAddonModal(\'' + ad.id + '\')">✏️ Editar</button>'
       + '<button class="btn btn-d btn-xs" onclick="deleteAddon(\'' + ad.id + '\')">✕</button>'
       + '</div></div>'
+      // Opciones con toggle disponible
       + '<div style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:6px">';
     var opts = ad.options || [];
-    for (var oi = 0; oi < opts.length; oi++) {
+    for (var oi=0;oi<opts.length;oi++) {
       var opt = opts[oi];
       var optStyle = opt.available
         ? 'background:var(--bg);border:1.5px solid var(--border);color:var(--text)'
         : 'background:#f5f5f5;border:1.5px solid #ddd;color:var(--muted);text-decoration:line-through';
-      html += '<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:100px;' + optStyle + ';font-size:12px;cursor:pointer"'
-        + ' onclick="toggleAddonOpt(\'' + ad.id + '\',\'' + opt.id + '\')" title="Clic para activar/desactivar">'
+      html += '<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:100px;'+optStyle+';font-size:12px;cursor:pointer" '
+        + 'onclick="toggleAddonOpt(\'' + ad.id + '\',\'' + opt.id + '\')" title="Clic para activar/desactivar">'
         + (opt.available ? '✅' : '⛔') + ' ' + opt.name
-        + (opt.price > 0 ? ' <span style="color:var(--green);font-weight:700">+' + fp(opt.price) + '</span>' : '')
+        + (opt.price > 0 ? ' <span style="color:var(--green);font-weight:700">+'+fp(opt.price)+'</span>' : '')
         + '</div>';
     }
     html += '</div></div>';
@@ -5147,31 +5143,30 @@ function openAddonModal(id) {
     var ad = null;
     for (var i=0;i<addons.length;i++) if (addons[i].id===id) { ad=addons[i]; break; }
     if (ad) {
-      if (ttl) ttl.textContent = 'Editar: ' + ad.name;
-      var catAdicEl = document.getElementById('addon-cat-adicion');
-      if (catAdicEl) catAdicEl.value = ad.categoria_adicion || ad.name || '';
-      if (catSel) catSel.value = ad.cat;
-      var typeEl = document.getElementById('addon-type'); if (typeEl) typeEl.value = ad.type || 'required';
-      var minEl  = document.getElementById('addon-min');  if (minEl)  minEl.value  = ad.min  || 1;
-      var limEl  = document.getElementById('addon-limite');
-      if (limEl) limEl.value = ad.limite_unidades != null ? ad.limite_unidades : 1;
-      var obEl   = document.getElementById('addon-obligatorio');
-      if (obEl) obEl.checked = !!ad.es_obligatorio;
-      var dispEl = document.getElementById('addon-disponible');
-      if (dispEl) dispEl.checked = (ad.disponible !== false);
-      _addonOptions = (ad.options || []).map(function(o) {
-        return { id: o.id, name: o.name, price: o.price || 0, available: o.available !== false };
-      });
+      if (ttl) ttl.textContent = 'Editar: '+ad.name;
+      var nameEl=document.getElementById('addon-name'); if(nameEl) nameEl.value=ad.name;
+      if(catSel) catSel.value=ad.cat;
+      var typeEl=document.getElementById('addon-type'); if(typeEl) typeEl.value=ad.type||'required';
+      var minEl=document.getElementById('addon-min'); if(minEl) minEl.value=ad.min||1;
+      // ── Cargar los 3 nuevos campos al editar ──
+      var limEl=document.getElementById('addon-limite');
+      if(limEl) limEl.value=ad.limite_unidades!=null?ad.limite_unidades:1;
+      var obEl=document.getElementById('addon-obligatorio');
+      if(obEl) obEl.checked=!!ad.es_obligatorio;
+      var dispEl=document.getElementById('addon-disponible');
+      if(dispEl) dispEl.checked=(ad.disponible!==false);
+      _addonOptions = (ad.options||[]).map(function(o){return {id:o.id,name:o.name,price:o.price||0,available:o.available!==false};});
     }
   } else {
     if (ttl) ttl.textContent = 'Nueva adición';
-    var catAdicN = document.getElementById('addon-cat-adicion'); if (catAdicN) catAdicN.value = '';
-    var t  = document.getElementById('addon-type');        if (t)  t.value   = 'required';
-    var mn = document.getElementById('addon-min');         if (mn) mn.value  = '1';
-    var limN  = document.getElementById('addon-limite');      if (limN)  limN.value  = '1';
-    var obN   = document.getElementById('addon-obligatorio'); if (obN)   obN.checked = false;
-    var dispN = document.getElementById('addon-disponible');  if (dispN) dispN.checked = true;
-    _addonOptions = [];
+    var n=document.getElementById('addon-name'); if(n) n.value='';
+    var t=document.getElementById('addon-type'); if(t) t.value='required';
+    var mn=document.getElementById('addon-min'); if(mn) mn.value='1';
+    // ── Valores por defecto para nueva adición ──
+    var limN=document.getElementById('addon-limite'); if(limN) limN.value='1';
+    var obN=document.getElementById('addon-obligatorio'); if(obN) obN.checked=false;
+    var dispN=document.getElementById('addon-disponible'); if(dispN) dispN.checked=true;
+    _addonOptions=[];
   }
   _renderAddonOptions();
   var modal=document.getElementById('addon-modal'); if(modal){modal.style.display='flex';setTimeout(function(){modal.classList.add('open');},10);}
@@ -5230,25 +5225,26 @@ async function _persistAddonsSB() {
       (addon.options || []).forEach(function(opt) {
         if (opt.name && opt.name.trim()) {
           byCat[addon.cat].push({
-            name:              opt.name.trim(),
-            price:             parseInt(opt.price) || 0,
-            categoria_adicion: addon.categoria_adicion || addon.name || '',
-            es_obligatorio:    !!addon.es_obligatorio,
-            disponible:        addon.disponible !== false,
-            limite_unidades:   parseInt(addon.limite_unidades) || 1
+            name:            opt.name.trim(),
+            price:           parseInt(opt.price) || 0,
+            // Los 3 campos vienen del addon padre (no de la opción individual)
+            es_obligatorio:  !!addon.es_obligatorio,
+            disponible:      addon.disponible !== false,
+            limite_unidades: parseInt(addon.limite_unidades) || 1
           });
         }
       });
     });
 
     // ── PASO 1: Sincronizar extras_maestros (tabla maestra) ───────────
-    // Para cada categoria (producto destino): eliminar adiciones viejas e insertar nuevas.
+    // Para cada categoría: eliminar las adiciones viejas e insertar las nuevas.
+    // Usamos delete+insert en lugar de upsert para simplificar el control.
     const catNombres = Object.keys(byCat);
     for (let i = 0; i < catNombres.length; i++) {
       const catNombre     = catNombres[i];
       const nuevasAdicion = byCat[catNombre];
 
-      // Eliminar adiciones antiguas de este producto en extras_maestros
+      // Eliminar adiciones antiguas de esta categoría en extras_maestros
       try {
         await SB.del('extras_maestros',
           'comercio_id=eq.' + _COMERCIO_ID
@@ -5256,17 +5252,16 @@ async function _persistAddonsSB() {
           + '&categoria=eq.' + encodeURIComponent(catNombre));
       } catch(delErr) { console.warn('[SB] No se pudieron borrar adiciones antiguas:', delErr.message); }
 
-      // Insertar las nuevas adiciones con categoria_adicion incluido
+      // Insertar las nuevas adiciones en extras_maestros con todos sus campos
       for (let n = 0; n < nuevasAdicion.length; n++) {
         const opt = nuevasAdicion[n];
         await sbInsertarExtraMaestro(opt.name, opt.price, 'adicion', catNombre, {
-          categoria_adicion: opt.categoria_adicion || '',
-          es_obligatorio:    opt.es_obligatorio    || false,
-          disponible:        opt.disponible        !== false,
-          limite_unidades:   opt.limite_unidades   || 1
+          es_obligatorio:  opt.es_obligatorio  || false,
+          disponible:      opt.disponible      !== false,
+          limite_unidades: opt.limite_unidades || 1
         });
       }
-      console.log('[SB] Adiciones sincronizadas | categoria:', catNombre, '| cantidad:', nuevasAdicion.length);
+      console.log('[SB] Adiciones sincronizadas en extras_maestros | categoría:', catNombre, '| cantidad:', nuevasAdicion.length);
     }
 
     // Limpiar adiciones de categorías que ya no tienen ninguna
@@ -5324,29 +5319,30 @@ async function _persistAddonsSB() {
 }
 
 function saveAddon() {
-  var catAdicion = (document.getElementById('addon-cat-adicion') || {}).value || '';
-  var cat        = (document.getElementById('addon-cat')         || {}).value || '';
-  var type       = (document.getElementById('addon-type')        || { value: 'required' }).value || 'required';
-  var min        = parseInt((document.getElementById('addon-min') || { value: '1' }).value) || 1;
-  var limite     = parseInt((document.getElementById('addon-limite')      || { value: '1' }).value) || 1;
-  var obligat    = !!(document.getElementById('addon-obligatorio') || {}).checked;
-  var dispon     = (document.getElementById('addon-disponible')   || { checked: true }).checked !== false;
+  var name    = (document.getElementById('addon-name')||{}).value||'';
+  var cat     = (document.getElementById('addon-cat') ||{}).value||'';
+  var type    = (document.getElementById('addon-type')||{value:'required'}).value||'required';
+  var min     = parseInt((document.getElementById('addon-min')||{value:'1'}).value)||1;
+  // ── Leer los 3 nuevos campos ──
+  var limite  = parseInt((document.getElementById('addon-limite')||{value:'1'}).value)||1;
+  var obligat = !!(document.getElementById('addon-obligatorio')||{}).checked;
+  var dispon  = (document.getElementById('addon-disponible')   ||{checked:true}).checked !== false;
 
-  if (!catAdicion.trim())    { showToast('Escribe el nombre del grupo (categoria_adicion)'); return; }
-  if (!cat)                  { showToast('Selecciona el producto destino');                  return; }
-  if (!_addonOptions.length) { showToast('Agrega al menos una opción');                      return; }
+  if (!name.trim())          { showToast('Escribe el nombre del grupo');     return; }
+  if (!cat)                  { showToast('Selecciona una categoría');         return; }
+  if (!_addonOptions.length) { showToast('Agrega al menos una opción');       return; }
 
   var addons = getAddons();
+  // Objeto completo con los 3 campos nuevos — se usa en memoria y en Supabase
   var addonObj = {
-    name:              catAdicion.trim(),
-    cat:               cat,
-    categoria_adicion: catAdicion.trim(),
-    type:              type,
-    min:               min,
-    limite_unidades:   limite,
-    es_obligatorio:    obligat,
-    disponible:        dispon,
-    options:           _addonOptions.slice()
+    name:            name.trim(),
+    cat:             cat,
+    type:            type,
+    min:             min,
+    limite_unidades: limite,
+    es_obligatorio:  obligat,
+    disponible:      dispon,
+    options:         _addonOptions.slice()
   };
 
   if (_addonEditId) {
@@ -5363,33 +5359,35 @@ function saveAddon() {
   closeAddonModal();
   renderAddons();
   showToast('Adición guardada ✓');
-  _persistAddonsSB();
+  _persistAddonsSB();   // persistir en Supabase sin bloquear UI
 }
 
-async function deleteAddon(id) {
-  // 1. Borrar de memoria para respuesta visual inmediata
+function deleteAddon(id) {
+  // Borrar de la memoria local
   var addons = getAddons();
-  var backup  = addons.slice();
-  var nuevos  = addons.filter(function(a) { return a.id !== id; });
+  var adElim = addons.find(function(a) { return a.id === id; });
+  var nuevos = addons.filter(function(a) { return a.id !== id; });
   saveAddons(nuevos);
-
-  // 2. Borrar en Supabase y esperar confirmación
-  try {
-    var idNum = parseInt(String(id).replace('opt_', ''));
-    if (!isNaN(idNum) && String(id).indexOf('addon') < 0) {
-      await sbEliminarExtraMaestro(idNum);
-      console.log('[Admin] Adición eliminada de extras_maestros, id:', idNum);
-    } else {
-      await _persistAddonsSB();
-    }
-  } catch(e) {
-    console.error('[Admin] Error eliminando adición:', e.message);
-    saveAddons(backup); // revertir si Supabase falló
-  }
-
-  // 3. Refrescar la lista UNA sola vez, después del await
+  renderAddons();
   showToast('Adición eliminada');
-  await renderAddons();
+
+  // Borrar de extras_maestros — si el id es de la tabla maestra (numérico),
+  // eliminar por id; si es un id temporal (addon+timestamp), re-sincronizar todo.
+  (async function() {
+    try {
+      var idNum = parseInt(String(id).replace('opt_', ''));
+      if (!isNaN(idNum) && String(id).indexOf('addon') < 0) {
+        // Id real de extras_maestros — borrar directamente
+        await sbEliminarExtraMaestro(idNum);
+        console.log('[Admin] Adición eliminada de extras_maestros, id:', idNum);
+      } else {
+        // Id temporal — re-sincronizar todo el estado
+        await _persistAddonsSB();
+      }
+    } catch(e) {
+      console.error('[Admin] Error eliminando adición de extras_maestros:', e.message);
+    }
+  })();
 }
 
 function toggleAddonOpt(addonId, optId) {
