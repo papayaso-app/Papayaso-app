@@ -2682,9 +2682,8 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return [];
   try {
     const rows = await SB.get('extras_maestros', {
-      select:        'id,nombre,precio,tipo,categoria,activo',
+      select:        'id,nombre,precio,tipo,categoria,activo,es_obligatorio,disponible,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
-      'activo':      'eq.true',
       order:         'tipo.asc,id.asc'
     });
     upd(function(s) { s._extrasMaestros = rows || []; });
