@@ -1172,6 +1172,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <select id="addon-cat" class="fsel" style="width:100%"></select>
         </div>
       </div>
+      <div class="fg" style="margin-bottom:10px">
+        <label>Título visible en el menú (nombre_grupo)</label>
+        <input id="addon-nombre-grupo" type="text" placeholder="Ej: Elige tus salsas, Punto de cocción...">
+        <p style="font-size:11px;color:var(--muted);margin-top:4px">Es el encabezado que verá el cliente al elegir opciones.</p>
+      </div>
       <div class="fg2" style="margin-bottom:12px">
         <div class="fg">
           <label>Tipo de selección</label>
@@ -2682,7 +2687,7 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return [];
   try {
     const rows = await SB.get('extras_maestros', {
-      select:        'id,nombre,precio,tipo,categoria,activo,es_obligatorio,disponible,limite_unidades',
+      select:        'id,nombre,precio,tipo,categoria,nombre_grupo,activo,es_obligatorio,disponible,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
       order:         'tipo.asc,id.asc'
     });
@@ -2697,7 +2702,7 @@ async function sbCargarExtrasMaestros() {
 
 // Insertar un extra en extras_maestros y devolver la fila creada.
 // Acepta un objeto opts con los campos opcionales de la tabla:
-//   es_obligatorio, disponible, limite_unidades
+//   es_obligatorio, disponible, limite_unidades, nombre_grupo
 async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
   if (!_COMERCIO_ID) return null;
   var op = opts || {};
@@ -2707,6 +2712,7 @@ async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
     precio:         parseInt(precio) || 0,
     tipo:           tipo           || 'extra_global',
     categoria:      categoria      || null,
+    nombre_grupo:   op.nombre_grupo ? op.nombre_grupo.trim() : null,
     activo:         true,
     es_obligatorio: op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
     disponible:     op.disponible     !== undefined ? !!op.disponible     : true,
@@ -5042,6 +5048,7 @@ async function renderAddons() {
         if (!bycat[cat]) {
           bycat[cat] = {
             options:         [],
+            nombre_grupo:    r.nombre_grupo    || '',
             es_obligatorio:  !!r.es_obligatorio,
             disponible:      r.disponible !== false,
             limite_unidades: parseInt(r.limite_unidades) || 1
@@ -5059,6 +5066,7 @@ async function renderAddons() {
         return {
           id:              'addon_maestro_' + idx,
           name:            'Adiciones — ' + (cat === '__sin_categoria__' ? 'General' : cat),
+          nombre_grupo:    g.nombre_grupo,
           cat:             cat === '__sin_categoria__' ? '' : cat,
           type:            g.es_obligatorio ? 'required' : 'optional',
           min:             g.es_obligatorio ? 1 : 0,
@@ -5145,6 +5153,7 @@ function openAddonModal(id) {
     if (ad) {
       if (ttl) ttl.textContent = 'Editar: '+ad.name;
       var nameEl=document.getElementById('addon-name'); if(nameEl) nameEl.value=ad.name;
+      var ngEl=document.getElementById('addon-nombre-grupo'); if(ngEl) ngEl.value=ad.nombre_grupo||'';
       if(catSel) catSel.value=ad.cat;
       var typeEl=document.getElementById('addon-type'); if(typeEl) typeEl.value=ad.type||'required';
       var minEl=document.getElementById('addon-min'); if(minEl) minEl.value=ad.min||1;
@@ -5160,6 +5169,7 @@ function openAddonModal(id) {
   } else {
     if (ttl) ttl.textContent = 'Nueva adición';
     var n=document.getElementById('addon-name'); if(n) n.value='';
+    var ng=document.getElementById('addon-nombre-grupo'); if(ng) ng.value='';
     var t=document.getElementById('addon-type'); if(t) t.value='required';
     var mn=document.getElementById('addon-min'); if(mn) mn.value='1';
     // ── Valores por defecto para nueva adición ──
@@ -5227,7 +5237,8 @@ async function _persistAddonsSB() {
           byCat[addon.cat].push({
             name:            opt.name.trim(),
             price:           parseInt(opt.price) || 0,
-            // Los 3 campos vienen del addon padre (no de la opción individual)
+            // Los campos del addon padre se propagan a cada opción individual
+            nombre_grupo:    addon.nombre_grupo ? addon.nombre_grupo.trim() : '',
             es_obligatorio:  !!addon.es_obligatorio,
             disponible:      addon.disponible !== false,
             limite_unidades: parseInt(addon.limite_unidades) || 1
@@ -5256,6 +5267,7 @@ async function _persistAddonsSB() {
       for (let n = 0; n < nuevasAdicion.length; n++) {
         const opt = nuevasAdicion[n];
         await sbInsertarExtraMaestro(opt.name, opt.price, 'adicion', catNombre, {
+          nombre_grupo:    opt.nombre_grupo    || '',
           es_obligatorio:  opt.es_obligatorio  || false,
           disponible:      opt.disponible      !== false,
           limite_unidades: opt.limite_unidades || 1
@@ -5319,10 +5331,11 @@ async function _persistAddonsSB() {
 }
 
 function saveAddon() {
-  var name    = (document.getElementById('addon-name')||{}).value||'';
-  var cat     = (document.getElementById('addon-cat') ||{}).value||'';
-  var type    = (document.getElementById('addon-type')||{value:'required'}).value||'required';
-  var min     = parseInt((document.getElementById('addon-min')||{value:'1'}).value)||1;
+  var name       = (document.getElementById('addon-name')||{}).value||'';
+  var nombreGrp  = (document.getElementById('addon-nombre-grupo')||{}).value||'';
+  var cat        = (document.getElementById('addon-cat') ||{}).value||'';
+  var type       = (document.getElementById('addon-type')||{value:'required'}).value||'required';
+  var min        = parseInt((document.getElementById('addon-min')||{value:'1'}).value)||1;
   // ── Leer los 3 nuevos campos ──
   var limite  = parseInt((document.getElementById('addon-limite')||{value:'1'}).value)||1;
   var obligat = !!(document.getElementById('addon-obligatorio')||{}).checked;
@@ -5336,6 +5349,7 @@ function saveAddon() {
   // Objeto completo con los 3 campos nuevos — se usa en memoria y en Supabase
   var addonObj = {
     name:            name.trim(),
+    nombre_grupo:    nombreGrp.trim(),
     cat:             cat,
     type:            type,
     min:             min,
