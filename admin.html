@@ -2682,10 +2682,9 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return [];
   try {
     const rows = await SB.get('extras_maestros', {
-      select:        'id,nombre,precio,tipo,categoria,activo',
+      select:        'id,nombre,precio,tipo,categoria_adicion,activo,es_obligatorio,disponible,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
-      'activo':      'eq.true',
-      order:         'tipo.asc,id.asc'
+      order:         'tipo.asc,categoria_adicion.asc,id.asc'
     });
     upd(function(s) { s._extrasMaestros = rows || []; });
     console.log('[SB] extras_maestros cargados:', (rows || []).length);
@@ -2699,19 +2698,19 @@ async function sbCargarExtrasMaestros() {
 // Insertar un extra en extras_maestros y devolver la fila creada.
 // Acepta un objeto opts con los campos opcionales de la tabla:
 //   es_obligatorio, disponible, limite_unidades
-async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
+async function sbInsertarExtraMaestro(nombre, precio, tipo, categoriaAdicion, opts) {
   if (!_COMERCIO_ID) return null;
   var op = opts || {};
   const row = await SB.post('extras_maestros', {
-    comercio_id:    _COMERCIO_ID,
-    nombre:         nombre.trim(),
-    precio:         parseInt(precio) || 0,
-    tipo:           tipo           || 'extra_global',
-    categoria:      categoria      || null,
-    activo:         true,
-    es_obligatorio: op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
-    disponible:     op.disponible     !== undefined ? !!op.disponible     : true,
-    limite_unidades:parseInt(op.limite_unidades) || 1
+    comercio_id:       _COMERCIO_ID,
+    nombre:            nombre.trim(),
+    precio:            parseInt(precio) || 0,
+    tipo:              tipo              || 'extra_global',
+    categoria_adicion: categoriaAdicion  || null,
+    activo:            true,
+    es_obligatorio:    op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
+    disponible:        op.disponible     !== undefined ? !!op.disponible     : true,
+    limite_unidades:   parseInt(op.limite_unidades) || 1
   });
   return row && row[0] ? row[0] : null;
 }
@@ -5039,7 +5038,7 @@ async function renderAddons() {
       // (se usan la primera fila de cada categoría como referencia del grupo)
       var bycat = {};
       adicionesGuardadas.forEach(function(r) {
-        var cat = r.categoria || '__sin_categoria__';
+        var cat = r.categoria_adicion || '__sin_categoria__';
         if (!bycat[cat]) {
           bycat[cat] = {
             options:         [],
@@ -5049,9 +5048,9 @@ async function renderAddons() {
           };
         }
         bycat[cat].options.push({
-          id:       'opt_' + r.id,
-          name:     r.nombre,
-          price:    r.precio || 0,
+          id:        'opt_' + r.id,
+          name:      r.nombre,
+          price:     r.precio || 0,
           available: r.disponible !== false
         });
       });
@@ -5059,7 +5058,7 @@ async function renderAddons() {
         var g = bycat[cat];
         return {
           id:              'addon_maestro_' + idx,
-          name:            'Adiciones — ' + (cat === '__sin_categoria__' ? 'General' : cat),
+          name:            cat === '__sin_categoria__' ? 'General' : cat,
           cat:             cat === '__sin_categoria__' ? '' : cat,
           type:            g.es_obligatorio ? 'required' : 'optional',
           min:             g.es_obligatorio ? 1 : 0,
@@ -5245,12 +5244,12 @@ async function _persistAddonsSB() {
       const catNombre     = catNombres[i];
       const nuevasAdicion = byCat[catNombre];
 
-      // Eliminar adiciones antiguas de esta categoría en extras_maestros
+      // Eliminar adiciones antiguas de esta categoria_adicion en extras_maestros
       try {
         await SB.del('extras_maestros',
           'comercio_id=eq.' + _COMERCIO_ID
           + '&tipo=eq.adicion'
-          + '&categoria=eq.' + encodeURIComponent(catNombre));
+          + '&categoria_adicion=eq.' + encodeURIComponent(catNombre));
       } catch(delErr) { console.warn('[SB] No se pudieron borrar adiciones antiguas:', delErr.message); }
 
       // Insertar las nuevas adiciones en extras_maestros con todos sus campos
@@ -5262,7 +5261,7 @@ async function _persistAddonsSB() {
           limite_unidades: opt.limite_unidades || 1
         });
       }
-      console.log('[SB] Adiciones sincronizadas en extras_maestros | categoría:', catNombre, '| cantidad:', nuevasAdicion.length);
+      console.log('[SB] Adiciones sincronizadas | categoria_adicion:', catNombre, '| cantidad:', nuevasAdicion.length);
     }
 
     // Limpiar adiciones de categorías que ya no tienen ninguna
@@ -5273,7 +5272,7 @@ async function _persistAddonsSB() {
           await SB.del('extras_maestros',
             'comercio_id=eq.' + _COMERCIO_ID
             + '&tipo=eq.adicion'
-            + '&categoria=eq.' + encodeURIComponent(allCats[j]));
+            + '&categoria_adicion=eq.' + encodeURIComponent(allCats[j]));
         } catch(e2) {}
       }
     }
@@ -5314,8 +5313,6 @@ async function _persistAddonsSB() {
 
     console.log('[SB] Adiciones persistidas en extras_maestros + productos | comercio:', _COMERCIO_ID,
       '| productos actualizados:', totalProd);
-    // Refrescar la lista de adiciones en pantalla con los datos reales de Supabase
-    if (typeof renderAddons === 'function') renderAddons();
   } catch(e) {
     console.error('[SB] Error guardando adiciones:', e.message);
   }
