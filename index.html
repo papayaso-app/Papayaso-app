@@ -1321,14 +1321,33 @@ function _validarObligatorios() {
     return;
   }
 
-  // Hay obligatorios: verificar si al menos uno está seleccionado
-  var algunoSel = false;
+  // Hay obligatorios: verificar que CADA grupo obligatorio tenga al menos una opción seleccionada.
+  // Se agrupa por data-lim para identificar grupos distintos (cada límite = un grupo).
+  // Si hay un grupo con data-es-radio=1, se trata como un único grupo radio.
+  // Estrategia: para cada fila obligatoria, buscamos si existe al menos una fila
+  // del mismo grupo (mismo data-lim + misma posición secuencial de grupo) que esté .sel.
+  // Forma simplificada y robusta: un grupo obligatorio está satisfecho si al menos
+  // UNA de sus filas tiene la clase .sel. Las filas del mismo grupo comparten data-lim
+  // y data-obligatorio=1. Agrupamos por (data-lim, índice de bloque contiguo).
+  var grupos = {};
   gruposOblig.forEach(function(r) {
-    if (r.classList.contains('sel')) algunoSel = true;
+    // Usar data-idx como clave única por fila; agrupar por data-lim para el límite del grupo
+    var lim = r.getAttribute('data-lim') || '1';
+    var esRadio = r.getAttribute('data-es-radio') === '1';
+    // Clave de grupo: radio → todos comparten 'radio', checkbox → por valor de lim
+    var gKey = esRadio ? 'radio' : ('lim_' + lim);
+    if (!grupos[gKey]) grupos[gKey] = { rows: [], tieneSel: false };
+    grupos[gKey].rows.push(r);
+    if (r.classList.contains('sel')) grupos[gKey].tieneSel = true;
+  });
+
+  var todosOk = true;
+  Object.keys(grupos).forEach(function(k) {
+    if (!grupos[k].tieneSel) todosOk = false;
   });
 
   var hint = document.getElementById('pm-oblig-hint');
-  if (!algunoSel) {
+  if (!todosOk) {
     btnCart.disabled = true;
     btnCart.style.opacity = '0.45';
     if (hint) { hint.style.display = 'block'; }
@@ -2662,8 +2681,7 @@ async function sbCargarExtrasMaestros() {
       // Traer los 3 nuevos campos: disponible, es_obligatorio, limite_unidades
       select:        'id,nombre,precio,tipo,categoria,disponible,es_obligatorio,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
-      'activo':      'eq.true',
-      // Filtro 4: solo mostrar las adiciones disponibles=true al cliente
+      // Filtro: solo mostrar los extras disponibles=true al cliente
       'disponible':  'eq.true',
       order:         'tipo.asc,id.asc'
     });
