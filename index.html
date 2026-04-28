@@ -992,7 +992,7 @@ function openProd(id) {
           name:              r.nombre,
           price:             r.precio             || 0,
           categoria_adicion: r.categoria_adicion  || '',
-          es_obligatorio:    !!r.es_obligatorio,
+          es_obligatorio:    r.es_obligatorio === true || r.es_obligatorio === 'true',
           disponible:        r.disponible          !== false,
           limite_unidades:   parseInt(r.limite_unidades) || 1
         };
@@ -1085,7 +1085,7 @@ function openProd(id) {
           _caMap[_key] = {
             label: _key === '__sin_grupo__' ? 'Adiciones' : _key,
             lim:   parseInt(_cr.limite_unidades) || 1,
-            oblig: !!_cr.es_obligatorio,
+            oblig: _cr.es_obligatorio === true || _cr.es_obligatorio === 'true',
             items: []
           };
           _caOrder.push(_key);
@@ -1102,10 +1102,11 @@ function openProd(id) {
         var _caRad  = (_caLim === 1);
         var _caMt   = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
 
-        // Badge dinámico desde es_obligatorio — nunca texto fijo
+        // Texto del encabezado derivado 100% de es_obligatorio de la tabla
+        var _textoOblig = _caOblig ? 'OBLIGATORIO' : 'OPCIONAL';
         var _caBadge = _caOblig
-          ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ Obligatorio</span>'
-          : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>';
+          ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ ' + _textoOblig + '</span>'
+          : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">' + _textoOblig + '</span>';
         var _caLimBadge = (!_caRad && _caLim > 1)
           ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _caLim + '</span>'
           : '';
@@ -1293,10 +1294,12 @@ function togAdicCat(row, idx) {
 // Radio (limite=1): deselecciona todas las filas del mismo data-gid.
 // Checkbox (limite>1): bloquea al alcanzar el límite dentro del mismo data-gid.
 function togAdicionMaestro(row, idx, limite, gid) {
-  var lim       = parseInt(limite) || 1;
+  // Leer el límite directo del atributo data-lim del elemento, con el parámetro como respaldo.
+  // Esto garantiza que si limite_unidades es 2 en Supabase, se bloquea exactamente al llegar a 2.
+  var lim       = parseInt(row.getAttribute('data-lim')) || parseInt(limite) || 1;
   var estaSelec = row.classList.contains('sel');
   var chk       = row.querySelector('.xchk');
-  var esRadio   = row.getAttribute('data-es-radio') === '1';
+  var esRadio   = (lim === 1);   // Radio cuando el límite es exactamente 1
   var grupoId   = gid || row.getAttribute('data-gid') || 'gid0';
 
   if (esRadio) {
