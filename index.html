@@ -987,13 +987,12 @@ function openProd(id) {
         return r.tipo === 'adicion' && r.disponible !== false;
       })
       .map(function(r) {
-        // categoria_adicion es la clave de agrupación; los demás campos son las reglas del grupo
         return {
           name:              r.nombre,
-          price:             r.precio             || 0,
-          categoria_adicion: r.categoria_adicion  || '',
+          price:             r.precio              || 0,
+          categoria_adicion: r.categoria_adicion   || '',
           es_obligatorio:    !!r.es_obligatorio,
-          disponible:        r.disponible          !== false,
+          disponible:        r.disponible           !== false,
           limite_unidades:   parseInt(r.limite_unidades) || 1
         };
       });
@@ -1073,9 +1072,9 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // Agrupar por categoria_adicion (nombre visible del grupo en el menú).
+      // Agrupar por categoria_adicion.
       // Todas las filas con la misma categoria_adicion comparten encabezado,
-      // límite de selección y regla de obligatorio.
+      // limite_unidades y es_obligatorio.
       var _caMap = {}, _caOrder = [];
       for (var _ci = 0; _ci < maestrosAdcNoDup.length; _ci++) {
         var _cr  = maestrosAdcNoDup[_ci];
@@ -1094,32 +1093,31 @@ function openProd(id) {
       }
 
       for (var _caIdx = 0; _caIdx < _caOrder.length; _caIdx++) {
-        var _caKey  = _caOrder[_caIdx];
-        var _ca     = _caMap[_caKey];
-        var _gid    = 'gid' + _caIdx;
-        var _caLim  = _ca.lim;
-        var _caOblig= _ca.oblig;
-        var _caRad  = (_caLim === 1);
-        var _caMt   = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
+        var _caKey   = _caOrder[_caIdx];
+        var _ca      = _caMap[_caKey];
+        var _gid     = 'gid' + _caIdx;
+        var _caLim   = _ca.lim;
+        var _caOblig = _ca.oblig;
+        var _caRad   = (_caLim === 1);
+        var _caMt    = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
 
-        // Badge dinámico desde es_obligatorio — nunca texto fijo
         var _caBadge = _caOblig
           ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ Obligatorio</span>'
           : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>';
         var _caLimBadge = (!_caRad && _caLim > 1)
-          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _caLim + '</span>'
+          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">M\u00e1x ' + _caLim + '</span>'
           : '';
 
         xh += '<div class="xtl" style="margin-top:' + _caMt + '">'
           + _ca.label + ' ' + _caBadge + _caLimBadge + '</div>';
 
         for (var _caii = 0; _caii < _ca.items.length; _caii++) {
-          var _it  = _ca.items[_caii];
-          var ma   = _it.ma;
-          var aj   = _it.origIdx;
-          var ajOff= prodExtras.length + prodAdiciones.length + aj;
-          var lim  = _caLim;
-          var esRad= _caRad;
+          var _it   = _ca.items[_caii];
+          var ma    = _it.ma;
+          var aj    = _it.origIdx;
+          var ajOff = prodExtras.length + prodAdiciones.length + aj;
+          var lim   = _caLim;
+          var esRad = _caRad;
 
           xh += '<div class="xrow" id="xr_ma_' + aj + '"'
             + ' onclick="togAdicionMaestro(this,' + aj + ',' + lim + ',\'' + _gid + '\')"'
@@ -1282,10 +1280,9 @@ function togAdicCat(row, idx) {
   updT();
 }
 
-// ── togAdicionMaestro: toggle para adiciones de extras_maestros ──────
-// Recibe gid (data-gid del grupo) para aislar radio y contador por categoria_adicion.
-// Radio (limite=1): deselecciona todas las filas del mismo data-gid.
-// Checkbox (limite>1): bloquea al alcanzar el límite dentro del mismo data-gid.
+// togAdicionMaestro: toggle para adiciones agrupadas por categoria_adicion.
+// Radio (limite=1): limpia todo el data-gid y marca solo el actual.
+// Checkbox (limite>1): cuenta seleccionados en data-gid y bloquea al llegar al límite.
 function togAdicionMaestro(row, idx, limite, gid) {
   var lim       = parseInt(limite) || 1;
   var estaSelec = row.classList.contains('sel');
@@ -1294,7 +1291,7 @@ function togAdicionMaestro(row, idx, limite, gid) {
   var grupoId   = gid || row.getAttribute('data-gid') || 'gid0';
 
   if (esRadio) {
-    // ── Radio: limpiar todo el grupo (data-gid) y marcar solo el actual ──
+    // Radio: limpiar todo el grupo y marcar solo el actual
     var todosGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"]');
     todosGrupo.forEach(function(r) {
       r.classList.remove('sel');
@@ -1306,11 +1303,11 @@ function togAdicionMaestro(row, idx, limite, gid) {
     row.classList.add('sel');
     if (chk) { chk.textContent = '✓'; chk.style.background = 'var(--green)'; chk.style.color = '#fff'; }
   } else {
-    // ── Checkbox: contar seleccionados en este data-gid y bloquear al llegar al límite ──
+    // Checkbox: contar en el grupo y bloquear si se alcanza el límite
     if (!estaSelec) {
       var selEnGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"].sel');
       if (selEnGrupo.length >= lim) {
-        showToast('Solo puedes elegir ' + lim + ' opción' + (lim > 1 ? 'es' : '') + ' en este grupo');
+        showToast('Solo puedes elegir ' + lim + ' opci\u00f3n' + (lim > 1 ? 'es' : '') + ' en este grupo');
         return;
       }
       row.classList.add('sel');
@@ -1321,7 +1318,6 @@ function togAdicionMaestro(row, idx, limite, gid) {
     }
   }
 
-  // Sincronizar selX con el índice global de _allExtras para que updT() calcule el precio
   var globalIdx = parseInt(row.getAttribute('data-idx'));
   var posEnSelX = selX.indexOf(globalIdx);
   if (row.classList.contains('sel')) {
@@ -1334,9 +1330,9 @@ function togAdicionMaestro(row, idx, limite, gid) {
   _validarObligatorios();
 }
 
-// ── _validarObligatorios: bloquear pm-add-btn si falta selección en algún grupo obligatorio ──
+// _validarObligatorios: bloquea pm-add-btn si algún grupo obligatorio no tiene selección.
 // Agrupa filas con data-obligatorio=1 por data-gid (= una categoria_adicion).
-// El botón se habilita solo cuando CADA grupo obligatorio tiene ≥1 fila con .sel.
+// El botón se habilita solo cuando CADA grupo obligatorio tiene al menos 1 fila con .sel.
 function _validarObligatorios() {
   var btnCart = document.getElementById('pm-add-btn');
   if (!btnCart) return;
@@ -1350,7 +1346,7 @@ function _validarObligatorios() {
     return;
   }
 
-  // Construir mapa { gid: tieneSel }
+  // { gid: tieneSel } — satisfecho si al menos 1 fila del grupo tiene .sel
   var mapa = {};
   filasOblig.forEach(function(r) {
     var g = r.getAttribute('data-gid') || 'gid0';
@@ -1358,7 +1354,6 @@ function _validarObligatorios() {
     if (r.classList.contains('sel')) mapa[g] = true;
   });
 
-  // todosOk = true solo si todos los grupos obligatorios tienen al menos una selección
   var todosOk = Object.keys(mapa).every(function(k) { return mapa[k]; });
   var hint = document.getElementById('pm-oblig-hint');
   if (!todosOk) {
