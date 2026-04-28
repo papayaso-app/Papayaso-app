@@ -987,15 +987,14 @@ function openProd(id) {
         return r.tipo === 'adicion' && r.disponible !== false;
       })
       .map(function(r) {
-        // Conservar es_obligatorio y limite_unidades exactamente como llegan de Supabase.
-        // El renderizado los leerá directamente con: item.es_obligatorio / item.limite_unidades.
+        // categoria_adicion es la clave de agrupación; los demás campos son las reglas del grupo
         return {
           name:              r.nombre,
           price:             r.precio             || 0,
           categoria_adicion: r.categoria_adicion  || '',
-          es_obligatorio:    r.es_obligatorio,      // valor raw de Supabase: true, false, 'true', 'false'
-          disponible:        r.disponible !== false,
-          limite_unidades:   r.limite_unidades      // valor raw de Supabase: número entero
+          es_obligatorio:    !!r.es_obligatorio,
+          disponible:        r.disponible          !== false,
+          limite_unidades:   parseInt(r.limite_unidades) || 1
         };
       });
 
@@ -1074,81 +1073,65 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // ── PASO 1: Agrupar ítems por categoria_adicion ──────────────────────
-      // _caMap guarda, por cada grupo, la lista de ítems raw de Supabase.
-      // NO pre-calculamos es_obligatorio ni limite_unidades aquí: los leemos
-      // directamente de item.es_obligatorio e item.limite_unidades en PASO 2.
+      // Agrupar por categoria_adicion (nombre visible del grupo en el menú).
+      // Todas las filas con la misma categoria_adicion comparten encabezado,
+      // límite de selección y regla de obligatorio.
       var _caMap = {}, _caOrder = [];
       for (var _ci = 0; _ci < maestrosAdcNoDup.length; _ci++) {
         var _cr  = maestrosAdcNoDup[_ci];
         var _key = (_cr.categoria_adicion && _cr.categoria_adicion.trim())
                      ? _cr.categoria_adicion.trim() : '__sin_grupo__';
         if (!_caMap[_key]) {
-          _caMap[_key] = { label: _key === '__sin_grupo__' ? 'Adiciones' : _key, items: [] };
+          _caMap[_key] = {
+            label: _key === '__sin_grupo__' ? 'Adiciones' : _key,
+            lim:   parseInt(_cr.limite_unidades) || 1,
+            oblig: !!_cr.es_obligatorio,
+            items: []
+          };
           _caOrder.push(_key);
         }
         _caMap[_key].items.push({ ma: _cr, origIdx: _ci });
       }
 
-      // ── PASO 2: Renderizar cada grupo ────────────────────────────────────
       for (var _caIdx = 0; _caIdx < _caOrder.length; _caIdx++) {
-        var _caKey = _caOrder[_caIdx];
-        var _ca    = _caMap[_caKey];
-        var _gid   = 'gid' + _caIdx;
-        var _caMt  = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
-
-        // Leer es_obligatorio y limite_unidades del PRIMER ítem del grupo.
-        // Todos los ítems del mismo grupo comparten estas reglas en la tabla.
-        var _firstItem = _ca.items[0].ma;
-
-        // ── PRUEBA DE FUEGO: leer directamente de item.es_obligatorio ──────
-        // Sin transformación ni valor por defecto: si Supabase devuelve true → OBLIGATORIO.
-        var _caOblig = _firstItem.es_obligatorio === true || _firstItem.es_obligatorio === 'true';
-
-        // Leer limite_unidades exactamente como viene de Supabase (ej: 2, 3, 1).
-        var _caLim  = parseInt(_firstItem.limite_unidades);
-        if (isNaN(_caLim) || _caLim < 1) _caLim = 1;  // solo fallback si el dato es nulo/inválido
-
-        // Radio solo cuando el límite es exactamente 1.
+        var _caKey  = _caOrder[_caIdx];
+        var _ca     = _caMap[_caKey];
+        var _gid    = 'gid' + _caIdx;
+        var _caLim  = _ca.lim;
+        var _caOblig= _ca.oblig;
         var _caRad  = (_caLim === 1);
+        var _caMt   = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
 
-        // Badge OBLIGATORIO / OPCIONAL derivado directamente de item.es_obligatorio
-        var badge = _caOblig ? 'OBLIGATORIO' : 'OPCIONAL';
+        // Badge dinámico desde es_obligatorio — nunca texto fijo
         var _caBadge = _caOblig
-          ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ ' + badge + '</span>'
-          : '<span style="background:#e8f5e9;color:#2d8a3e;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">' + badge + '</span>';
-
-        // Badge de límite: solo se muestra cuando el grupo acepta más de 1 opción
-        var _caLimBadge = (_caLim > 1)
+          ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ Obligatorio</span>'
+          : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>';
+        var _caLimBadge = (!_caRad && _caLim > 1)
           ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _caLim + '</span>'
           : '';
 
         xh += '<div class="xtl" style="margin-top:' + _caMt + '">'
           + _ca.label + ' ' + _caBadge + _caLimBadge + '</div>';
 
-        // ── Renderizar cada opción del grupo ─────────────────────────────
         for (var _caii = 0; _caii < _ca.items.length; _caii++) {
-          var _it   = _ca.items[_caii];
-          var ma    = _it.ma;
-          var aj    = _it.origIdx;
-          var ajOff = prodExtras.length + prodAdiciones.length + aj;
+          var _it  = _ca.items[_caii];
+          var ma   = _it.ma;
+          var aj   = _it.origIdx;
+          var ajOff= prodExtras.length + prodAdiciones.length + aj;
+          var lim  = _caLim;
+          var esRad= _caRad;
 
           xh += '<div class="xrow" id="xr_ma_' + aj + '"'
-            + ' onclick="togAdicionMaestro(this,' + aj + ',' + _caLim + ',\'' + _gid + '\')"'
+            + ' onclick="togAdicionMaestro(this,' + aj + ',' + lim + ',\'' + _gid + '\')"'
             + ' data-grupo="a"'
             + ' data-idx="' + ajOff + '"'
+            + ' data-es-radio="' + (esRad ? '1' : '0') + '"'
             + ' data-obligatorio="' + (_caOblig ? '1' : '0') + '"'
-            + ' data-lim="' + _caLim + '"'
+            + ' data-lim="' + lim + '"'
             + ' data-gid="' + _gid + '"'
-            + ' data-nombre="' + ma.name.replace(/"/g, '&quot;') + '"'
-            + ' data-precio="' + (ma.price || 0) + '"'
             + '>'
-            + '<input type="checkbox" class="adicion-selector" style="display:none"'
-            + ' data-nombre="' + ma.name.replace(/"/g, '&quot;') + '"'
-            + ' data-precio="' + (ma.price || 0) + '"'
-            + ' data-gid="' + _gid + '">'
             + '<div class="xchk" style="'
-              + (_caRad
+              + (esRad
                   ? 'border-radius:50%;width:16px;height:16px;border:2px solid var(--green);flex-shrink:0'
                   : 'border-radius:3px;width:16px;height:16px;border:2px solid var(--green);flex-shrink:0')
               + '"></div>'
@@ -1304,12 +1287,10 @@ function togAdicCat(row, idx) {
 // Radio (limite=1): deselecciona todas las filas del mismo data-gid.
 // Checkbox (limite>1): bloquea al alcanzar el límite dentro del mismo data-gid.
 function togAdicionMaestro(row, idx, limite, gid) {
-  // Leer el límite directo del atributo data-lim del elemento, con el parámetro como respaldo.
-  // Esto garantiza que si limite_unidades es 2 en Supabase, se bloquea exactamente al llegar a 2.
-  var lim       = parseInt(row.getAttribute('data-lim')) || parseInt(limite) || 1;
+  var lim       = parseInt(limite) || 1;
   var estaSelec = row.classList.contains('sel');
   var chk       = row.querySelector('.xchk');
-  var esRadio   = (lim === 1);   // Radio cuando el límite es exactamente 1
+  var esRadio   = row.getAttribute('data-es-radio') === '1';
   var grupoId   = gid || row.getAttribute('data-gid') || 'gid0';
 
   if (esRadio) {
@@ -1321,13 +1302,9 @@ function togAdicionMaestro(row, idx, limite, gid) {
       if (posR >= 0) selX.splice(posR, 1);
       var c = r.querySelector('.xchk');
       if (c) { c.textContent = ''; c.style.background = ''; c.style.color = ''; }
-      var cbR = r.querySelector('input.adicion-selector');
-      if (cbR) cbR.checked = false;
     });
     row.classList.add('sel');
     if (chk) { chk.textContent = '✓'; chk.style.background = 'var(--green)'; chk.style.color = '#fff'; }
-    var cbRadio = row.querySelector('input.adicion-selector');
-    if (cbRadio) cbRadio.checked = true;
   } else {
     // ── Checkbox: contar seleccionados en este data-gid y bloquear al llegar al límite ──
     if (!estaSelec) {
@@ -1338,13 +1315,9 @@ function togAdicionMaestro(row, idx, limite, gid) {
       }
       row.classList.add('sel');
       if (chk) { chk.textContent = '✓'; chk.style.background = 'var(--green)'; chk.style.color = '#fff'; }
-      var cbCheck = row.querySelector('input.adicion-selector');
-      if (cbCheck) cbCheck.checked = true;
     } else {
       row.classList.remove('sel');
       if (chk) { chk.textContent = ''; chk.style.background = ''; chk.style.color = ''; }
-      var cbUncheck = row.querySelector('input.adicion-selector');
-      if (cbUncheck) cbUncheck.checked = false;
     }
   }
 
@@ -1411,7 +1384,9 @@ function addToCart() {
   if (!curProd) return;
   var extras = [];
 
-  // 1. Extras propios del producto + adiciones JSONB + extras globales (selX → _allExtras)
+  // Recoger todas las opciones seleccionadas de las tres secciones.
+  // selX contiene índices globales de curProd._allExtras
+  // (orden: extras propios → adiciones → extras globales)
   var allExtras = curProd._allExtras || [];
   for (var i = 0; i < selX.length; i++) {
     if (allExtras[selX[i]]) extras.push({
@@ -1420,24 +1395,7 @@ function addToCart() {
     });
   }
 
-  // 2. Adiciones de extras_maestros — capturadas con .adicion-selector:checked
-  // Este selector garantiza que nunca salga "adiciones seleccionadas: ninguna"
-  var adicionesChecked = document.querySelectorAll('#pm-extras .adicion-selector:checked');
-  for (var ac = 0; ac < adicionesChecked.length; ac++) {
-    var cbEl = adicionesChecked[ac];
-    var cbNombre = cbEl.getAttribute('data-nombre') || '';
-    var cbPrecio = parseInt(cbEl.getAttribute('data-precio')) || 0;
-    if (cbNombre) {
-      // Evitar duplicado si ya viene en selX/_allExtras por nombre
-      var yaEsta = false;
-      for (var exj = 0; exj < extras.length; exj++) {
-        if (extras[exj].name === cbNombre) { yaEsta = true; break; }
-      }
-      if (!yaEsta) extras.push({ name: cbNombre, price: cbPrecio });
-    }
-  }
-
-  // 3. Adiciones simples de categoría seleccionadas (strings, precio 0)
+  // 2. Adiciones simples de categoría seleccionadas (strings, precio 0)
   var adicRows = document.querySelectorAll('#pm-extras .xrow.sel[data-adic-idx]');
   var catAdiciones = curProd._catAdiciones || [];
   for (var di = 0; di < adicRows.length; di++) {
@@ -1447,7 +1405,7 @@ function addToCart() {
     }
   }
 
-  // 4. Adiciones complejas del admin (legacy con _catAddons, precio variable)
+  // 3. Adiciones complejas del admin (legacy con _catAddons, precio variable)
   if (curProd._catAddons) {
     for (var vi = 0; vi < curProd._catAddons.length; vi++) {
       var vad = curProd._catAddons[vi];
