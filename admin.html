@@ -2682,7 +2682,7 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return [];
   try {
     const rows = await SB.get('extras_maestros', {
-      select:        'id,nombre,precio,tipo,categoria_adicion,activo,es_obligatorio,disponible,limite_unidades',
+      select:        'id,nombre,precio,tipo,categoria,categoria_adicion,activo,es_obligatorio,disponible,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
       order:         'tipo.asc,categoria_adicion.asc,id.asc'
     });
@@ -2697,8 +2697,8 @@ async function sbCargarExtrasMaestros() {
 
 // Insertar un extra en extras_maestros y devolver la fila creada.
 // Acepta un objeto opts con los campos opcionales de la tabla:
-//   es_obligatorio, disponible, limite_unidades
-async function sbInsertarExtraMaestro(nombre, precio, tipo, categoriaAdicion, opts) {
+//   es_obligatorio, disponible, limite_unidades, categoria_adicion
+async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
   if (!_COMERCIO_ID) return null;
   var op = opts || {};
   const row = await SB.post('extras_maestros', {
@@ -2706,7 +2706,8 @@ async function sbInsertarExtraMaestro(nombre, precio, tipo, categoriaAdicion, op
     nombre:            nombre.trim(),
     precio:            parseInt(precio) || 0,
     tipo:              tipo              || 'extra_global',
-    categoria_adicion: categoriaAdicion  || null,
+    categoria:         categoria         || null,
+    categoria_adicion: op.categoria_adicion ? op.categoria_adicion.trim() : null,
     activo:            true,
     es_obligatorio:    op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
     disponible:        op.disponible     !== undefined ? !!op.disponible     : true,
@@ -5036,36 +5037,43 @@ async function renderAddons() {
       // Reconstruir _catAddons en memoria desde extras_maestros,
       // propagando es_obligatorio, disponible y limite_unidades al addon padre
       // (se usan la primera fila de cada categoría como referencia del grupo)
+      // Agrupar por categoria_adicion para reconstruir _catAddons con los datos reales de BD
       var bycat = {};
       adicionesGuardadas.forEach(function(r) {
-        var cat = r.categoria_adicion || '__sin_categoria__';
-        if (!bycat[cat]) {
-          bycat[cat] = {
+        // Clave de grupo = categoria_adicion (nombre visible); fallback si está vacío
+        var catAdic = r.categoria_adicion || '__sin_categoria__';
+        if (!bycat[catAdic]) {
+          bycat[catAdic] = {
+            categoria:       r.categoria        || '',   // categoría del producto
             options:         [],
             es_obligatorio:  !!r.es_obligatorio,
             disponible:      r.disponible !== false,
             limite_unidades: parseInt(r.limite_unidades) || 1
           };
         }
-        bycat[cat].options.push({
+        bycat[catAdic].options.push({
           id:        'opt_' + r.id,
           name:      r.nombre,
           price:     r.precio || 0,
           available: r.disponible !== false
         });
       });
-      var addonsMem = Object.keys(bycat).map(function(cat, idx) {
-        var g = bycat[cat];
+      var addonsMem = Object.keys(bycat).map(function(catAdic, idx) {
+        var g = bycat[catAdic];
         return {
-          id:              'addon_maestro_' + idx,
-          name:            cat === '__sin_categoria__' ? 'General' : cat,
-          cat:             cat === '__sin_categoria__' ? '' : cat,
-          type:            g.es_obligatorio ? 'required' : 'optional',
-          min:             g.es_obligatorio ? 1 : 0,
-          es_obligatorio:  g.es_obligatorio,
-          disponible:      g.disponible,
-          limite_unidades: g.limite_unidades,
-          options:         g.options
+          id:                'addon_maestro_' + idx,
+          // name = nombre visible del grupo (la categoria_adicion)
+          name:              catAdic === '__sin_categoria__' ? 'General' : catAdic,
+          // cat = categoría del producto a la que aplica
+          cat:               g.categoria,
+          // categoria_adicion se conserva para que openAddonModal lo cargue al editar
+          categoria_adicion: catAdic === '__sin_categoria__' ? '' : catAdic,
+          type:              g.es_obligatorio ? 'required' : 'optional',
+          min:               g.es_obligatorio ? 1 : 0,
+          es_obligatorio:    g.es_obligatorio,
+          disponible:        g.disponible,
+          limite_unidades:   g.limite_unidades,
+          options:           g.options
         };
       });
       saveAddons(addonsMem);
@@ -5225,12 +5233,13 @@ async function _persistAddonsSB() {
       (addon.options || []).forEach(function(opt) {
         if (opt.name && opt.name.trim()) {
           byCat[addon.cat].push({
-            name:            opt.name.trim(),
-            price:           parseInt(opt.price) || 0,
-            // Los 3 campos vienen del addon padre (no de la opción individual)
-            es_obligatorio:  !!addon.es_obligatorio,
-            disponible:      addon.disponible !== false,
-            limite_unidades: parseInt(addon.limite_unidades) || 1
+            name:              opt.name.trim(),
+            price:             parseInt(opt.price) || 0,
+            // Los campos del addon padre se propagan a cada opción individual
+            categoria_adicion: addon.categoria_adicion || addon.name || '',
+            es_obligatorio:    !!addon.es_obligatorio,
+            disponible:        addon.disponible !== false,
+            limite_unidades:   parseInt(addon.limite_unidades) || 1
           });
         }
       });
@@ -5244,24 +5253,25 @@ async function _persistAddonsSB() {
       const catNombre     = catNombres[i];
       const nuevasAdicion = byCat[catNombre];
 
-      // Eliminar adiciones antiguas de esta categoria_adicion en extras_maestros
+      // Eliminar adiciones antiguas de esta categoría en extras_maestros
       try {
         await SB.del('extras_maestros',
           'comercio_id=eq.' + _COMERCIO_ID
           + '&tipo=eq.adicion'
-          + '&categoria_adicion=eq.' + encodeURIComponent(catNombre));
+          + '&categoria=eq.' + encodeURIComponent(catNombre));
       } catch(delErr) { console.warn('[SB] No se pudieron borrar adiciones antiguas:', delErr.message); }
 
       // Insertar las nuevas adiciones en extras_maestros con todos sus campos
       for (let n = 0; n < nuevasAdicion.length; n++) {
         const opt = nuevasAdicion[n];
         await sbInsertarExtraMaestro(opt.name, opt.price, 'adicion', catNombre, {
-          es_obligatorio:  opt.es_obligatorio  || false,
-          disponible:      opt.disponible      !== false,
-          limite_unidades: opt.limite_unidades || 1
+          categoria_adicion: opt.categoria_adicion || '',
+          es_obligatorio:    opt.es_obligatorio    || false,
+          disponible:        opt.disponible        !== false,
+          limite_unidades:   opt.limite_unidades   || 1
         });
       }
-      console.log('[SB] Adiciones sincronizadas | categoria_adicion:', catNombre, '| cantidad:', nuevasAdicion.length);
+      console.log('[SB] Adiciones sincronizadas en extras_maestros | categoría:', catNombre, '| cantidad:', nuevasAdicion.length);
     }
 
     // Limpiar adiciones de categorías que ya no tienen ninguna
@@ -5272,7 +5282,7 @@ async function _persistAddonsSB() {
           await SB.del('extras_maestros',
             'comercio_id=eq.' + _COMERCIO_ID
             + '&tipo=eq.adicion'
-            + '&categoria_adicion=eq.' + encodeURIComponent(allCats[j]));
+            + '&categoria=eq.' + encodeURIComponent(allCats[j]));
         } catch(e2) {}
       }
     }
@@ -5333,16 +5343,17 @@ function saveAddon() {
   if (!_addonOptions.length) { showToast('Agrega al menos una opción');       return; }
 
   var addons = getAddons();
-  // Objeto completo con los 3 campos nuevos — se usa en memoria y en Supabase
+  // Objeto completo — name es el nombre del grupo visible (categoria_adicion en BD)
   var addonObj = {
-    name:            name.trim(),
-    cat:             cat,
-    type:            type,
-    min:             min,
-    limite_unidades: limite,
-    es_obligatorio:  obligat,
-    disponible:      dispon,
-    options:         _addonOptions.slice()
+    name:              name.trim(),
+    categoria_adicion: name.trim(),   // se persiste en columna categoria_adicion
+    cat:               cat,
+    type:              type,
+    min:               min,
+    limite_unidades:   limite,
+    es_obligatorio:    obligat,
+    disponible:        dispon,
+    options:           _addonOptions.slice()
   };
 
   if (_addonEditId) {
