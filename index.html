@@ -1072,78 +1072,69 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // Agrupar adiciones por categoría para mostrar cada grupo con su propio
-      // encabezado, badge y contador independiente de límite.
-      // La clave de grupo es la categoría; si no tiene categoría se usa '__gen__'.
-      var gruposMapa = {};
-      var gruposOrden = [];
-      for (var ag = 0; ag < maestrosAdcNoDup.length; ag++) {
-        var mgItem = maestrosAdcNoDup[ag];
-        var mgCat  = mgItem._cat || '__gen__';   // _cat se inyecta abajo
-        if (!gruposMapa[mgCat]) { gruposMapa[mgCat] = []; gruposOrden.push(mgCat); }
-        gruposMapa[mgCat].push({ item: mgItem, origIdx: ag });
+      // ── Agrupar adiciones por categoría para renderizar un encabezado por grupo ──
+      // Cada grupo tiene su propio badge Obligatorio/Opcional, badge Máx N,
+      // y un data-gid único que aísla el contador de límite y la validación.
+      var _gMapa = {};   // { catKey: { items:[], lim, oblig, esRad } }
+      var _gOrden = [];  // orden de aparición de cada grupo
+      for (var _gi = 0; _gi < maestrosAdcNoDup.length; _gi++) {
+        var _r   = maestrosAdcNoDup[_gi];
+        // La categoría viene del array maestros original (antes del .map())
+        // maestrosAdcNoDup tiene los mismos objetos en el mismo orden que maestrosAdc
+        // que a su vez vienen de maestros filtrado → usamos _r directamente.
+        // La categoría real está en maestros[x].categoria; reconstruimos el mapeo:
+        var _cat = (function(nombre) {
+          for (var _mi = 0; _mi < maestros.length; _mi++) {
+            if (maestros[_mi].nombre === nombre && maestros[_mi].tipo === 'adicion') {
+              return maestros[_mi].categoria || '__gen__';
+            }
+          }
+          return '__gen__';
+        })(_r.name);
+        if (!_gMapa[_cat]) { _gMapa[_cat] = { items: [], lim: parseInt(_r.limite_unidades) || 1, oblig: !!_r.es_obligatorio }; _gOrden.push(_cat); }
+        _gMapa[_cat].items.push({ ma: _r, origIdx: _gi });
       }
 
-      // Re-mapear para incluir _cat desde maestrosAdc original
-      // (maestrosAdcNoDup ya viene mapeado sin _cat; lo reconstruimos desde maestrosAdc)
-      var catPorNombre = {};
-      maestrosAdc.forEach(function(r) {
-        // r viene de .map() que no incluyó _cat; usamos el array maestros original
-      });
-      // Obtener _cat directamente de maestros (antes del .map())
-      maestros.filter(function(r) { return r.tipo === 'adicion' && r.disponible !== false; })
-        .forEach(function(r) { catPorNombre[r.nombre] = r.categoria || '__gen__'; });
+      // Renderizar grupo a grupo
+      for (var _gIdx = 0; _gIdx < _gOrden.length; _gIdx++) {
+        var _catKey = _gOrden[_gIdx];
+        var _grp    = _gMapa[_catKey];
+        var _gid    = 'gid' + _gIdx;          // identificador único de grupo
+        var _gLim   = _grp.lim;
+        var _gOblig = _grp.oblig;
+        var _gEsRad = (_gLim === 1);
+        var _gMt    = (hasAbove2 || _gIdx > 0) ? '10px' : '0';
+        var _gLabel = (_catKey === '__gen__') ? 'Adiciones' : _catKey;
 
-      // Reasignar grupos por categoría real
-      var gruposMapa2 = {};
-      var gruposOrden2 = [];
-      for (var ag2 = 0; ag2 < maestrosAdcNoDup.length; ag2++) {
-        var mgItem2 = maestrosAdcNoDup[ag2];
-        var mgCat2  = catPorNombre[mgItem2.name] || '__gen__';
-        if (!gruposMapa2[mgCat2]) { gruposMapa2[mgCat2] = []; gruposOrden2.push(mgCat2); }
-        gruposMapa2[mgCat2].push({ item: mgItem2, origIdx: ag2 });
-      }
-
-      // Renderizar grupo por grupo
-      for (var gi2 = 0; gi2 < gruposOrden2.length; gi2++) {
-        var gCatKey  = gruposOrden2[gi2];
-        var gItems   = gruposMapa2[gCatKey];
-        // Las propiedades de grupo (lim, obligatorio) vienen del primer ítem del grupo
-        var gPrimero = gItems[0].item;
-        var gLim     = gPrimero.limite_unidades != null ? parseInt(gPrimero.limite_unidades) : 1;
-        var gOblig   = gPrimero.es_obligatorio;
-        var gEsRad   = (gLim === 1);
-        // ID único de grupo: índice de grupo dentro de este producto
-        var gId      = 'g' + gi2;
-
-        // Encabezado del grupo
-        var gTitulo = gCatKey === '__gen__' ? 'Adiciones' : gCatKey;
-        var gBadge  = gOblig
+        // Badge Obligatorio / Opcional
+        var _badgeOblig = _gOblig
           ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ Obligatorio</span>'
           : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>';
-        var gLimBadge = (!gEsRad && gLim > 1)
-          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + gLim + '</span>'
+        // Badge Máximo N (solo cuando limite > 1)
+        var _badgeLim = (!_gEsRad && _gLim > 1)
+          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _gLim + '</span>'
           : '';
-        var gMt = (hasAbove2 || gi2 > 0) ? '10px' : '0';
-        xh += '<div class="xtl" style="margin-top:' + gMt + '">'
-          + gTitulo + ' ' + gBadge + gLimBadge + '</div>';
+
+        xh += '<div class="xtl" style="margin-top:' + _gMt + '">'
+          + _gLabel + ' ' + _badgeOblig + _badgeLim + '</div>';
 
         // Filas del grupo
-        for (var gii = 0; gii < gItems.length; gii++) {
-          var ma    = gItems[gii].item;
-          var origAj = gItems[gii].origIdx;
-          var ajOff = prodExtras.length + prodAdiciones.length + origAj;
-          var lim   = gLim;
-          var esRad = gEsRad;
+        for (var _ii = 0; _ii < _grp.items.length; _ii++) {
+          var _it   = _grp.items[_ii];
+          var ma    = _it.ma;
+          var aj    = _it.origIdx;
+          var ajOff = prodExtras.length + prodAdiciones.length + aj;
+          var lim   = _gLim;
+          var esRad = _gEsRad;
 
-          xh += '<div class="xrow" id="xr_ma_' + origAj + '"'
-            + ' onclick="togAdicionMaestro(this,' + origAj + ',' + lim + ',\'' + gId + '\')"'
+          xh += '<div class="xrow" id="xr_ma_' + aj + '"'
+            + ' onclick="togAdicionMaestro(this,' + aj + ',' + lim + ',\'' + _gid + '\')"'
             + ' data-grupo="a"'
             + ' data-idx="' + ajOff + '"'
             + ' data-es-radio="' + (esRad ? '1' : '0') + '"'
-            + ' data-obligatorio="' + (gOblig ? '1' : '0') + '"'
+            + ' data-obligatorio="' + (_gOblig ? '1' : '0') + '"'
             + ' data-lim="' + lim + '"'
-            + ' data-gid="' + gId + '"'
+            + ' data-gid="' + _gid + '"'
             + '>'
             + '<div class="xchk" style="'
               + (esRad
@@ -1151,7 +1142,7 @@ function openProd(id) {
                   : 'border-radius:3px;width:16px;height:16px;border:2px solid var(--green);flex-shrink:0')
               + '"></div>'
             + '<span class="xname">' + ma.name + '</span>'
-            + (gOblig
+            + (_gOblig
                 ? '<span style="font-size:9px;color:#e65100;font-weight:700;margin-left:4px">*</span>'
                 : '')
             + '<span class="xprice-lbl">' + (ma.price > 0 ? '+' + fp(ma.price) : 'Incluido') + '</span>'
@@ -1300,33 +1291,34 @@ function togAdicCat(row, idx) {
 }
 
 // ── togAdicionMaestro: toggle para adiciones de extras_maestros ──────
-// Radio (limite=1): deselecciona las demás del mismo grupo (data-gid) antes de marcar.
-// Checkbox con límite (limite>1): bloquea al alcanzar el límite del grupo (data-gid).
+// Radio (limite=1): deselecciona las demás filas del mismo data-gid.
+// Checkbox (limite>1): bloquea al alcanzar el límite dentro del mismo data-gid.
 // Llama a _validarObligatorios() para habilitar/bloquear el botón carrito.
 function togAdicionMaestro(row, idx, limite, gid) {
-  var lim       = limite || 1;
+  var lim       = parseInt(limite) || 1;
   var estaSelec = row.classList.contains('sel');
   var chk       = row.querySelector('.xchk');
   var esRadio   = row.getAttribute('data-es-radio') === '1';
-  // gid identifica el grupo; si no llega (compatibilidad), usa data-gid del elemento
-  var grupoId   = gid || row.getAttribute('data-gid') || 'g0';
+  // gid viene del onclick; como respaldo lee el atributo del propio elemento
+  var grupoId   = gid || row.getAttribute('data-gid') || 'gid0';
 
   if (esRadio) {
-    // ── Radio: deseleccionar todos los del mismo grupo (data-gid) ──
-    var todosRadio = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"]');
-    todosRadio.forEach(function(r) {
+    // ── Radio: limpiar todas las del mismo grupo (data-gid) y marcar la actual ──
+    var todosGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"]');
+    todosGrupo.forEach(function(r) {
       r.classList.remove('sel');
-      var c = r.querySelector('.xchk'); if (c) { c.textContent = ''; c.style.background = ''; c.style.color = ''; }
+      var posR = selX.indexOf(parseInt(r.getAttribute('data-idx')));
+      if (posR >= 0) selX.splice(posR, 1);
+      var c = r.querySelector('.xchk');
+      if (c) { c.textContent = ''; c.style.background = ''; c.style.color = ''; }
     });
-    // Marcar el actual
     row.classList.add('sel');
     if (chk) { chk.textContent = '✓'; chk.style.background = 'var(--green)'; chk.style.color = '#fff'; }
   } else {
-    // ── Checkbox: verificar el límite del grupo por data-gid ──
+    // ── Checkbox: verificar el límite dentro del grupo (data-gid) ──
     if (!estaSelec) {
-      // Contar cuántos del mismo grupo (data-gid) están ya seleccionados
-      var mismoGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"].sel');
-      if (mismoGrupo.length >= lim) {
+      var selEnGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"].sel');
+      if (selEnGrupo.length >= lim) {
         showToast('Solo puedes elegir ' + lim + ' opción' + (lim > 1 ? 'es' : '') + ' en este grupo');
         return;
       }
@@ -1338,7 +1330,7 @@ function togAdicionMaestro(row, idx, limite, gid) {
     }
   }
 
-  // Actualizar _allExtras con el índice global para que updT() calcule el precio
+  // Sincronizar selX con el índice global de _allExtras para que updT() calcule el precio
   var globalIdx = parseInt(row.getAttribute('data-idx'));
   var posEnSelX = selX.indexOf(globalIdx);
   if (row.classList.contains('sel')) {
@@ -1348,47 +1340,47 @@ function togAdicionMaestro(row, idx, limite, gid) {
   }
 
   updT();
-  _validarObligatorios();   // bloquear/desbloquear botón carrito
+  _validarObligatorios();
 }
 
-// ── _validarObligatorios: bloquear el botón carrito si falta obligatorio ──
-// Recorre todos los grupos con data-obligatorio=1, los agrupa por data-gid,
-// y verifica que CADA grupo obligatorio tenga al menos una fila con .sel.
-// Si falta algún grupo, bloquea el botón y muestra el aviso naranja.
+// ── _validarObligatorios: bloquear el botón carrito si falta un obligatorio ──
+// Agrupa las filas con data-obligatorio=1 por data-gid.
+// El botón solo se habilita cuando CADA grupo obligatorio tiene ≥1 fila con .sel.
 function _validarObligatorios() {
   var btnCart = document.getElementById('pm-add-btn');
   if (!btnCart) return;
 
   var filasOblig = document.querySelectorAll('#pm-extras .xrow[data-obligatorio="1"]');
   if (!filasOblig.length) {
-    // Sin obligatorios → siempre habilitado
     btnCart.disabled = false;
     btnCart.style.opacity = '';
-    var hint = document.getElementById('pm-oblig-hint');
-    if (hint) hint.style.display = 'none';
+    var hint0 = document.getElementById('pm-oblig-hint');
+    if (hint0) hint0.style.display = 'none';
     return;
   }
 
-  // Agrupar por data-gid: cada grupo debe tener al menos una opción seleccionada
-  var gruposOblig = {};
+  // Construir mapa: { gid: tieneSel }
+  // Un grupo se considera satisfecho si al menos una de sus filas tiene clase .sel
+  var mapaGrupos = {};
   filasOblig.forEach(function(r) {
-    var gid = r.getAttribute('data-gid') || 'g0';
-    if (!gruposOblig[gid]) gruposOblig[gid] = false;
-    if (r.classList.contains('sel')) gruposOblig[gid] = true;
+    var gid = r.getAttribute('data-gid') || 'gid0';
+    if (mapaGrupos[gid] === undefined) mapaGrupos[gid] = false;
+    if (r.classList.contains('sel')) mapaGrupos[gid] = true;
   });
 
-  // todosOk=true solo si TODOS los grupos obligatorios tienen al menos una selección
-  var todosOk = Object.keys(gruposOblig).every(function(k) { return gruposOblig[k]; });
+  // todosOk: todos los grupos obligatorios tienen al menos una selección
+  var todosOk = true;
+  Object.keys(mapaGrupos).forEach(function(k) { if (!mapaGrupos[k]) todosOk = false; });
 
   var hint = document.getElementById('pm-oblig-hint');
   if (!todosOk) {
     btnCart.disabled = true;
     btnCart.style.opacity = '0.45';
-    if (hint) { hint.style.display = 'block'; }
+    if (hint) hint.style.display = 'block';
   } else {
     btnCart.disabled = false;
     btnCart.style.opacity = '';
-    if (hint) { hint.style.display = 'none'; }
+    if (hint) hint.style.display = 'none';
   }
 }
 
