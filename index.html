@@ -987,12 +987,10 @@ function openProd(id) {
         return r.tipo === 'adicion' && r.disponible !== false;
       })
       .map(function(r) {
-        // Preservar todos los campos necesarios para agrupar, limitar y validar
         return {
           name:            r.nombre,
           price:           r.precio           || 0,
           nombre_grupo:    r.nombre_grupo      || '',
-          categoria:       r.categoria         || '',
           es_obligatorio:  !!r.es_obligatorio,
           disponible:      r.disponible        !== false,
           limite_unidades: parseInt(r.limite_unidades) || 1
@@ -1074,67 +1072,59 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // ── Agrupar adiciones por nombre_grupo ─────────────────────────────────
-      // Cada grupo distinto de nombre_grupo obtiene su propio encabezado con
-      // badge Obligatorio/Opcional y badge Máx N, y un data-gid único que
-      // aísla el contador de límite y la validación del botón carrito.
-      // Si nombre_grupo está vacío se usa la categoría como clave de respaldo.
-      var _ngMapa  = {};   // { grupoKey: { label, lim, oblig, items[] } }
-      var _ngOrden = [];
-      for (var _ngi = 0; _ngi < maestrosAdcNoDup.length; _ngi++) {
-        var _nr  = maestrosAdcNoDup[_ngi];
-        var _key = (_nr.nombre_grupo && _nr.nombre_grupo.trim())
-                     ? _nr.nombre_grupo.trim()
-                     : (_nr.categoria || 'Adiciones');
-        if (!_ngMapa[_key]) {
-          _ngMapa[_key] = {
-            label: _key,
-            lim:   parseInt(_nr.limite_unidades) || 1,
-            oblig: !!_nr.es_obligatorio,
+      // Agrupar por nombre_grupo (clave de agrupación real desde BD).
+      // Fallback: si nombre_grupo está vacío se usa 'Adiciones' como etiqueta.
+      // Cada grupo recibe data-gid único que aísla radio/checkbox y validación.
+      var _gMap = {}, _gOrder = [];
+      for (var _gi = 0; _gi < maestrosAdcNoDup.length; _gi++) {
+        var _r   = maestrosAdcNoDup[_gi];
+        var _key = (_r.nombre_grupo && _r.nombre_grupo.trim()) ? _r.nombre_grupo.trim() : '__sin_grupo__';
+        if (!_gMap[_key]) {
+          _gMap[_key] = {
+            label: _key === '__sin_grupo__' ? 'Adiciones' : _key,
+            lim:   parseInt(_r.limite_unidades) || 1,
+            oblig: !!_r.es_obligatorio,
             items: []
           };
-          _ngOrden.push(_key);
+          _gOrder.push(_key);
         }
-        _ngMapa[_key].items.push({ ma: _nr, origIdx: _ngi });
+        _gMap[_key].items.push({ ma: _r, origIdx: _gi });
       }
 
-      // Renderizar un bloque por grupo
-      for (var _ngIdx = 0; _ngIdx < _ngOrden.length; _ngIdx++) {
-        var _ngKey  = _ngOrden[_ngIdx];
-        var _ng     = _ngMapa[_ngKey];
-        var _gid    = 'gid' + _ngIdx;
-        var _ngLim  = _ng.lim;
-        var _ngOblig= _ng.oblig;
-        var _ngRad  = (_ngLim === 1);
-        var _ngMt   = (hasAbove2 || _ngIdx > 0) ? '10px' : '0';
+      for (var _gIdx = 0; _gIdx < _gOrder.length; _gIdx++) {
+        var _gKey  = _gOrder[_gIdx];
+        var _g     = _gMap[_gKey];
+        var _gid   = 'gid' + _gIdx;
+        var _gLim  = _g.lim;
+        var _gOblig= _g.oblig;
+        var _gRad  = (_gLim === 1);
+        var _gMt   = (hasAbove2 || _gIdx > 0) ? '10px' : '0';
 
-        // Badge Obligatorio / Opcional
-        var _ngBadgeOblig = _ngOblig
+        // Badge dinámico: lee es_obligatorio, nunca texto fijo
+        var _bOblig = _gOblig
           ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ Obligatorio</span>'
           : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>';
-        // Badge Máx N (solo cuando limite > 1)
-        var _ngBadgeLim = (!_ngRad && _ngLim > 1)
-          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _ngLim + '</span>'
+        var _bLim = (!_gRad && _gLim > 1)
+          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _gLim + '</span>'
           : '';
 
-        xh += '<div class="xtl" style="margin-top:' + _ngMt + '">'
-          + _ng.label + ' ' + _ngBadgeOblig + _ngBadgeLim + '</div>';
+        xh += '<div class="xtl" style="margin-top:' + _gMt + '">'
+          + _g.label + ' ' + _bOblig + _bLim + '</div>';
 
-        // Filas del grupo
-        for (var _ngii = 0; _ngii < _ng.items.length; _ngii++) {
-          var _ngIt = _ng.items[_ngii];
-          var ma    = _ngIt.ma;
-          var aj    = _ngIt.origIdx;
-          var ajOff = prodExtras.length + prodAdiciones.length + aj;
-          var lim   = _ngLim;
-          var esRad = _ngRad;
+        for (var _gii = 0; _gii < _g.items.length; _gii++) {
+          var _it  = _g.items[_gii];
+          var ma   = _it.ma;
+          var aj   = _it.origIdx;
+          var ajOff= prodExtras.length + prodAdiciones.length + aj;
+          var lim  = _gLim;
+          var esRad= _gRad;
 
           xh += '<div class="xrow" id="xr_ma_' + aj + '"'
             + ' onclick="togAdicionMaestro(this,' + aj + ',' + lim + ',\'' + _gid + '\')"'
             + ' data-grupo="a"'
             + ' data-idx="' + ajOff + '"'
             + ' data-es-radio="' + (esRad ? '1' : '0') + '"'
-            + ' data-obligatorio="' + (_ngOblig ? '1' : '0') + '"'
+            + ' data-obligatorio="' + (_gOblig ? '1' : '0') + '"'
             + ' data-lim="' + lim + '"'
             + ' data-gid="' + _gid + '"'
             + '>'
@@ -1144,9 +1134,7 @@ function openProd(id) {
                   : 'border-radius:3px;width:16px;height:16px;border:2px solid var(--green);flex-shrink:0')
               + '"></div>'
             + '<span class="xname">' + ma.name + '</span>'
-            + (_ngOblig
-                ? '<span style="font-size:9px;color:#e65100;font-weight:700;margin-left:4px">*</span>'
-                : '')
+            + (_gOblig ? '<span style="font-size:9px;color:#e65100;font-weight:700;margin-left:4px">*</span>' : '')
             + '<span class="xprice-lbl">' + (ma.price > 0 ? '+' + fp(ma.price) : 'Incluido') + '</span>'
             + '</div>';
         }
@@ -1331,7 +1319,7 @@ function togAdicionMaestro(row, idx, limite, gid) {
     }
   }
 
-  // Sincronizar selX con el índice global de _allExtras para que updT() calcule el precio
+  // Sincronizar selX con índice global de _allExtras para que updT() calcule el precio
   var globalIdx = parseInt(row.getAttribute('data-idx'));
   var posEnSelX = selX.indexOf(globalIdx);
   if (row.classList.contains('sel')) {
@@ -1344,9 +1332,9 @@ function togAdicionMaestro(row, idx, limite, gid) {
   _validarObligatorios();
 }
 
-// ── _validarObligatorios: bloquear el botón carrito si falta un obligatorio ──
-// Agrupa filas con data-obligatorio=1 por data-gid y exige que CADA grupo
-// tenga al menos una fila con .sel antes de habilitar el botón.
+// ── _validarObligatorios: bloquear el botón si falta un grupo obligatorio ──
+// Agrupa filas con data-obligatorio=1 por data-gid.
+// El botón solo se habilita cuando CADA grupo obligatorio tiene ≥1 fila con .sel.
 function _validarObligatorios() {
   var btnCart = document.getElementById('pm-add-btn');
   if (!btnCart) return;
@@ -1355,22 +1343,20 @@ function _validarObligatorios() {
   if (!filasOblig.length) {
     btnCart.disabled = false;
     btnCart.style.opacity = '';
-    var hint0 = document.getElementById('pm-oblig-hint');
-    if (hint0) hint0.style.display = 'none';
+    var h0 = document.getElementById('pm-oblig-hint');
+    if (h0) h0.style.display = 'none';
     return;
   }
 
-  // Mapa { gid: tieneSel } — un grupo está satisfecho si ≥1 fila tiene .sel
-  var mapaGrupos = {};
+  // { gid: tieneSel } — satisfecho si ≥1 fila del grupo tiene .sel
+  var mapa = {};
   filasOblig.forEach(function(r) {
-    var gid = r.getAttribute('data-gid') || 'gid0';
-    if (mapaGrupos[gid] === undefined) mapaGrupos[gid] = false;
-    if (r.classList.contains('sel')) mapaGrupos[gid] = true;
+    var g = r.getAttribute('data-gid') || 'gid0';
+    if (mapa[g] === undefined) mapa[g] = false;
+    if (r.classList.contains('sel')) mapa[g] = true;
   });
 
-  var todosOk = true;
-  Object.keys(mapaGrupos).forEach(function(k) { if (!mapaGrupos[k]) todosOk = false; });
-
+  var todosOk = Object.keys(mapa).every(function(k) { return mapa[k]; });
   var hint = document.getElementById('pm-oblig-hint');
   if (!todosOk) {
     btnCart.disabled = true;
@@ -2703,12 +2689,10 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return;
   try {
     const rows = await SB.get('extras_maestros', {
-      // Traer los 3 nuevos campos: disponible, es_obligatorio, limite_unidades, nombre_grupo
       select:        'id,nombre,precio,tipo,categoria,nombre_grupo,disponible,es_obligatorio,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
-      // Filtro: solo mostrar los extras disponibles=true al cliente
       'disponible':  'eq.true',
-      order:         'tipo.asc,id.asc'
+      order:         'tipo.asc,nombre_grupo.asc,id.asc'
     });
     _STORE._extrasMaestros = rows || [];
     console.log('[SB] extras_maestros cargados en menú:', (rows || []).length,
