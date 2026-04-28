@@ -1072,8 +1072,9 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // Agrupar por categoria_adicion (criterio real de la tabla extras_maestros).
+      // ── Agrupar por categoria_adicion ─────────────────────────────────────
       // Cada valor distinto produce su propio encabezado con badge y límite.
+      // Los badges leen item.es_obligatorio e item.limite_unidades — nunca texto fijo.
       var _caMap = {}, _caOrder = [];
       for (var _ci = 0; _ci < maestrosAdcNoDup.length; _ci++) {
         var _cr  = maestrosAdcNoDup[_ci];
@@ -1082,8 +1083,8 @@ function openProd(id) {
         if (!_caMap[_key]) {
           _caMap[_key] = {
             label: _key === '__sin_grupo__' ? 'Adiciones' : _key,
-            lim:   parseInt(_cr.limite_unidades) || 1,
-            oblig: !!_cr.es_obligatorio,
+            lim:   _cr.limite_unidades,
+            oblig: _cr.es_obligatorio,
             items: []
           };
           _caOrder.push(_key);
@@ -1094,15 +1095,15 @@ function openProd(id) {
       for (var _caIdx = 0; _caIdx < _caOrder.length; _caIdx++) {
         var _caKey   = _caOrder[_caIdx];
         var _ca      = _caMap[_caKey];
-        var _caLim   = _ca.lim;
-        var _caOblig = _ca.oblig;
+        var _caLim   = parseInt(_ca.lim) || 1;
+        var _caOblig = !!_ca.oblig;           // item.es_obligatorio
         var _caMt    = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
 
-        // Badge leído de es_obligatorio — nunca texto fijo
+        // Badge: item.es_obligatorio → 'OBLIGATORIO' / 'OPCIONAL'
         var _bOblig = _caOblig
           ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">&#9889; OBLIGATORIO</span>'
           : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">OPCIONAL</span>';
-        // Badge M\u00e1x leído de limite_unidades
+        // Badge: item.limite_unidades → 'Máx: N'
         var _bLim = (_caLim > 1)
           ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">M\u00e1x: ' + _caLim + '</span>'
           : '';
@@ -1111,26 +1112,27 @@ function openProd(id) {
           + _ca.label + ' ' + _bOblig + _bLim + '</div>';
 
         for (var _caii = 0; _caii < _ca.items.length; _caii++) {
-          var ma      = _ca.items[_caii];
-          var _iid    = 'adicion_' + _caIdx + '_' + _caii;
-          var _tipo   = (_caLim === 1) ? 'radio' : 'checkbox';
-          var _nombre = ma.name.replace(/"/g, '&quot;');
-          var _grupo  = _caKey.replace(/"/g, '&quot;');
+          var ma     = _ca.items[_caii];
+          var _iid   = 'adicion_chk_' + _caIdx + '_' + _caii;
+          var _tipo  = (_caLim === 1) ? 'radio' : 'checkbox';
+          // Escapar comillas para atributos HTML
+          var _nom   = ma.name.replace(/"/g, '&quot;');
+          var _grp   = _caKey.replace(/"/g, '&quot;');
 
-          // class="adicion-selector" — identificador exacto para addToCart
+          // class="adicion-checkbox" — clase exacta buscada por addToCart
+          // data-nombre = item.nombre, data-grupo = item.categoria_adicion
           xh += '<label style="display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer;border-bottom:1px solid var(--border)">'
             + '<input'
-            + ' type="' + _tipo + '"'
-            + ' class="adicion-selector"'
-            + ' id="' + _iid + '"'
-            + ' name="grp_' + _caIdx + '"'
-            + ' data-nombre="' + _nombre + '"'
-            + ' data-grupo="' + _grupo + '"'
-            + ' data-lim="' + _caLim + '"'
+            + ' type="'          + _tipo      + '"'
+            + ' class="adicion-checkbox"'
+            + ' id="'            + _iid       + '"'
+            + ' name="grp_'      + _caIdx     + '"'
+            + ' data-nombre="'   + _nom       + '"'
+            + ' data-grupo="'    + _grp       + '"'
+            + ' data-lim="'      + _caLim     + '"'
             + ' data-obligatorio="' + (_caOblig ? '1' : '0') + '"'
-            + ' data-precio="' + (ma.price || 0) + '"'
+            + ' data-precio="'   + (ma.price || 0) + '"'
             + ' style="width:18px;height:18px;accent-color:var(--green);flex-shrink:0;cursor:pointer"'
-            + ' onchange="_onAdicionChange(this)"'
             + '>'
             + '<span style="flex:1;font-size:14px">' + ma.name + '</span>'
             + (ma.price > 0
@@ -1139,6 +1141,9 @@ function openProd(id) {
             + '</label>';
         }
       }
+
+      // Añadir listener de límite a los checkboxes recién creados (event delegation)
+      // Se hace después de que ex.innerHTML sea asignado (ver bloque de cierre de if (ex))
     }
 
     // Guardar referencias en curProd para que addToCart() y updT() las usen
@@ -1153,6 +1158,24 @@ function openProd(id) {
 
     ex.innerHTML = xh || '';
     ex.style.display = xh ? '' : 'none';
+
+    // ── EventListener 'change' para checkboxes de adicion-checkbox ──────────
+    // Valida que el grupo (data-grupo) no supere su data-lim.
+    // Se adjunta aquí porque los elementos ya existen en el DOM.
+    var _chks = ex.querySelectorAll('.adicion-checkbox[type="checkbox"]');
+    _chks.forEach(function(chk) {
+      chk.addEventListener('change', function() {
+        var grupo    = this.getAttribute('data-grupo') || '';
+        var lim      = parseInt(this.getAttribute('data-lim')) || 1;
+        if (!this.checked) { _validarObligatorios(); return; }
+        var marcados = ex.querySelectorAll('.adicion-checkbox[data-grupo="' + grupo + '"]:checked');
+        if (marcados.length > lim) {
+          this.checked = false;
+          showToast('M\u00e1x: ' + lim + ' opci\u00f3n' + (lim > 1 ? 'es' : '') + ' en \u201c' + grupo + '\u201d');
+        }
+        _validarObligatorios();
+      });
+    });
   }
   updT();
   // Validar obligatorios al abrir el producto: si hay adiciones obligatorias
@@ -1280,36 +1303,18 @@ function togAdicCat(row, idx) {
   updT();
 }
 
-// togAdicionMaestro — conservada por compatibilidad. La Sección 5 ahora usa
-// input.adicion-selector con _onAdicionChange en lugar de esta función.
+// togAdicionMaestro — conservada por compatibilidad con otras llamadas existentes.
+// La Sección 5 ahora usa input.adicion-checkbox con EventListener nativo.
 function togAdicionMaestro(row, idx, limite) {}
 
-// _onAdicionChange — evento change de input.adicion-selector.
-// Valida que el grupo no supere su limite_unidades. Si lo supera, desmarca y alerta.
-function _onAdicionChange(input) {
-  var grupo = input.getAttribute('data-grupo') || '';
-  var lim   = parseInt(input.getAttribute('data-lim')) || 1;
-
-  if (input.checked && input.type === 'checkbox') {
-    var marcados = document.querySelectorAll('.adicion-selector[data-grupo="' + grupo + '"]:checked');
-    if (marcados.length > lim) {
-      input.checked = false;
-      showToast('M\u00e1x: ' + lim + ' opci\u00f3n' + (lim > 1 ? 'es' : '') + ' en \u201c' + grupo + '\u201d');
-      return;
-    }
-  }
-  _validarObligatorios();
-  updT();
-}
-
 // _validarObligatorios — bloquea pm-add-btn si algún grupo obligatorio no tiene selección.
-// Lee input.adicion-selector[data-obligatorio=1] agrupados por data-grupo.
-// Botón habilitado SOLO cuando cada grupo obligatorio tiene ≥1 input marcado.
+// Lee input.adicion-checkbox[data-obligatorio=1] y agrupa por data-grupo.
+// El botón se habilita SOLO cuando cada grupo obligatorio tiene ≥1 input marcado.
 function _validarObligatorios() {
   var btnCart = document.getElementById('pm-add-btn');
   if (!btnCart) return;
 
-  var inputsOblig = document.querySelectorAll('.adicion-selector[data-obligatorio="1"]');
+  var inputsOblig = document.querySelectorAll('.adicion-checkbox[data-obligatorio="1"]');
   if (!inputsOblig.length) {
     btnCart.disabled = false;
     btnCart.style.opacity = '';
@@ -1318,6 +1323,7 @@ function _validarObligatorios() {
     return;
   }
 
+  // Mapa { grupo: tieneMarcado } — satisfecho si ≥1 input del grupo está checked
   var mapa = {};
   inputsOblig.forEach(function(inp) {
     var g = inp.getAttribute('data-grupo') || '__';
@@ -1350,17 +1356,14 @@ function addToCart() {
   if (!curProd) return;
   var extras = [];
 
-  // ── Prueba de vida ──────────────────────────────────────────────────
+  // ── 1. Adiciones de extras_maestros (input.adicion-checkbox) ──────────
   console.log('Intentando guardar selecci\u00f3n...');
-  console.log('[Papayaso] Buscando elementos con clase adicion-selector...');
-
-  // ── 1. Adiciones de extras_maestros (input.adicion-selector) ─────────
-  var seleccionados = document.querySelectorAll('.adicion-selector:checked');
-  console.log('[Papayaso] adicion-selector marcados:', seleccionados.length);
+  var checks = document.querySelectorAll('.adicion-checkbox:checked');
+  console.log('[Papayaso] .adicion-checkbox:checked encontrados:', checks.length);
 
   // Validar grupos obligatorios antes de guardar
   var _obMap = {};
-  document.querySelectorAll('.adicion-selector[data-obligatorio="1"]').forEach(function(inp) {
+  document.querySelectorAll('.adicion-checkbox[data-obligatorio="1"]').forEach(function(inp) {
     var g = inp.getAttribute('data-grupo') || '__';
     if (_obMap[g] === undefined) _obMap[g] = false;
     if (inp.checked) _obMap[g] = true;
@@ -1371,8 +1374,8 @@ function addToCart() {
     return;
   }
 
-  // Capturar nombre (= columna nombre), grupo (= categoria_adicion) y precio
-  seleccionados.forEach(function(inp) {
+  // Capturar data-nombre (= nombre), data-grupo (= categoria_adicion), data-precio
+  checks.forEach(function(inp) {
     var nombre = inp.getAttribute('data-nombre') || '';
     var grupo  = inp.getAttribute('data-grupo')  || '';
     var precio = parseInt(inp.getAttribute('data-precio')) || 0;
@@ -1419,7 +1422,7 @@ function addToCart() {
     }
   }
 
-  // Calcular precio unitario sumando todos los extras con precio
+  // Calcular precio unitario
   var unit = curProd.price;
   for (var j = 0; j < extras.length; j++) unit += (extras[j].price || 0);
 
@@ -2689,6 +2692,7 @@ async function sbCargarExtrasMaestros() {
       'disponible':  'eq.true',
       order:         'tipo.asc,categoria_adicion.asc,id.asc'
     });
+    console.log('Datos recibidos de Supabase:', rows);
     _STORE._extrasMaestros = rows || [];
     console.log('[SB] extras_maestros cargados en menú:', (rows || []).length,
       '(solo disponibles)');
