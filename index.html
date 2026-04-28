@@ -987,10 +987,12 @@ function openProd(id) {
         return r.tipo === 'adicion' && r.disponible !== false;
       })
       .map(function(r) {
-        // Preservar los 3 campos para la lógica de radio/checkbox/obligatorio
+        // Preservar todos los campos necesarios para agrupar, limitar y validar
         return {
           name:            r.nombre,
           price:           r.precio           || 0,
+          nombre_grupo:    r.nombre_grupo      || '',
+          categoria:       r.categoria         || '',
           es_obligatorio:  !!r.es_obligatorio,
           disponible:      r.disponible        !== false,
           limite_unidades: parseInt(r.limite_unidades) || 1
@@ -1072,67 +1074,67 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // ── Agrupar adiciones por categoría para renderizar un encabezado por grupo ──
-      // Cada grupo tiene su propio badge Obligatorio/Opcional, badge Máx N,
-      // y un data-gid único que aísla el contador de límite y la validación.
-      var _gMapa = {};   // { catKey: { items:[], lim, oblig, esRad } }
-      var _gOrden = [];  // orden de aparición de cada grupo
-      for (var _gi = 0; _gi < maestrosAdcNoDup.length; _gi++) {
-        var _r   = maestrosAdcNoDup[_gi];
-        // La categoría viene del array maestros original (antes del .map())
-        // maestrosAdcNoDup tiene los mismos objetos en el mismo orden que maestrosAdc
-        // que a su vez vienen de maestros filtrado → usamos _r directamente.
-        // La categoría real está en maestros[x].categoria; reconstruimos el mapeo:
-        var _cat = (function(nombre) {
-          for (var _mi = 0; _mi < maestros.length; _mi++) {
-            if (maestros[_mi].nombre === nombre && maestros[_mi].tipo === 'adicion') {
-              return maestros[_mi].categoria || '__gen__';
-            }
-          }
-          return '__gen__';
-        })(_r.name);
-        if (!_gMapa[_cat]) { _gMapa[_cat] = { items: [], lim: parseInt(_r.limite_unidades) || 1, oblig: !!_r.es_obligatorio }; _gOrden.push(_cat); }
-        _gMapa[_cat].items.push({ ma: _r, origIdx: _gi });
+      // ── Agrupar adiciones por nombre_grupo ─────────────────────────────────
+      // Cada grupo distinto de nombre_grupo obtiene su propio encabezado con
+      // badge Obligatorio/Opcional y badge Máx N, y un data-gid único que
+      // aísla el contador de límite y la validación del botón carrito.
+      // Si nombre_grupo está vacío se usa la categoría como clave de respaldo.
+      var _ngMapa  = {};   // { grupoKey: { label, lim, oblig, items[] } }
+      var _ngOrden = [];
+      for (var _ngi = 0; _ngi < maestrosAdcNoDup.length; _ngi++) {
+        var _nr  = maestrosAdcNoDup[_ngi];
+        var _key = (_nr.nombre_grupo && _nr.nombre_grupo.trim())
+                     ? _nr.nombre_grupo.trim()
+                     : (_nr.categoria || 'Adiciones');
+        if (!_ngMapa[_key]) {
+          _ngMapa[_key] = {
+            label: _key,
+            lim:   parseInt(_nr.limite_unidades) || 1,
+            oblig: !!_nr.es_obligatorio,
+            items: []
+          };
+          _ngOrden.push(_key);
+        }
+        _ngMapa[_key].items.push({ ma: _nr, origIdx: _ngi });
       }
 
-      // Renderizar grupo a grupo
-      for (var _gIdx = 0; _gIdx < _gOrden.length; _gIdx++) {
-        var _catKey = _gOrden[_gIdx];
-        var _grp    = _gMapa[_catKey];
-        var _gid    = 'gid' + _gIdx;          // identificador único de grupo
-        var _gLim   = _grp.lim;
-        var _gOblig = _grp.oblig;
-        var _gEsRad = (_gLim === 1);
-        var _gMt    = (hasAbove2 || _gIdx > 0) ? '10px' : '0';
-        var _gLabel = (_catKey === '__gen__') ? 'Adiciones' : _catKey;
+      // Renderizar un bloque por grupo
+      for (var _ngIdx = 0; _ngIdx < _ngOrden.length; _ngIdx++) {
+        var _ngKey  = _ngOrden[_ngIdx];
+        var _ng     = _ngMapa[_ngKey];
+        var _gid    = 'gid' + _ngIdx;
+        var _ngLim  = _ng.lim;
+        var _ngOblig= _ng.oblig;
+        var _ngRad  = (_ngLim === 1);
+        var _ngMt   = (hasAbove2 || _ngIdx > 0) ? '10px' : '0';
 
         // Badge Obligatorio / Opcional
-        var _badgeOblig = _gOblig
+        var _ngBadgeOblig = _ngOblig
           ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ Obligatorio</span>'
           : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>';
-        // Badge Máximo N (solo cuando limite > 1)
-        var _badgeLim = (!_gEsRad && _gLim > 1)
-          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _gLim + '</span>'
+        // Badge Máx N (solo cuando limite > 1)
+        var _ngBadgeLim = (!_ngRad && _ngLim > 1)
+          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _ngLim + '</span>'
           : '';
 
-        xh += '<div class="xtl" style="margin-top:' + _gMt + '">'
-          + _gLabel + ' ' + _badgeOblig + _badgeLim + '</div>';
+        xh += '<div class="xtl" style="margin-top:' + _ngMt + '">'
+          + _ng.label + ' ' + _ngBadgeOblig + _ngBadgeLim + '</div>';
 
         // Filas del grupo
-        for (var _ii = 0; _ii < _grp.items.length; _ii++) {
-          var _it   = _grp.items[_ii];
-          var ma    = _it.ma;
-          var aj    = _it.origIdx;
+        for (var _ngii = 0; _ngii < _ng.items.length; _ngii++) {
+          var _ngIt = _ng.items[_ngii];
+          var ma    = _ngIt.ma;
+          var aj    = _ngIt.origIdx;
           var ajOff = prodExtras.length + prodAdiciones.length + aj;
-          var lim   = _gLim;
-          var esRad = _gEsRad;
+          var lim   = _ngLim;
+          var esRad = _ngRad;
 
           xh += '<div class="xrow" id="xr_ma_' + aj + '"'
             + ' onclick="togAdicionMaestro(this,' + aj + ',' + lim + ',\'' + _gid + '\')"'
             + ' data-grupo="a"'
             + ' data-idx="' + ajOff + '"'
             + ' data-es-radio="' + (esRad ? '1' : '0') + '"'
-            + ' data-obligatorio="' + (_gOblig ? '1' : '0') + '"'
+            + ' data-obligatorio="' + (_ngOblig ? '1' : '0') + '"'
             + ' data-lim="' + lim + '"'
             + ' data-gid="' + _gid + '"'
             + '>'
@@ -1142,7 +1144,7 @@ function openProd(id) {
                   : 'border-radius:3px;width:16px;height:16px;border:2px solid var(--green);flex-shrink:0')
               + '"></div>'
             + '<span class="xname">' + ma.name + '</span>'
-            + (_gOblig
+            + (_ngOblig
                 ? '<span style="font-size:9px;color:#e65100;font-weight:700;margin-left:4px">*</span>'
                 : '')
             + '<span class="xprice-lbl">' + (ma.price > 0 ? '+' + fp(ma.price) : 'Incluido') + '</span>'
@@ -1291,7 +1293,7 @@ function togAdicCat(row, idx) {
 }
 
 // ── togAdicionMaestro: toggle para adiciones de extras_maestros ──────
-// Radio (limite=1): deselecciona las demás filas del mismo data-gid.
+// Radio (limite=1): deselecciona todas las filas del mismo data-gid.
 // Checkbox (limite>1): bloquea al alcanzar el límite dentro del mismo data-gid.
 // Llama a _validarObligatorios() para habilitar/bloquear el botón carrito.
 function togAdicionMaestro(row, idx, limite, gid) {
@@ -1299,11 +1301,10 @@ function togAdicionMaestro(row, idx, limite, gid) {
   var estaSelec = row.classList.contains('sel');
   var chk       = row.querySelector('.xchk');
   var esRadio   = row.getAttribute('data-es-radio') === '1';
-  // gid viene del onclick; como respaldo lee el atributo del propio elemento
   var grupoId   = gid || row.getAttribute('data-gid') || 'gid0';
 
   if (esRadio) {
-    // ── Radio: limpiar todas las del mismo grupo (data-gid) y marcar la actual ──
+    // ── Radio: limpiar todo el grupo (data-gid) y marcar solo el actual ──
     var todosGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"]');
     todosGrupo.forEach(function(r) {
       r.classList.remove('sel');
@@ -1315,7 +1316,7 @@ function togAdicionMaestro(row, idx, limite, gid) {
     row.classList.add('sel');
     if (chk) { chk.textContent = '✓'; chk.style.background = 'var(--green)'; chk.style.color = '#fff'; }
   } else {
-    // ── Checkbox: verificar el límite dentro del grupo (data-gid) ──
+    // ── Checkbox: contar seleccionados en el grupo (data-gid) ──
     if (!estaSelec) {
       var selEnGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"].sel');
       if (selEnGrupo.length >= lim) {
@@ -1344,8 +1345,8 @@ function togAdicionMaestro(row, idx, limite, gid) {
 }
 
 // ── _validarObligatorios: bloquear el botón carrito si falta un obligatorio ──
-// Agrupa las filas con data-obligatorio=1 por data-gid.
-// El botón solo se habilita cuando CADA grupo obligatorio tiene ≥1 fila con .sel.
+// Agrupa filas con data-obligatorio=1 por data-gid y exige que CADA grupo
+// tenga al menos una fila con .sel antes de habilitar el botón.
 function _validarObligatorios() {
   var btnCart = document.getElementById('pm-add-btn');
   if (!btnCart) return;
@@ -1359,8 +1360,7 @@ function _validarObligatorios() {
     return;
   }
 
-  // Construir mapa: { gid: tieneSel }
-  // Un grupo se considera satisfecho si al menos una de sus filas tiene clase .sel
+  // Mapa { gid: tieneSel } — un grupo está satisfecho si ≥1 fila tiene .sel
   var mapaGrupos = {};
   filasOblig.forEach(function(r) {
     var gid = r.getAttribute('data-gid') || 'gid0';
@@ -1368,7 +1368,6 @@ function _validarObligatorios() {
     if (r.classList.contains('sel')) mapaGrupos[gid] = true;
   });
 
-  // todosOk: todos los grupos obligatorios tienen al menos una selección
   var todosOk = true;
   Object.keys(mapaGrupos).forEach(function(k) { if (!mapaGrupos[k]) todosOk = false; });
 
@@ -2704,11 +2703,10 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return;
   try {
     const rows = await SB.get('extras_maestros', {
-      // Traer los 3 nuevos campos: disponible, es_obligatorio, limite_unidades
-      select:        'id,nombre,precio,tipo,categoria,disponible,es_obligatorio,limite_unidades',
+      // Traer los 3 nuevos campos: disponible, es_obligatorio, limite_unidades, nombre_grupo
+      select:        'id,nombre,precio,tipo,categoria,nombre_grupo,disponible,es_obligatorio,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
-      'activo':      'eq.true',
-      // Filtro 4: solo mostrar las adiciones disponibles=true al cliente
+      // Filtro: solo mostrar los extras disponibles=true al cliente
       'disponible':  'eq.true',
       order:         'tipo.asc,id.asc'
     });
