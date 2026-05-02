@@ -987,19 +987,14 @@ function openProd(id) {
         return r.tipo === 'adicion' && r.disponible !== false;
       })
       .map(function(r) {
-        // es_obligatorio: cubre boolean true, número 1, y string "true"/"1"
-        var esOblig = r.es_obligatorio === true
-                   || r.es_obligatorio === 1
-                   || String(r.es_obligatorio).toLowerCase() === 'true';
-        // limite_unidades: si existe úsalo; si no, 99 para que no bloquee
-        var limUni = r.limite_unidades ? parseInt(r.limite_unidades) : 99;
+        // categoria_adicion es la clave de agrupación; los demás campos son las reglas del grupo
         return {
           name:              r.nombre,
-          price:             r.precio || 0,
-          categoria_adicion: r.categoria_adicion || '',
-          es_obligatorio:    esOblig,
-          disponible:        r.disponible !== false,
-          limite_unidades:   limUni
+          price:             r.precio             || 0,
+          categoria_adicion: r.categoria_adicion  || '',
+          es_obligatorio:    !!r.es_obligatorio,
+          disponible:        r.disponible          !== false,
+          limite_unidades:   parseInt(r.limite_unidades) || 1
         };
       });
 
@@ -1078,70 +1073,72 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // Agrupar por categoria_adicion
-      var grupos = {};
-      var gruposOrden = [];
-      for (var _gi = 0; _gi < maestrosAdcNoDup.length; _gi++) {
-        var _r  = maestrosAdcNoDup[_gi];
-        var _gk = (_r.categoria_adicion && _r.categoria_adicion.trim())
-                    ? _r.categoria_adicion.trim() : '__sin_grupo__';
-        if (!grupos[_gk]) {
-          grupos[_gk] = { es_obligatorio: _r.es_obligatorio, limite_unidades: _r.limite_unidades, items: [] };
-          gruposOrden.push(_gk);
+      // Agrupar por categoria_adicion (nombre visible del grupo en el menú).
+      // Todas las filas con la misma categoria_adicion comparten encabezado,
+      // límite de selección y regla de obligatorio.
+      var _caMap = {}, _caOrder = [];
+      for (var _ci = 0; _ci < maestrosAdcNoDup.length; _ci++) {
+        var _cr  = maestrosAdcNoDup[_ci];
+        var _key = (_cr.categoria_adicion && _cr.categoria_adicion.trim())
+                     ? _cr.categoria_adicion.trim() : '__sin_grupo__';
+        if (!_caMap[_key]) {
+          _caMap[_key] = {
+            label: _key === '__sin_grupo__' ? 'Adiciones' : _key,
+            lim:   parseInt(_cr.limite_unidades) || 1,
+            oblig: !!_cr.es_obligatorio,
+            items: []
+          };
+          _caOrder.push(_key);
         }
-        grupos[_gk].items.push(_r);
+        _caMap[_key].items.push({ ma: _cr, origIdx: _ci });
       }
 
-      for (var _gIdx = 0; _gIdx < gruposOrden.length; _gIdx++) {
-        var grupoNombre = gruposOrden[_gIdx];
-        var grupo       = grupos[grupoNombre];
-        var lim         = grupo.limite_unidades;
-        var labelGrupo  = (grupoNombre === '__sin_grupo__') ? 'Adiciones' : grupoNombre;
-        var mt          = (hasAbove2 || _gIdx > 0) ? '10px' : '0';
+      for (var _caIdx = 0; _caIdx < _caOrder.length; _caIdx++) {
+        var _caKey  = _caOrder[_caIdx];
+        var _ca     = _caMap[_caKey];
+        var _gid    = 'gid' + _caIdx;
+        var _caLim  = _ca.lim;
+        var _caOblig= _ca.oblig;
+        var _caRad  = (_caLim === 1);
+        var _caMt   = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
 
-        // Console.log de diagnóstico: muestra el valor que decide el badge
-        console.log('[Render] Grupo "' + labelGrupo + '" | es_obligatorio:', grupo.es_obligatorio,
-          '| limite_unidades:', grupo.limite_unidades);
+        // Badge dinámico desde es_obligatorio — nunca texto fijo
+        var _caBadge = _caOblig
+          ? '<span style="background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">⚡ Obligatorio</span>'
+          : '<span style="background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Opcional</span>';
+        var _caLimBadge = (!_caRad && _caLim > 1)
+          ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">Máx ' + _caLim + '</span>'
+          : '';
 
-        // Badge dinámico — nunca texto fijo
-        var textoRegla = grupo.es_obligatorio ? 'OBLIGATORIO' : 'OPCIONAL';
-        var textoMax   = grupo.limite_unidades ? '(M\u00e1x ' + grupo.limite_unidades + ')' : '';
-        var reglaEstilo = grupo.es_obligatorio
-          ? 'background:#fff3e0;color:#e65100;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle'
-          : 'background:var(--ok-bg);color:var(--ok);font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle';
+        xh += '<div class="xtl" style="margin-top:' + _caMt + '">'
+          + _ca.label + ' ' + _caBadge + _caLimBadge + '</div>';
 
-        xh += '<div class="xtl" style="margin-top:' + mt + '">'
-          + labelGrupo
-          + ' <span style="' + reglaEstilo + '">' + textoRegla + '</span>'
-          + (textoMax ? ' <span style="background:#e3f2fd;color:#1565c0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:100px;vertical-align:middle">' + textoMax + '</span>' : '')
-          + '</div>';
+        for (var _caii = 0; _caii < _ca.items.length; _caii++) {
+          var _it  = _ca.items[_caii];
+          var ma   = _it.ma;
+          var aj   = _it.origIdx;
+          var ajOff= prodExtras.length + prodAdiciones.length + aj;
+          var lim  = _caLim;
+          var esRad= _caRad;
 
-        for (var _ii = 0; _ii < grupo.items.length; _ii++) {
-          var item      = grupo.items[_ii];
-          var inputType = (lim === 1) ? 'radio' : 'checkbox';
-          var inputId   = 'ai_' + _gIdx + '_' + _ii;
-          var nomEsc    = item.name.replace(/"/g, '&quot;');
-          var grpEsc    = grupoNombre.replace(/"/g, '&quot;');
-
-          xh += '<label style="display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer;border-bottom:1px solid var(--border)">'
-            + '<input'
-            + ' type="'            + inputType + '"'
-            + ' class="adicion-input"'
-            + ' id="'              + inputId   + '"'
-            + ' name="grp_'        + _gIdx     + '"'
-            + ' data-grupo="'      + grpEsc    + '"'
-            + ' data-nombre="'     + nomEsc    + '"'
-            + ' data-lim="'        + lim       + '"'
-            + ' data-precio="'     + (item.price || 0) + '"'
-            + ' data-obligatorio="' + (grupo.es_obligatorio ? '1' : '0') + '"'
-            + ' style="width:18px;height:18px;accent-color:var(--green);flex-shrink:0;cursor:pointer"'
-            + ' onchange="validarLimites(this)"'
+          xh += '<div class="xrow" id="xr_ma_' + aj + '"'
+            + ' onclick="togAdicionMaestro(this,' + aj + ',' + lim + ',\'' + _gid + '\')"'
+            + ' data-grupo="a"'
+            + ' data-idx="' + ajOff + '"'
+            + ' data-es-radio="' + (esRad ? '1' : '0') + '"'
+            + ' data-obligatorio="' + (_caOblig ? '1' : '0') + '"'
+            + ' data-lim="' + lim + '"'
+            + ' data-gid="' + _gid + '"'
             + '>'
-            + '<span style="flex:1;font-size:14px">' + item.name + '</span>'
-            + (item.price > 0
-                ? '<span style="color:var(--green);font-weight:700;font-size:13px">+' + fp(item.price) + '</span>'
-                : '<span style="color:var(--muted);font-size:12px">Incluido</span>')
-            + '</label>';
+            + '<div class="xchk" style="'
+              + (esRad
+                  ? 'border-radius:50%;width:16px;height:16px;border:2px solid var(--green);flex-shrink:0'
+                  : 'border-radius:3px;width:16px;height:16px;border:2px solid var(--green);flex-shrink:0')
+              + '"></div>'
+            + '<span class="xname">' + ma.name + '</span>'
+            + (_caOblig ? '<span style="font-size:9px;color:#e65100;font-weight:700;margin-left:4px">*</span>' : '')
+            + '<span class="xprice-lbl">' + (ma.price > 0 ? '+' + fp(ma.price) : 'Incluido') + '</span>'
+            + '</div>';
         }
       }
     }
@@ -1285,47 +1282,83 @@ function togAdicCat(row, idx) {
   updT();
 }
 
-// togAdicionMaestro — conservada por compatibilidad; la Sección 5 usa input.adicion-input.
-function togAdicionMaestro(row, idx, limite) {}
+// ── togAdicionMaestro: toggle para adiciones de extras_maestros ──────
+// Recibe gid (data-gid del grupo) para aislar radio y contador por categoria_adicion.
+// Radio (limite=1): deselecciona todas las filas del mismo data-gid.
+// Checkbox (limite>1): bloquea al alcanzar el límite dentro del mismo data-gid.
+function togAdicionMaestro(row, idx, limite, gid) {
+  var lim       = parseInt(limite) || 1;
+  var estaSelec = row.classList.contains('sel');
+  var chk       = row.querySelector('.xchk');
+  var esRadio   = row.getAttribute('data-es-radio') === '1';
+  var grupoId   = gid || row.getAttribute('data-gid') || 'gid0';
 
-// validarLimites — onchange de cada input.adicion-input.
-// Cuenta .adicion-input:checked en el mismo data-grupo.
-// Si supera limite_unidades, desmarca y alerta.
-function validarLimites(input) {
-  var grupoNombre = input.getAttribute('data-grupo') || '';
-  var lim         = parseInt(input.getAttribute('data-lim')) || 99;
-  if (input.type === 'radio') { _validarObligatorios(); return; }
-  if (input.checked) {
-    var marcados = document.querySelectorAll('.adicion-input[data-grupo="' + grupoNombre + '"]:checked');
-    if (marcados.length > lim) {
-      input.checked = false;
-      alert('M\u00e1ximo ' + lim + ' opci\u00f3n' + (lim > 1 ? 'es' : '') + ' en "' + grupoNombre + '"');
+  if (esRadio) {
+    // ── Radio: limpiar todo el grupo (data-gid) y marcar solo el actual ──
+    var todosGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"]');
+    todosGrupo.forEach(function(r) {
+      r.classList.remove('sel');
+      var posR = selX.indexOf(parseInt(r.getAttribute('data-idx')));
+      if (posR >= 0) selX.splice(posR, 1);
+      var c = r.querySelector('.xchk');
+      if (c) { c.textContent = ''; c.style.background = ''; c.style.color = ''; }
+    });
+    row.classList.add('sel');
+    if (chk) { chk.textContent = '✓'; chk.style.background = 'var(--green)'; chk.style.color = '#fff'; }
+  } else {
+    // ── Checkbox: contar seleccionados en este data-gid y bloquear al llegar al límite ──
+    if (!estaSelec) {
+      var selEnGrupo = document.querySelectorAll('#pm-extras .xrow[data-gid="' + grupoId + '"].sel');
+      if (selEnGrupo.length >= lim) {
+        showToast('Solo puedes elegir ' + lim + ' opción' + (lim > 1 ? 'es' : '') + ' en este grupo');
+        return;
+      }
+      row.classList.add('sel');
+      if (chk) { chk.textContent = '✓'; chk.style.background = 'var(--green)'; chk.style.color = '#fff'; }
+    } else {
+      row.classList.remove('sel');
+      if (chk) { chk.textContent = ''; chk.style.background = ''; chk.style.color = ''; }
     }
   }
+
+  // Sincronizar selX con el índice global de _allExtras para que updT() calcule el precio
+  var globalIdx = parseInt(row.getAttribute('data-idx'));
+  var posEnSelX = selX.indexOf(globalIdx);
+  if (row.classList.contains('sel')) {
+    if (posEnSelX < 0) selX.push(globalIdx);
+  } else {
+    if (posEnSelX >= 0) selX.splice(posEnSelX, 1);
+  }
+
+  updT();
   _validarObligatorios();
 }
 
-// _validarObligatorios — bloquea pm-add-btn si algún grupo obligatorio no tiene selección.
-// Agrupa input.adicion-input[data-obligatorio=1] por data-grupo.
-// Botón habilitado SOLO cuando CADA grupo obligatorio tiene ≥1 input marcado.
+// ── _validarObligatorios: bloquear pm-add-btn si falta selección en algún grupo obligatorio ──
+// Agrupa filas con data-obligatorio=1 por data-gid (= una categoria_adicion).
+// El botón se habilita solo cuando CADA grupo obligatorio tiene ≥1 fila con .sel.
 function _validarObligatorios() {
   var btnCart = document.getElementById('pm-add-btn');
   if (!btnCart) return;
-  var inputsOblig = document.querySelectorAll('.adicion-input[data-obligatorio="1"]');
-  if (!inputsOblig.length) {
+
+  var filasOblig = document.querySelectorAll('#pm-extras .xrow[data-obligatorio="1"]');
+  if (!filasOblig.length) {
     btnCart.disabled = false;
     btnCart.style.opacity = '';
     var h0 = document.getElementById('pm-oblig-hint');
     if (h0) h0.style.display = 'none';
     return;
   }
-  // { data-grupo: tieneMarcado } — cada grupo debe tener ≥1 checked
+
+  // Construir mapa { gid: tieneSel }
   var mapa = {};
-  inputsOblig.forEach(function(inp) {
-    var g = inp.getAttribute('data-grupo') || '__';
+  filasOblig.forEach(function(r) {
+    var g = r.getAttribute('data-gid') || 'gid0';
     if (mapa[g] === undefined) mapa[g] = false;
-    if (inp.checked) mapa[g] = true;
+    if (r.classList.contains('sel')) mapa[g] = true;
   });
+
+  // todosOk = true solo si todos los grupos obligatorios tienen al menos una selección
   var todosOk = Object.keys(mapa).every(function(k) { return mapa[k]; });
   var hint = document.getElementById('pm-oblig-hint');
   if (!todosOk) {
@@ -1351,52 +1384,34 @@ function addToCart() {
   if (!curProd) return;
   var extras = [];
 
-  // ── 1. Adiciones de extras_maestros (input.adicion-input:checked) ──────
-  console.log('Intentando guardar selecci\u00f3n...');
-  var checks = document.querySelectorAll('.adicion-input:checked');
-  console.log('[Papayaso] .adicion-input:checked encontrados:', checks.length);
-
-  // Validar grupos obligatorios
-  var _obMap = {};
-  document.querySelectorAll('.adicion-input[data-obligatorio="1"]').forEach(function(inp) {
-    var g = inp.getAttribute('data-grupo') || '__';
-    if (_obMap[g] === undefined) _obMap[g] = false;
-    if (inp.checked) _obMap[g] = true;
-  });
-  if (Object.keys(_obMap).some(function(k) { return !_obMap[k]; })) {
-    showToast('Debes elegir al menos una opci\u00f3n en los grupos OBLIGATORIOS');
-    return;
-  }
-
-  checks.forEach(function(inp) {
-    var nombre = inp.getAttribute('data-nombre') || '';
-    var grupo  = inp.getAttribute('data-grupo')  || '';
-    var precio = parseInt(inp.getAttribute('data-precio')) || 0;
-    if (nombre) extras.push({ name: nombre, price: precio, categoria_adicion: grupo });
-  });
-  console.log('[Papayaso] Adiciones capturadas:', extras.length ? extras : '(ninguna)');
-
-  // ── 2. Extras propios / adiciones JSONB / extras globales (selX → _allExtras) ──
+  // Recoger todas las opciones seleccionadas de las tres secciones.
+  // selX contiene índices globales de curProd._allExtras
+  // (orden: extras propios → adiciones → extras globales)
   var allExtras = curProd._allExtras || [];
   for (var i = 0; i < selX.length; i++) {
-    if (allExtras[selX[i]]) extras.push({ name: allExtras[selX[i]].name, price: allExtras[selX[i]].price || 0 });
+    if (allExtras[selX[i]]) extras.push({
+      name:  allExtras[selX[i]].name,
+      price: allExtras[selX[i]].price || 0
+    });
   }
 
-  // ── 3. Adiciones simples legacy ──
+  // 2. Adiciones simples de categoría seleccionadas (strings, precio 0)
   var adicRows = document.querySelectorAll('#pm-extras .xrow.sel[data-adic-idx]');
   var catAdiciones = curProd._catAdiciones || [];
   for (var di = 0; di < adicRows.length; di++) {
     var dIdx = parseInt(adicRows[di].getAttribute('data-adic-idx'));
-    if (catAdiciones[dIdx]) extras.push({ name: catAdiciones[dIdx].name, price: 0 });
+    if (catAdiciones[dIdx]) {
+      extras.push({ name: catAdiciones[dIdx].name, price: 0 });
+    }
   }
 
-  // ── 4. Adiciones complejas legacy (_catAddons) ──
+  // 3. Adiciones complejas del admin (legacy con _catAddons, precio variable)
   if (curProd._catAddons) {
     for (var vi = 0; vi < curProd._catAddons.length; vi++) {
       var vad = curProd._catAddons[vi];
       if (vad.type !== 'required') continue;
       var vRows = document.querySelectorAll('[data-addon-idx="' + vi + '"].sel');
-      if (!vRows.length) { showToast('Elige una opci\u00f3n en: ' + vad.name); return; }
+      if (!vRows.length) { showToast('Elige una opción en: ' + vad.name); return; }
     }
   }
   var addonRows2 = document.querySelectorAll('#pm-extras .xrow.sel[data-opt-id]');
@@ -1412,16 +1427,17 @@ function addToCart() {
     }
   }
 
+  // Calcular precio unitario sumando todos los extras con precio
   var unit = curProd.price;
   for (var j = 0; j < extras.length; j++) unit += (extras[j].price || 0);
 
   var noteEl   = document.getElementById('pm-note');
   var prodNote = noteEl ? noteEl.value.trim() : '';
   cart.push({
-    pid:    curProd.id,    name:  curProd.name,
+    pid:    curProd.id,   name:  curProd.name,
     emoji:  curProd.emoji, photo: curProd.photo,
-    qty:    curQty,        unit:  unit,
-    extras: extras,        note:  prodNote,
+    qty:    curQty,       unit:  unit,
+    extras: extras,       note:  prodNote,
     total:  unit * curQty
   });
   updateCartUI();
@@ -2682,17 +2698,11 @@ async function sbCargarExtrasMaestros() {
       order:         'tipo.asc,categoria_adicion.asc,id.asc'
     });
     _STORE._extrasMaestros = rows || [];
-    console.log('[SB] extras_maestros cargados:', (rows || []).length);
-    // Log de diagnóstico: muestra el valor crudo de es_obligatorio por fila
-    (rows || []).filter(function(r){ return r.tipo === 'adicion'; }).forEach(function(r) {
-      console.log('[SB] adicion RAW | nombre:', r.nombre,
-        '| categoria_adicion:', r.categoria_adicion,
-        '| es_obligatorio:', r.es_obligatorio, '(tipo:', typeof r.es_obligatorio + ')',
-        '| limite_unidades:', r.limite_unidades);
-    });
+    console.log('[SB] extras_maestros cargados en menú:', (rows || []).length,
+      '(solo disponibles)');
   } catch(e) {
     _STORE._extrasMaestros = [];
-    console.warn('[SB] No se pudo cargar extras_maestros:', e.message);
+    console.warn('[SB] No se pudo cargar extras_maestros (puede no existir aún):', e.message);
   }
 }
 
