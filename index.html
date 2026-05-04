@@ -1100,6 +1100,15 @@ function openProd(id) {
         var _caLim  = _ca.lim;
         var _caOblig= _ca.oblig;
         var _caRad  = (_caLim === 1);
+
+        // ── DIAGNÓSTICO: muestra el valor crudo de es_obligatorio desde la BD ──
+        console.log(
+          '[extras_maestros][grupo="' + _caKey + '"] es_obligatorio RAW =',
+          _ca.oblig,
+          '| tipo:', typeof _ca.oblig,
+          '| límite:', _caLim,
+          '| → badge:', _caOblig ? 'OBLIGATORIO' : 'OPCIONAL'
+        );
         var _caMt   = (hasAbove2 || _caIdx > 0) ? '10px' : '0';
 
         // Badge dinámico desde es_obligatorio — nunca texto fijo
@@ -1336,7 +1345,8 @@ function togAdicionMaestro(row, idx, limite, gid) {
 
 // ── _validarObligatorios: bloquear pm-add-btn si falta selección en algún grupo obligatorio ──
 // Agrupa filas con data-obligatorio=1 por data-gid (= una categoria_adicion).
-// El botón se habilita solo cuando CADA grupo obligatorio tiene ≥1 fila con .sel.
+// CORRECCIÓN: lee data-lim de cada fila para saber el mínimo real del grupo.
+// El botón se habilita solo cuando CADA grupo obligatorio tiene ≥ data-lim selecciones.
 function _validarObligatorios() {
   var btnCart = document.getElementById('pm-add-btn');
   if (!btnCart) return;
@@ -1350,16 +1360,30 @@ function _validarObligatorios() {
     return;
   }
 
-  // Construir mapa { gid: tieneSel }
+  // Construir mapa { gid: { selCount, minRequired } }
+  // minRequired = data-lim de la primera fila del grupo (todos comparten el mismo límite)
   var mapa = {};
   filasOblig.forEach(function(r) {
-    var g = r.getAttribute('data-gid') || 'gid0';
-    if (mapa[g] === undefined) mapa[g] = false;
-    if (r.classList.contains('sel')) mapa[g] = true;
+    var g   = r.getAttribute('data-gid') || 'gid0';
+    var lim = parseInt(r.getAttribute('data-lim')) || 1;
+    if (!mapa[g]) {
+      mapa[g] = { selCount: 0, minRequired: lim };
+    }
+    if (r.classList.contains('sel')) mapa[g].selCount++;
   });
 
-  // todosOk = true solo si todos los grupos obligatorios tienen al menos una selección
-  var todosOk = Object.keys(mapa).every(function(k) { return mapa[k]; });
+  // todosOk = true solo si todos los grupos obligatorios alcanzan su mínimo
+  var todosOk = Object.keys(mapa).every(function(k) {
+    var ok = mapa[k].selCount >= mapa[k].minRequired;
+    if (!ok) {
+      console.log(
+        '[_validarObligatorios] grupo "' + k + '" bloqueado:',
+        mapa[k].selCount, '/', mapa[k].minRequired, 'seleccionados'
+      );
+    }
+    return ok;
+  });
+
   var hint = document.getElementById('pm-oblig-hint');
   if (!todosOk) {
     btnCart.disabled = true;
@@ -3108,12 +3132,21 @@ async function restaurarSeguimientoSiExiste() {
     console.warn('[SB] sbCargarConfig falló — continuando con defaults:', e.message);
   }
 
-  // ── Paso 1b: Extras maestros (extras globales y adiciones desde tabla maestra)
+  // ── Paso 1b: Extras maestros — OBLIGATORIO antes de renderizar productos.
+  // Si esta carga falla, los badges Obligatorio/Opcional son incorrectos.
+  // Usamos await garantizado: el render NO avanza hasta que termine esta promesa.
   try {
     await sbCargarExtrasMaestros();
+    console.log('[SB] ✅ extras_maestros listos — total:', (_STORE._extrasMaestros || []).length);
   } catch(e) {
-    console.warn('[SB] sbCargarExtrasMaestros falló:', e.message);
+    // Fallo CRÍTICO: sin extras_maestros los modales mostrarán opciones incorrectas.
     _STORE._extrasMaestros = [];
+    console.error('[SB] ❌ sbCargarExtrasMaestros falló — adiciones no disponibles:', e.message);
+    if (typeof showToast === 'function') {
+      showToast('Error cargando opciones del menú. Recarga la página.');
+    }
+    // Los productos sin adiciones siguen siendo mostrables.
+    // Para bloquear el render completamente ante este error, descomenta: return;
   }
 
   // ── Paso 2: Productos — es el dato crítico del menú.
