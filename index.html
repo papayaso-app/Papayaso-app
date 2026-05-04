@@ -987,14 +987,20 @@ function openProd(id) {
         return r.tipo === 'adicion' && r.disponible !== false;
       })
       .map(function(r) {
-        // categoria_adicion es la clave de agrupación; los demás campos son las reglas del grupo
+        // grupo_adicion es la clave de agrupación (antes categoria_adicion).
+        // es_obligatorio y limite_unidades vienen explícitamente de la BD.
+        console.log(
+          '[extras_maestros][fila="' + r.nombre + '"] grupo_adicion RAW =', r.grupo_adicion,
+          '| es_obligatorio RAW =', r.es_obligatorio, '(' + typeof r.es_obligatorio + ')',
+          '| limite_unidades RAW =', r.limite_unidades
+        );
         return {
-          name:              r.nombre,
-          price:             r.precio             || 0,
-          categoria_adicion: r.categoria_adicion  || '',
-          es_obligatorio:    !!r.es_obligatorio,
-          disponible:        r.disponible          !== false,
-          limite_unidades:   parseInt(r.limite_unidades) || 1
+          name:           r.nombre,
+          price:          r.precio          || 0,
+          grupo_adicion:  r.grupo_adicion   || '',   // columna renombrada
+          es_obligatorio: !!r.es_obligatorio,         // castear a bool estricto
+          disponible:     r.disponible      !== false,
+          limite_unidades: parseInt(r.limite_unidades) || 1
         };
       });
 
@@ -1052,6 +1058,8 @@ function openProd(id) {
     var extrasGlobFinal = prodExtrasGlob.concat(maestrosExtNoDup);
 
     // ── Sección 5: Adiciones de extras_maestros (tipo=adicion) ───────────
+    // Filtra por categoría del producto: solo incluye filas cuya categoria
+    // coincide con p.cat (o sin categoria = aplica a todos).
     var nombresAdicProd = prodAdiciones.map(function(e){ return e.name; });
     var maestrosAdcNoDup = maestrosAdc.filter(function(e) {
       return nombresAdicProd.indexOf(e.name) < 0;
@@ -1073,14 +1081,14 @@ function openProd(id) {
     if (maestrosAdcNoDup.length) {
       var hasAbove2 = prodExtras.length || adicionesFinal.length;
 
-      // Agrupar por categoria_adicion (nombre visible del grupo en el menú).
-      // Todas las filas con la misma categoria_adicion comparten encabezado,
+      // Agrupar por grupo_adicion (antes categoria_adicion, renombrada en Supabase).
+      // Todas las filas con el mismo grupo_adicion comparten encabezado,
       // límite de selección y regla de obligatorio.
       var _caMap = {}, _caOrder = [];
       for (var _ci = 0; _ci < maestrosAdcNoDup.length; _ci++) {
         var _cr  = maestrosAdcNoDup[_ci];
-        var _key = (_cr.categoria_adicion && _cr.categoria_adicion.trim())
-                     ? _cr.categoria_adicion.trim() : '__sin_grupo__';
+        var _key = (_cr.grupo_adicion && _cr.grupo_adicion.trim())
+                     ? _cr.grupo_adicion.trim() : '__sin_grupo__';
         if (!_caMap[_key]) {
           _caMap[_key] = {
             label: _key === '__sin_grupo__' ? 'Adiciones' : _key,
@@ -2715,18 +2723,20 @@ async function sbCargarProductos() {
 async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return;
   try {
+    // COLUMNAS: grupo_adicion reemplaza a categoria_adicion (renombrada en Supabase).
+    // es_obligatorio y limite_unidades son críticos para la lógica de obligatorio/límite.
     const rows = await SB.get('extras_maestros', {
-      select:        'id,nombre,precio,tipo,categoria,categoria_adicion,disponible,es_obligatorio,limite_unidades',
+      select:        'id,nombre,precio,tipo,categoria,grupo_adicion,disponible,es_obligatorio,limite_unidades',
       'comercio_id': 'eq.' + _COMERCIO_ID,
       'disponible':  'eq.true',
-      order:         'tipo.asc,categoria_adicion.asc,id.asc'
+      order:         'tipo.asc,grupo_adicion.asc,id.asc'
     });
     _STORE._extrasMaestros = rows || [];
-    console.log('[SB] extras_maestros cargados en menú:', (rows || []).length,
-      '(solo disponibles)');
+    console.log('[SB] extras_maestros cargados:', (_STORE._extrasMaestros).length,
+      '| columnas incluyen: grupo_adicion, es_obligatorio, limite_unidades');
   } catch(e) {
     _STORE._extrasMaestros = [];
-    console.warn('[SB] No se pudo cargar extras_maestros (puede no existir aún):', e.message);
+    console.warn('[SB] No se pudo cargar extras_maestros:', e.message);
   }
 }
 
