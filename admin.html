@@ -2682,8 +2682,9 @@ async function sbCargarExtrasMaestros() {
   if (!_COMERCIO_ID) return [];
   try {
     const rows = await SB.get('extras_maestros', {
-      select:        'id,nombre,precio,tipo,categoria,activo,es_obligatorio,disponible,limite_unidades',
+      select:        'id,nombre,precio,tipo,categoria,activo',
       'comercio_id': 'eq.' + _COMERCIO_ID,
+      'activo':      'eq.true',
       order:         'tipo.asc,id.asc'
     });
     upd(function(s) { s._extrasMaestros = rows || []; });
@@ -2707,6 +2708,7 @@ async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
     precio:         parseInt(precio) || 0,
     tipo:           tipo           || 'extra_global',
     categoria:      categoria      || null,
+    grupo_adicion:  op.grupo_adicion ? op.grupo_adicion.trim() : null,
     activo:         true,
     es_obligatorio: op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
     disponible:     op.disponible     !== undefined ? !!op.disponible     : true,
@@ -5227,7 +5229,8 @@ async function _persistAddonsSB() {
           byCat[addon.cat].push({
             name:            opt.name.trim(),
             price:           parseInt(opt.price) || 0,
-            // Los 3 campos vienen del addon padre (no de la opción individual)
+            // grupo_adicion viene del addon padre (columna renombrada en Supabase)
+            grupo_adicion:   addon.grupo_adicion || addon.name || '',
             es_obligatorio:  !!addon.es_obligatorio,
             disponible:      addon.disponible !== false,
             limite_unidades: parseInt(addon.limite_unidades) || 1
@@ -5256,6 +5259,7 @@ async function _persistAddonsSB() {
       for (let n = 0; n < nuevasAdicion.length; n++) {
         const opt = nuevasAdicion[n];
         await sbInsertarExtraMaestro(opt.name, opt.price, 'adicion', catNombre, {
+          grupo_adicion:   opt.grupo_adicion  || '',
           es_obligatorio:  opt.es_obligatorio  || false,
           disponible:      opt.disponible      !== false,
           limite_unidades: opt.limite_unidades || 1
@@ -5323,19 +5327,18 @@ function saveAddon() {
   var cat     = (document.getElementById('addon-cat') ||{}).value||'';
   var type    = (document.getElementById('addon-type')||{value:'required'}).value||'required';
   var min     = parseInt((document.getElementById('addon-min')||{value:'1'}).value)||1;
-  // ── Leer los 3 nuevos campos ──
   var limite  = parseInt((document.getElementById('addon-limite')||{value:'1'}).value)||1;
   var obligat = !!(document.getElementById('addon-obligatorio')||{}).checked;
   var dispon  = (document.getElementById('addon-disponible')   ||{checked:true}).checked !== false;
 
-  if (!name.trim())          { showToast('Escribe el nombre del grupo');     return; }
-  if (!cat)                  { showToast('Selecciona una categoría');         return; }
-  if (!_addonOptions.length) { showToast('Agrega al menos una opción');       return; }
+  if (!name.trim())          { showToast('Escribe el nombre del grupo');  return; }
+  if (!cat)                  { showToast('Selecciona una categoría');      return; }
+  if (!_addonOptions.length) { showToast('Agrega al menos una opción');    return; }
 
-  var addons = getAddons();
-  // Objeto completo con los 3 campos nuevos — se usa en memoria y en Supabase
+  var addons   = getAddons();
   var addonObj = {
     name:            name.trim(),
+    grupo_adicion:   name.trim(),   // columna grupo_adicion en Supabase
     cat:             cat,
     type:            type,
     min:             min,
