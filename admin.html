@@ -2702,7 +2702,7 @@ async function sbCargarExtrasMaestros() {
 async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
   if (!_COMERCIO_ID) return null;
   var op = opts || {};
-  const row = await SB.post('extras_maestros', {
+  var payload = {
     comercio_id:    _COMERCIO_ID,
     nombre:         nombre.trim(),
     precio:         parseInt(precio) || 0,
@@ -2713,7 +2713,9 @@ async function sbInsertarExtraMaestro(nombre, precio, tipo, categoria, opts) {
     es_obligatorio: op.es_obligatorio !== undefined ? !!op.es_obligatorio : false,
     disponible:     op.disponible     !== undefined ? !!op.disponible     : true,
     limite_unidades:parseInt(op.limite_unidades) || 1
-  });
+  };
+  console.log('DATOS A ENVIAR:', payload);
+  const row = await SB.post('extras_maestros', payload);
   return row && row[0] ? row[0] : null;
 }
 
@@ -5229,7 +5231,8 @@ async function _persistAddonsSB() {
           byCat[addon.cat].push({
             name:            opt.name.trim(),
             price:           parseInt(opt.price) || 0,
-            // grupo_adicion viene del addon padre (columna renombrada en Supabase)
+            // grupo_adicion = nombre del grupo tal como lo escribió el admin
+            // cat = categoría del producto (llave del byCat), son dos cosas distintas
             grupo_adicion:   addon.grupo_adicion || addon.name || '',
             es_obligatorio:  !!addon.es_obligatorio,
             disponible:      addon.disponible !== false,
@@ -5323,22 +5326,34 @@ async function _persistAddonsSB() {
 }
 
 function saveAddon() {
-  var name    = (document.getElementById('addon-name')||{}).value||'';
-  var cat     = (document.getElementById('addon-cat') ||{}).value||'';
-  var type    = (document.getElementById('addon-type')||{value:'required'}).value||'required';
-  var min     = parseInt((document.getElementById('addon-min')||{value:'1'}).value)||1;
-  var limite  = parseInt((document.getElementById('addon-limite')||{value:'1'}).value)||1;
-  var obligat = !!(document.getElementById('addon-obligatorio')||{}).checked;
-  var dispon  = (document.getElementById('addon-disponible')   ||{checked:true}).checked !== false;
+  // Leer exactamente por ID — sin atajos que enmascaren un null
+  var nameEl    = document.getElementById('addon-name');
+  var catEl     = document.getElementById('addon-cat');
+  var typeEl    = document.getElementById('addon-type');
+  var minEl     = document.getElementById('addon-min');
+  var limiteEl  = document.getElementById('addon-limite');
+  var obligEl   = document.getElementById('addon-obligatorio');
+  var disponEl  = document.getElementById('addon-disponible');
 
-  if (!name.trim())          { showToast('Escribe el nombre del grupo');  return; }
-  if (!cat)                  { showToast('Selecciona una categoría');      return; }
-  if (!_addonOptions.length) { showToast('Agrega al menos una opción');    return; }
+  var name    = nameEl   ? nameEl.value.trim()           : '';
+  var cat     = catEl    ? catEl.value                   : '';
+  var type    = typeEl   ? typeEl.value                  : 'required';
+  var min     = minEl    ? parseInt(minEl.value)  || 1   : 1;
+  // es_obligatorio y limite_unidades leídos directamente del DOM
+  var limite  = limiteEl ? parseInt(limiteEl.value) || 1 : 1;
+  var obligat = obligEl  ? obligEl.checked               : false;
+  var dispon  = disponEl ? disponEl.checked               : true;
+
+  if (!name)             { showToast('Escribe el nombre del grupo');  return; }
+  if (!cat)              { showToast('Selecciona una categoría');      return; }
+  if (!_addonOptions.length) { showToast('Agrega al menos una opción'); return; }
 
   var addons   = getAddons();
   var addonObj = {
-    name:            name.trim(),
-    grupo_adicion:   name.trim(),   // columna grupo_adicion en Supabase
+    name:            name,
+    // grupo_adicion = lo que el usuario escribe en el input "Nombre del grupo"
+    // NO debe confundirse con cat (categoría del producto destino)
+    grupo_adicion:   name,
     cat:             cat,
     type:            type,
     min:             min,
@@ -5347,6 +5362,9 @@ function saveAddon() {
     disponible:      dispon,
     options:         _addonOptions.slice()
   };
+
+  // Log de diagnóstico: verifica exactamente qué se enviará a Supabase
+  console.log('DATOS A ENVIAR:', addonObj);
 
   if (_addonEditId) {
     for (var i = 0; i < addons.length; i++) {
@@ -5362,7 +5380,7 @@ function saveAddon() {
   closeAddonModal();
   renderAddons();
   showToast('Adición guardada ✓');
-  _persistAddonsSB();   // persistir en Supabase sin bloquear UI
+  _persistAddonsSB();
 }
 
 function deleteAddon(id) {
